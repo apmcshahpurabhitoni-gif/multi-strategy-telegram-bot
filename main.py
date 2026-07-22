@@ -1,7 +1,11 @@
 """
-Unified 2-Way Trading Signal Bot (Render Free Tier Edition)
-==========================================================
-Includes Premium Visual Formatting for Telegram Messages
+Unified 2-Way Interactive Trading Bot (Render Web Service Edition)
+===================================================================
+Features:
+- Strategy 1: Sweep + Engulfing (4H/1H)
+- Strategy 2: UT Bot ATR Trailing Stop (15m Signal + 5m Confirmation Filter)
+- Telegram 2-Way Commands: 'hi', '/check', '/status'
+- Rich HTML Telegram Message Formatting
 """
 
 import os
@@ -25,7 +29,7 @@ if not TELEGRAM_BOT_TOKEN:
 
 bot = telebot.TeleBot(TELEGRAM_BOT_TOKEN)
 
-# Flask Server (Required for Render Free Web Service)
+# Flask Server (Required to keep Render Web Service active)
 app = Flask(__name__)
 
 @app.route('/')
@@ -41,21 +45,17 @@ STRAT1_SYMBOLS = [
 ]
 strat1_state = {}
 
-# ========== STRATEGY 2 CONFIG (UT Bot) ==========
+# ========== STRATEGY 2 CONFIG (UT Bot with 5m/15m MTF Confirmation Filter) ==========
 UT_SYMBOLS = {
     "Bitcoin (BTC)": "BTC-USD",
     "Gold (XAU)": "GC=F"
-}
-UT_TIMEFRAMES = {
-    "15m": {"period": "5d", "interval": "15m"},
-    "1h": {"period": "1mo", "interval": "1h"}
 }
 SENSITIVITY = 1
 ATR_PERIOD = 10
 USE_HEIKIN_ASHI = True
 ut_bot_state = {}
 
-# ========== UTILITY FUNCTIONS ==========
+# ========== TELEGRAM UTILITY ==========
 def send_telegram_alert(message):
     if not TELEGRAM_CHAT_ID:
         return
@@ -167,7 +167,7 @@ def check_strat1_symbol(display_name: str, ticker: str, target_tf: str):
 
     return None, None
 
-# ========== STRATEGY 2 LOGIC (UT Bot) ==========
+# ========== STRATEGY 2 LOGIC (UT Bot + MTF Filter) ==========
 def calculate_heikin_ashi(df):
     ha_df = df.copy()
     ha_df['Close'] = (df['Open'] + df['High'] + df['Low'] + df['Close']) / 4
@@ -217,6 +217,7 @@ def calculate_ut_bot(df):
 
     calc_df['Buy'] = (close > calc_df['TrailingStop']) & above
     calc_df['Sell'] = (close < calc_df['TrailingStop']) & below
+    calc_df['BullishState'] = close > calc_df['TrailingStop']
     return calc_df
 
 def check_ut_bot_signals():
@@ -224,58 +225,72 @@ def check_ut_bot_signals():
     now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
     
     for asset, symbol in UT_SYMBOLS.items():
-        for tf_name, tf_params in UT_TIMEFRAMES.items():
-            try:
-                data = yf.download(
-                    tickers=symbol,
-                    period=tf_params['period'],
-                    interval=tf_params['interval'],
-                    progress=False,
-                    auto_adjust=True
+        try:
+            # Fetch 15m Data
+            data_15m = yf.download(symbol, period="5d", interval="15m", progress=False, auto_adjust=True)
+            if data_15m.empty or len(data_15m) < ATR_PERIOD + 2:
+                continue
+            if isinstance(data_15m.columns, pd.MultiIndex):
+                data_15m.columns = data_15m.columns.get_level_values(0)
+            df_15m = calculate_ut_bot(data_15m)
+
+            # Fetch 5m Data
+            data_5m = yf.download(symbol, period="1d", interval="5m", progress=False, auto_adjust=True)
+            if data_5m.empty or len(data_5m) < ATR_PERIOD + 2:
+                continue
+            if isinstance(data_5m.columns, pd.MultiIndex):
+                data_5m.columns = data_5m.columns.get_level_values(0)
+            df_5m = calculate_ut_bot(data_5m)
+
+            # Analyze Signals
+            is_15m_buy = bool(df_15m['Buy'].iloc[-2])
+            is_15m_sell = bool(df_15m['Sell'].iloc[-2])
+            
+            is_5m_bullish = bool(df_5m['BullishState'].iloc[-2])
+            is_5m_bearish = not is_5m_bullish
+
+            last_close = round(float(data_15m['Close'].iloc[-2]), 2)
+            key = f"{asset}_15m_5m_confirmed"
+
+            prev_buy = ut_bot_state.get(f"{key}_buy", False)
+            prev_sell = ut_bot_state.get(f"{key}_sell", False)
+
+            # Filter: 15m Signal MUST be confirmed by 5m Trend State
+            confirmed_buy = is_15m_buy and is_5m_bullish
+            confirmed_sell = is_15m_sell and is_5m_bearish
+
+            ut_bot_state[f"{key}_buy"] = confirmed_buy
+            ut_bot_state[f"{key}_sell"] = confirmed_sell
+
+            if confirmed_buy and not prev_buy:
+                msg = (
+                    f"<b>🟢 UT BOT | CONFIRMED BUY SIGNAL</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Asset:</b> <code>{asset}</code>\n"
+                    f"⏱️ <b>Timeframe:</b> <code>15m (Confirmed on 5m)</code>\n"
+                    f"💵 <b>Current Price:</b> <code>${last_close}</code>\n"
+                    f"🕒 <b>Time:</b> <code>{now}</code>\n\n"
+                    f"⚡ <b>Filter:</b> <i>15m Buy Signal aligned with 5m Bullish Trend</i>"
                 )
-                if data.empty or len(data) < ATR_PERIOD + 2:
-                    continue
+                alerts.append(msg)
+            elif confirmed_sell and not prev_sell:
+                msg = (
+                    f"<b>🔴 UT BOT | CONFIRMED SELL SIGNAL</b>\n"
+                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                    f"📌 <b>Asset:</b> <code>{asset}</code>\n"
+                    f"⏱️ <b>Timeframe:</b> <code>15m (Confirmed on 5m)</code>\n"
+                    f"💵 <b>Current Price:</b> <code>${last_close}</code>\n"
+                    f"🕒 <b>Time:</b> <code>{now}</code>\n\n"
+                    f"⚡ <b>Filter:</b> <i>15m Sell Signal aligned with 5m Bearish Trend</i>"
+                )
+                alerts.append(msg)
 
-                if isinstance(data.columns, pd.MultiIndex):
-                    data.columns = data.columns.get_level_values(0)
+        except Exception as e:
+            print(f"UT Bot MTF error ({asset}): {e}")
 
-                df = calculate_ut_bot(data)
-                is_buy = bool(df['Buy'].iloc[-2])
-                is_sell = bool(df['Sell'].iloc[-2])
-                last_close = round(float(data['Close'].iloc[-2]), 2)
-
-                key = f"{asset}_{tf_name}"
-                prev_buy = ut_bot_state.get(f"{key}_buy", False)
-                prev_sell = ut_bot_state.get(f"{key}_sell", False)
-
-                ut_bot_state[f"{key}_buy"] = is_buy
-                ut_bot_state[f"{key}_sell"] = is_sell
-
-                if is_buy and not prev_buy:
-                    msg = (
-                        f"<b>🟢 UT BOT | BUY SIGNAL</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"📌 <b>Asset:</b> <code>{asset}</code>\n"
-                        f"⏱️ <b>Timeframe:</b> <code>{tf_name}</code>\n"
-                        f"💵 <b>Current Price:</b> <code>${last_close}</code>\n"
-                        f"🕒 <b>Time:</b> <code>{now}</code>"
-                    )
-                    alerts.append(msg)
-                elif is_sell and not prev_sell:
-                    msg = (
-                        f"<b>🔴 UT BOT | SELL SIGNAL</b>\n"
-                        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"📌 <b>Asset:</b> <code>{asset}</code>\n"
-                        f"⏱️ <b>Timeframe:</b> <code>{tf_name}</code>\n"
-                        f"💵 <b>Current Price:</b> <code>${last_close}</code>\n"
-                        f"🕒 <b>Time:</b> <code>{now}</code>"
-                    )
-                    alerts.append(msg)
-            except Exception as e:
-                print(f"UT Bot error ({asset} - {tf_name}): {e}")
     return alerts
 
-# ========== BEAUTIFIED TELEGRAM COMMANDS ==========
+# ========== TELEGRAM COMMAND HANDLERS ==========
 def get_help_guide():
     now = datetime.now(timezone.utc).strftime("%H:%M:%S UTC")
     return (
@@ -285,7 +300,7 @@ def get_help_guide():
         f"⏰ <b>Server Time:</b> <code>{now}</code>\n\n"
         "📈 <b>Active Algorithms:</b>\n"
         " ├ <b>Strategy 1:</b> <i>Sweep + Engulfing (4H/1H)</i>\n"
-        " └ <b>Strategy 2:</b> <i>UT Bot ATR Trailing Stop (15m/1H)</i>\n\n"
+        " └ <b>Strategy 2:</b> <i>UT Bot ATR (15m + 5m Confirmed)</i>\n\n"
         "🛠️ <b>Interactive Commands:</b>\n\n"
         "💬 Send <code>hi</code> / <code>hello</code>\n"
         "└ <i>Verifies connection & brings up this menu</i>\n\n"
@@ -305,7 +320,7 @@ def handle_status(message):
     bot.reply_to(message, "⏳ <i>Running diagnostics across Strategy 1 & Strategy 2...</i>", parse_mode="HTML")
     results = []
     
-    # Diagnostics for Strat 1
+    # Strat 1 Diagnostics
     for item in STRAT1_SYMBOLS:
         _, err = get_s1_ohlcv(item["ticker"], item["tf"])
         if err:
@@ -313,12 +328,12 @@ def handle_status(message):
         else:
             results.append(f"✅ <b>Strat 1 - {item['name']}:</b> <code>OPERATIONAL</code>")
 
-    # Diagnostics for Strat 2
+    # Strat 2 Diagnostics
     for asset, symbol in UT_SYMBOLS.items():
         try:
-            d = yf.download(symbol, period="1d", interval="15m", progress=False)
+            d = yf.download(symbol, period="1d", interval="5m", progress=False)
             if not d.empty:
-                results.append(f"✅ <b>Strat 2 - {asset}:</b> <code>OPERATIONAL</code>")
+                results.append(f"✅ <b>Strat 2 - {asset} (15m/5m):</b> <code>OPERATIONAL</code>")
             else:
                 results.append(f"❌ <b>Strat 2 - {asset}:</b> <code>EMPTY DATA</code>")
         except Exception as e:
@@ -349,13 +364,13 @@ def handle_check(message):
     if found == 0:
         bot.send_message(message.chat.id, "📊 <b>SCAN COMPLETE:</b> No active signals detected on any strategy right now.")
 
-# ========== BACKGROUND WORKER THREADS ==========
+# ========== BACKGROUND WORKERS ==========
 def run_telegram_bot():
     print("Bot listening for Telegram commands...")
     bot.infinity_polling(skip_pending=True)
 
 def run_background_scanner():
-    """Periodically scans both strategies in the background."""
+    """Scans all markets automatically in background threads."""
     while True:
         try:
             # Check Strategy 1
@@ -364,7 +379,7 @@ def run_background_scanner():
                 if sig and msg and "Error" not in msg:
                     send_telegram_alert(msg)
 
-            # Check Strategy 2 (UT Bot)
+            # Check Strategy 2
             ut_alerts = check_ut_bot_signals()
             for alert in ut_alerts:
                 send_telegram_alert(alert)
