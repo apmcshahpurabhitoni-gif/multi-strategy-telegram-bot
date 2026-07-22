@@ -3,8 +3,9 @@ Unified 2-Way Interactive Trading Bot (Render Web Service Edition)
 ===================================================================
 Features:
 - Strategy 1: Sweep + Engulfing (4H/1H)
-- Strategy 2: UT Bot ATR Trailing Stop (15m Signal + 5m Confirmation Filter)
+- Strategy 2: UT Bot ATR Trailing Stop (15m Signal + 5m Confirmed Filter)
 - Telegram 2-Way Commands: 'hi', '/check', '/status'
+- Robust Direct Messaging (Fixes 'has no access to message' error)
 - Rich HTML Telegram Message Formatting
 """
 
@@ -313,11 +314,11 @@ def get_help_guide():
 @bot.message_handler(commands=['hi', 'start', 'help'])
 @bot.message_handler(func=lambda message: message.text and message.text.lower().strip() in ['hi', 'hello', 'hey', 'hi!', 'hello!'])
 def handle_greeting(message):
-    bot.reply_to(message, get_help_guide(), parse_mode="HTML")
+    bot.send_message(message.chat.id, get_help_guide(), parse_mode="HTML")
 
 @bot.message_handler(commands=['status'])
 def handle_status(message):
-    bot.reply_to(message, "⏳ <i>Running diagnostics across Strategy 1 & Strategy 2...</i>", parse_mode="HTML")
+    bot.send_message(message.chat.id, "⏳ <i>Running diagnostics across Strategy 1 & Strategy 2...</i>", parse_mode="HTML")
     results = []
     
     # Strat 1 Diagnostics
@@ -345,7 +346,7 @@ def handle_status(message):
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
-    bot.reply_to(message, "🔍 <i>Scanning Strategy 1 and Strategy 2 markets...</i>", parse_mode="HTML")
+    bot.send_message(message.chat.id, "🔍 <i>Scanning Strategy 1 and Strategy 2 markets...</i>", parse_mode="HTML")
     found = 0
 
     # Scan Strategy 1
