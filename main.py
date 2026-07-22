@@ -5,7 +5,7 @@ Features:
 - Strategy 1: Sweep + Engulfing (4H/1H)
 - Strategy 2: UT Bot ATR Trailing Stop (15m Signal + 5m Confirmed Filter)
 - Telegram 2-Way Commands: 'hi', '/check', '/status'
-- Robust Direct Messaging (Fixes 'has no access to message' error)
+- Robust Direct Messaging & Safe HTML Fallbacks (Fixes parsing/access errors)
 - Rich HTML Telegram Message Formatting
 """
 
@@ -63,7 +63,11 @@ def send_telegram_alert(message):
     try:
         url = f"https://api.telegram.org/bot{TELEGRAM_BOT_TOKEN}/sendMessage"
         data = {"chat_id": TELEGRAM_CHAT_ID, "text": message, "parse_mode": "HTML"}
-        requests.post(url, data=data, timeout=10)
+        res = requests.post(url, data=data, timeout=10)
+        # Fallback without HTML parse mode if payload contains unescaped special characters
+        if not res.ok:
+            data.pop("parse_mode", None)
+            requests.post(url, data=data, timeout=10)
     except Exception as e:
         print(f"Error sending Telegram alert: {e}")
 
@@ -311,14 +315,23 @@ def get_help_guide():
         "└ <i>Runs live diagnostic test on all market feeds</i>"
     )
 
+def safe_send_message(chat_id, text):
+    """Sends a message with HTML formatting, falling back to plain text if parsing fails."""
+    try:
+        bot.send_message(chat_id, text, parse_mode="HTML")
+    except Exception:
+        # Fallback strip basic tags if Telegram HTML fails
+        clean_text = text.replace("<b>", "").replace("</b>", "").replace("<i>", "").replace("</i>", "").replace("<code>", "").replace("</code>", "")
+        bot.send_message(chat_id, clean_text)
+
 @bot.message_handler(commands=['hi', 'start', 'help'])
 @bot.message_handler(func=lambda message: message.text and message.text.lower().strip() in ['hi', 'hello', 'hey', 'hi!', 'hello!'])
 def handle_greeting(message):
-    bot.send_message(message.chat.id, get_help_guide(), parse_mode="HTML")
+    safe_send_message(message.chat.id, get_help_guide())
 
 @bot.message_handler(commands=['status'])
 def handle_status(message):
-    bot.send_message(message.chat.id, "⏳ <i>Running diagnostics across Strategy 1 & Strategy 2...</i>", parse_mode="HTML")
+    safe_send_message(message.chat.id, "⏳ <i>Running diagnostics across Strategy 1 & Strategy 2...</i>")
     results = []
     
     # Strat 1 Diagnostics
@@ -342,28 +355,28 @@ def handle_status(message):
 
     now = datetime.now(timezone.utc).strftime("%d %b %Y • %H:%M UTC")
     report = f"⚙️ <b>SYSTEM DIAGNOSTICS REPORT</b>\n<i>Generated: {now}</i>\n\n" + "\n".join(results)
-    bot.send_message(message.chat.id, report, parse_mode="HTML")
+    safe_send_message(message.chat.id, report)
 
 @bot.message_handler(commands=['check'])
 def handle_check(message):
-    bot.send_message(message.chat.id, "🔍 <i>Scanning Strategy 1 and Strategy 2 markets...</i>", parse_mode="HTML")
+    safe_send_message(message.chat.id, "🔍 <i>Scanning Strategy 1 and Strategy 2 markets...</i>")
     found = 0
 
     # Scan Strategy 1
     for item in STRAT1_SYMBOLS:
         _, msg = check_strat1_symbol(item["name"], item["ticker"], item["tf"])
         if msg and "Error" not in msg:
-            bot.send_message(message.chat.id, msg, parse_mode="HTML")
+            safe_send_message(message.chat.id, msg)
             found += 1
 
     # Scan Strategy 2
     ut_alerts = check_ut_bot_signals()
     for alert in ut_alerts:
-        bot.send_message(message.chat.id, alert, parse_mode="HTML")
+        safe_send_message(message.chat.id, alert)
         found += 1
 
     if found == 0:
-        bot.send_message(message.chat.id, "📊 <b>SCAN COMPLETE:</b> No active signals detected on any strategy right now.")
+        safe_send_message(message.chat.id, "📊 <b>SCAN COMPLETE:</b> No active signals detected on any strategy right now.")
 
 # ========== BACKGROUND WORKERS ==========
 def run_telegram_bot():
