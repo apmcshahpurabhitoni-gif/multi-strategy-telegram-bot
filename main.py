@@ -931,4 +931,4 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    bot.infinity_polling(non_stop=True, timeout=10, long_polling_timeout=5)
+    bot.infinity_polling(timeout=10, long_polling_timeout=5)
