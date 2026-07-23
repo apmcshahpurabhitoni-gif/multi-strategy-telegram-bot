@@ -14,18 +14,15 @@ import pytz
 from telebot.apihelper import ApiTelegramException
 import logging
 
-# CRITICAL: Set matplotlib backend BEFORE importing pyplot
 import matplotlib
 matplotlib.use('Agg')
 import matplotlib.pyplot as plt
 from io import BytesIO
 
-# --- ENVIRONMENT VARIABLES ---
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 if not TOKEN: raise ValueError("TELEGRAM_BOT_TOKEN not set!")
 
-# Suppress 409 Telegram spam logs
 telebot_logger = logging.getLogger("TeleBot")
 telebot_logger.setLevel(logging.CRITICAL)
 
@@ -35,13 +32,11 @@ app = Flask(__name__)
 IST = pytz.timezone('Asia/Kolkata')
 json_lock = threading.Lock()
 
-# --- FILE PATHS ---
 ACCOUNTS_FILE = "accounts.json"
 ACTIVE_TRADES_FILE = "active_trades.json"
 HISTORY_FILE = "trade_history.json"
 MUTE_FILE = "muted_assets.json"
 
-# --- PERSISTENCE HELPERS ---
 def load_json(filepath, default):
     with json_lock:
         try:
@@ -56,19 +51,15 @@ def save_json(filepath, data):
             with open(filepath, 'w') as f: json.dump(data, f, indent=4)
         except Exception as e: print(f"Error saving {filepath}: {e}")
 
-# --- PUSHBULLET NOTIFICATION BRIDGE ---
 def send_phone_notification(text):
     try:
         token = os.environ.get("PUSHBULLET_TOKEN")
         if token:
-            # Strip all Telegram formatting for clean phone push
             clean_text = text.replace("*", "").replace("`", "").replace("━", "-").replace("▫️", "-").replace("🪙", "").replace("🟡", "").replace("💱", "").replace("📈", "").replace("⚡", "").replace("🟢", "").replace("🔴", "").replace("🔄", "").replace("💡", "").replace("🔘", "").replace("⏱️", "").replace("🎯", "").replace("🔥", "").replace("⚪", "").replace("💤", "").replace("⚙️", "").replace("💰", "").replace("💸", "").replace("🚨", "").replace("💼", "").replace("├", "|").replace("└", "|")
             payload = {"type": "note", "title": "Trading Bot Alert", "body": clean_text}
-            requests.post("https://api.pushbullet.com/v2/pushes", 
-                          json=payload, headers={"Access-Token": token}, timeout=5)
+            requests.post("https://api.pushbullet.com/v2/pushes", json=payload, headers={"Access-Token": token}, timeout=5)
     except Exception as e: print(f"Push error: {e}")
 
-# --- INITIALIZE STATE ---
 default_accounts = {
     "macro": {"balance": 100000.0, "daily_trades": 0},
     "nifty": {"balance": 100000.0, "daily_trades": 0},
@@ -80,9 +71,8 @@ active_trades = load_json(ACTIVE_TRADES_FILE, [])
 trade_history = load_json(HISTORY_FILE, [])
 muted_assets = set(load_json(MUTE_FILE, []))
 
-# --- AUTO-MIGRATION ---
 if "ny_session" not in accounts:
-    print("Old data format detected. Auto-resetting...")
+    print("Auto-resetting old data format...")
     for f in [ACCOUNTS_FILE, ACTIVE_TRADES_FILE, HISTORY_FILE, MUTE_FILE]:
         if os.path.exists(f):
             try: os.remove(f)
@@ -100,48 +90,38 @@ def get_account_type(symbol):
     if "NSEI" in symbol or "BANK" in symbol: return "nifty"
     return "macro"
 
-# --- NY SESSION DETECTOR ---
 def is_ny_session():
     now = datetime.now(IST)
     return now.hour >= 18 or now.hour <= 1 or (now.hour == 1 and now.minute <= 30)
 
-# --- FLASK WEBSERVER ---
 @app.route("/")
 def home(): return "Trading Bot Running OK", 200
 
 @app.route("/ping")
 def ping(): return "pong", 200
 
-# --- CHART GENERATOR ---
 def generate_chart(symbol):
     try:
         df = yf.download(symbol, period="5d", interval="1h", progress=False)
         if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
         if df.empty: return None
-
         fig, ax = plt.subplots(figsize=(12, 6), facecolor='#0d1117')
         ax.set_facecolor('#0d1117')
         colors = ['#00ff88' if c >= o else '#ff4444' for o, c in zip(df['Open'], df['Close'])]
-        
         for i in range(len(df)):
             ax.plot([df.index[i], df.index[i]], [df['Low'].iloc[i], df['High'].iloc[i]], color=colors[i], linewidth=1)
             ax.plot([df.index[i], df.index[i]], [df['Open'].iloc[i], df['Close'].iloc[i]], color=colors[i], linewidth=4)
-        
         ax.set_title(f'{symbol} | 1H Chart', color='white', fontsize=14, fontweight='bold')
         ax.tick_params(colors='gray', labelsize=8)
         for spine in ax.spines.values(): spine.set_color('#30363d')
         ax.grid(True, color='#21262d', linestyle='--', linewidth=0.5)
-        
         buf = BytesIO()
         plt.savefig(buf, format='png', dpi=100, bbox_inches='tight', facecolor='#0d1117')
         buf.seek(0)
-        plt.close(fig) # Prevent memory leaks
+        plt.close(fig)
         return buf
-    except Exception as e:
-        print(f"Chart error: {e}")
-        return None
+    except Exception as e: print(f"Chart error: {e}")
 
-# --- TECHNICAL ANALYSIS CORE ---
 def calculate_atr(df, period=1):
     high_low = df['High'] - df['Low']
     high_cp = np.abs(df['High'] - df['Close'].shift(1))
@@ -166,7 +146,6 @@ def calculate_position_size(account_type, symbol, entry, sl):
         return float((risk_amount / risk_per_lot) * lot_size) 
     return float(risk_amount / sl_distance)
 
-# --- STRATEGY 1: SWEEP ---
 def check_sweep_engulfing_strategy(ticker):
     try:
         df_1h = yf.download(ticker, period="1mo", interval="1h", progress=False)
@@ -174,12 +153,10 @@ def check_sweep_engulfing_strategy(ticker):
         if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
         df_4h = df_1h.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'}).dropna()
         if len(df_4h) < 5: return None
-
         df_4h['ATR'] = calculate_atr(df_4h, 10) 
         c1, c2, c3 = df_4h.iloc[-2], df_4h.iloc[-3], df_4h.iloc[-4]
         atr_val = float(df_4h['ATR'].iloc[-2])
         is_inside = (c2['High'] <= c3['High']) and (c2['Low'] >= c3['Low'])
-        
         if not is_inside:
             if (c1['Low'] < c2['Low']) and (c1['Close'] > c2['High']): return ("Bullish Sweep + Engulfing (4H)", float(c1['Close']), atr_val)
             if (c1['High'] > c2['High']) and (c1['Close'] < c2['Low']): return ("Bearish Sweep + Engulfing (4H)", float(c1['Close']), atr_val)
@@ -189,7 +166,6 @@ def check_sweep_engulfing_strategy(ticker):
         return None
     except Exception as e: print(f"Sweep Error {ticker}: {e}")
 
-# --- STRATEGY 2: UT BOT ---
 def check_ut_bot_strategy(ticker, key_value=2, atr_period=1):
     try:
         df_15m = yf.download(ticker, period="5d", interval="15m", progress=False)
@@ -197,12 +173,10 @@ def check_ut_bot_strategy(ticker, key_value=2, atr_period=1):
         if df_15m.empty or len(df_15m) < 30 or df_5m.empty or len(df_5m) < 50: return None
         if isinstance(df_15m.columns, pd.MultiIndex): df_15m.columns = df_15m.columns.get_level_values(0)
         if isinstance(df_5m.columns, pd.MultiIndex): df_5m.columns = df_5m.columns.get_level_values(0)
-
         df_15m['xATR'] = calculate_atr(df_15m, atr_period)
         df_15m['nLoss'] = key_value * df_15m['xATR']
         src, nLoss = df_15m['Close'].values, df_15m['nLoss'].values
         ts, pos = np.zeros(len(df_15m)), np.zeros(len(df_15m))
-        
         for i in range(1, len(df_15m)):
             prev_ts, prev_src = ts[i-1], src[i-1]
             if src[i] > prev_ts and prev_src > prev_ts: ts[i] = max(prev_ts, src[i] - nLoss[i])
@@ -212,44 +186,35 @@ def check_ut_bot_strategy(ticker, key_value=2, atr_period=1):
             if prev_src < prev_ts and src[i] > ts[i]: pos[i] = 1
             elif prev_src > prev_ts and src[i] < ts[i]: pos[i] = -1
             else: pos[i] = pos[i-1]
-                
         i = len(df_15m) - 2
         is_buy = (src[i] > ts[i]) and (src[i-1] <= ts[i-1])
         is_sell = (src[i] < ts[i]) and (src[i-1] >= ts[i-1])
-        
         df_5m['EMA_50'] = df_5m['Close'].ewm(span=50, adjust=False).mean()
         m5_close, m5_ema = df_5m['Close'].iloc[-2], df_5m['EMA_50'].iloc[-2]
-
         if is_buy and m5_close > m5_ema: return ("Bullish UT Bot (15m + 5m)", float(src[i]), float(df_15m['xATR'].iloc[i]))
         if is_sell and m5_close < m5_ema: return ("Bearish UT Bot (15m + 5m)", float(src[i]), float(df_15m['xATR'].iloc[i]))
     except Exception as e: print(f"UT Error {ticker}: {e}")
 
-# --- TRADE EXECUTION ENGINE ---
 def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price, atr):
     global accounts, active_trades
     sl, tp = calculate_sl_tp(sig_type, price, atr)
     qty = calculate_position_size(account_type, symbol, price, sl)
-    
     if qty <= 0: return False
     if accounts[account_type]["daily_trades"] >= 3: return False
     if any(t['symbol'] == symbol and t['account'] == account_type for t in active_trades): return False
-
     trade = {
         "id": f"{symbol}_{int(time.time())}", "symbol": symbol, "market": market_type, "account": account_type,
         "strat": strat_name, "type": "LONG" if "BULLISH" in sig_type.upper() else "SHORT",
         "entry": float(price), "sl": float(sl), "tp": float(tp), "qty": float(qty),
         "time": datetime.now(IST).strftime('%Y-%m-%d %H:%M IST')
     }
-    
     active_trades.append(trade)
     accounts[account_type]["daily_trades"] += 1
     save_json(ACTIVE_TRADES_FILE, active_trades)
     save_json(ACCOUNTS_FILE, accounts)
-    
     risk_amt = abs(price - sl) * qty
     direction = "STRONG BULLISH" if "BULLISH" in sig_type.upper() else "STRONG BEARISH"
     tf = "4H" if "Sweep" in strat_name else "15m"
-    
     msg = (
         f"🚨 *HIGH-CONFLUENCE SIGNAL ALERT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -268,19 +233,16 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💡 Tap below to generate a live candlestick snapshot or silence this ticker."
     )
-    
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(f"📈 View Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     send_phone_notification(msg) 
     return True
 
-# --- MONITORING & P&L ENGINE ---
 def monitor_active_trades():
     global active_trades, accounts, trade_history
     while True:
         if not active_trades: time.sleep(15); continue
-            
         trades_to_close = []
         for trade in active_trades:
             try:
@@ -288,21 +250,17 @@ def monitor_active_trades():
                 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                 if df.empty: continue
                 live_price = float(df['Close'].iloc[-1])
-                
                 is_long = trade['type'] == "LONG"
                 hit_tp = (is_long and live_price >= trade['tp']) or (not is_long and live_price <= trade['tp'])
                 hit_sl = (is_long and live_price <= trade['sl']) or (not is_long and live_price >= trade['sl'])
-                
                 if hit_tp or hit_sl:
                     if hit_tp: pnl = abs(trade['tp'] - trade['entry']) * trade['qty']
                     else: pnl = - (abs(trade['entry'] - trade['sl']) * trade['qty'])
-                    
                     accounts[trade['account']]["balance"] += float(pnl)
                     trade['exit_price'] = live_price
                     trade['pnl'] = float(pnl)
                     trade['result'] = "WIN" if hit_tp else "LOSS"
                     trade['close_time'] = datetime.now(IST).strftime('%Y-%m-%d %H:%M')
-                    
                     trade_history.append(trade)
                     trades_to_close.append(trade)
                     
@@ -311,6 +269,7 @@ def monitor_active_trades():
                     arrow = "📈" if hit_tp else "📉"
                     money_emoji = "💰" if hit_tp else "💸"
                     pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
+                    current_balance = accounts[trade['account']]["balance"]
                     
                     msg = (
                         f"{emoji} *TRADE CLOSED — {status}*\n"
@@ -319,14 +278,13 @@ def monitor_active_trades():
                         f"💼 *Account:* `{trade['account'].upper()}`\n"
                         f"{arrow} *Exit Price:* `${live_price:,.2f}`\n"
                         f"{money_emoji} *P/L:* `{pnl_str}`\n"
-                         f"🏦 *New Balance:* `₹{current_balance:,.2f}`\n"
+                        f"🏦 *New Balance:* `₹{current_balance:,.2f}`\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                     send_phone_notification(msg) 
-                time.sleep(0.5) # Prevent rate limit
+                time.sleep(0.5)
             except Exception as e: print(f"Monitor error {trade['symbol']}: {e}")
-        
         if trades_to_close:
             for t in trades_to_close: active_trades.remove(t)
             save_json(ACTIVE_TRADES_FILE, active_trades)
@@ -334,7 +292,6 @@ def monitor_active_trades():
             save_json(HISTORY_FILE, trade_history)
         time.sleep(15)
 
-# --- DAILY RESET ---
 def daily_reset_loop():
     global accounts
     while True:
@@ -343,26 +300,23 @@ def daily_reset_loop():
         if accounts["last_reset_date"] != today_str:
             yesterday_str = accounts["last_reset_date"]
             daily_pnl = sum(float(t['pnl']) for t in trade_history if t.get('close_time') and yesterday_str in t['close_time'])
-            
             msg = (
                 f"🌙 *MIDNIGHT RESET*\n"
                 f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 *Yesterday's Total P/L:* `₹{daily_pnl:,.2f}`\n"
+                f"📊 *Yesterday P/L:* `₹{daily_pnl:,.2f}`\n"
                 f"🏦 *Updated Balances:*\n"
                 f"├ Macro: `₹{accounts['macro']['balance']:,.2f}`\n"
                 f"├ Nifty: `₹{accounts['nifty']['balance']:,.2f}`\n"
                 f"└ NY Bot: `₹{accounts['ny_session']['balance']:,.2f}`\n"
-                f"🔄 Daily trade limits (3 per account) have been reset."
+                f"🔄 Daily trade limits (3 per account) reset."
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
             send_phone_notification(msg) 
-            
             for acc in ['macro', 'nifty', 'ny_session']: accounts[acc]['daily_trades'] = 0
             accounts['last_reset_date'] = today_str
             save_json(ACCOUNTS_FILE, accounts)
         time.sleep(60)
 
-# --- SCANNER LOOP ---
 def background_strategy_loop():
     print("Scanner initialized...")
     while True:
@@ -371,11 +325,9 @@ def background_strategy_loop():
                 ny_active = is_ny_session()
                 for symbol, market_type in MONITORED_ASSETS:
                     if symbol in muted_assets: time.sleep(0.5); continue
-                    
                     ut = check_ut_bot_strategy(symbol)
                     sweep = check_sweep_engulfing_strategy(symbol)
                     acc_type = get_account_type(symbol)
-                    
                     if acc_type == "macro":
                         if ut:
                             target_acc = "ny_session" if ny_active else "macro"
@@ -388,10 +340,6 @@ def background_strategy_loop():
                     time.sleep(0.5)
         except Exception as e: print(f"Scanner error: {e}")
         time.sleep(60)
-
-# =========================================================================
-# TELEGRAM COMMAND HANDLERS
-# =========================================================================
 
 def get_main_menu_markup():
     markup = InlineKeyboardMarkup()
@@ -428,16 +376,13 @@ def handle_check_command(message):
     bot.send_message(message.chat.id, "🔍 *Scanning markets...*", parse_mode="Markdown")
     signals_found = []
     all_assets_text = []
-    
     for symbol, mtype in MONITORED_ASSETS:
         ut = check_ut_bot_strategy(symbol)
         sweep = check_sweep_engulfing_strategy(symbol)
-        
         if ut: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {ut[0]} (`${ut[1]:,.2f}`)"))
         if sweep: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {sweep[0]} (`${sweep[1]:,.2f}`)"))
         if not ut and not sweep: all_assets_text.append(f"⚪ `{symbol}` ({mtype}) ➔ Neutral / No Setup")
         time.sleep(0.5)
-
     markup = InlineKeyboardMarkup()
     if signals_found:
         body = "\n".join([sig[1] for sig in signals_found]) + "\n" + "\n".join(all_assets_text)
@@ -461,7 +406,6 @@ def handle_check_command(message):
             f"💤 Markets are currently consolidating in neutral zones. No Sweep + Engulfing or UT Bot conditions were triggered."
         )
         markup.add(InlineKeyboardButton("📊 Asset Summary", callback_data="cmd_summary"), InlineKeyboardButton("🔄 Scan Again", callback_data="cmd_check"))
-
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=markup)
 
 @bot.message_handler(commands=['summary'])
@@ -475,7 +419,6 @@ def handle_summary_command(message):
         except:
             summary_lines.append(f"📈 `{symbol}` ({mtype}) ➔ {status}")
         time.sleep(0.5)
-        
     text = (
         f"📊 *LIVE MARKET SUMMARY & MONITORING*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n" +
@@ -498,11 +441,9 @@ def handle_stats_command(message):
         p = sum(float(x['pnl']) for x in t)
         wr = (w/(w+l)*100) if (w+l) > 0 else 0
         return w, l, p, wr
-
     mw, ml, mp, mwr = calc("macro")
     nw, nl, np_, nwr = calc("nifty")
     nyw, nyl, nyp, nywr = calc("ny_session")
-    
     text = (
         f"📊 *STRATEGY PERFORMANCE REPORT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -558,7 +499,6 @@ def handle_all_other_messages(message):
 def handle_callbacks(call):
     if call.data == "cmd_check": handle_check_command(call.message)
     elif call.data == "cmd_summary": handle_summary_command(call.message)
-    
     elif call.data.startswith("chart_"):
         symbol = call.data.split("_")[1]
         bot.answer_callback_query(call.id, text="Generating dark-mode chart...")
@@ -567,7 +507,6 @@ def handle_callbacks(call):
             bot.send_photo(call.message.chat.id, chart_buf, caption=f"📈 `{symbol}` | 1H Dark-Mode Candlestick Snapshot", parse_mode="Markdown")
         else:
             bot.send_message(call.message.chat.id, "❌ Failed to generate chart. Try again later.", parse_mode="Markdown")
-            
     elif call.data.startswith("mute_"):
         symbol = call.data.split("_")[1]
         muted_assets.add(symbol)
@@ -580,7 +519,6 @@ def handle_callbacks(call):
             f"Notifications and paper-trading for `{symbol}` have been paused. You will no longer receive signal alerts or execute virtual trades for this ticker during automated scans."
         )
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-        
     elif call.data.startswith("unmute_"):
         symbol = call.data.split("_")[1]
         muted_assets.discard(symbol)
@@ -593,24 +531,25 @@ def handle_callbacks(call):
             f"Notifications and paper-trading for `{symbol}` have been resumed."
         )
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
-        
     bot.answer_callback_query(call.id)
 
-# --- START THREADS AND FLASK SERVER ---
 if __name__ == "__main__":
     threading.Thread(target=background_strategy_loop, daemon=True).start()
     threading.Thread(target=monitor_active_trades, daemon=True).start()
     threading.Thread(target=daily_reset_loop, daemon=True).start()
     
     def run_bot():
-        print("Bot thread started. Waiting 15 seconds to prevent 409 conflicts...")
+        print("Bot thread started. Waiting 15 seconds...")
         time.sleep(15)
-        
-        # Infinite loop ensures the bot never permanently dies if connection drops
         while True:
             try:
-                print("Attempting to connect to Telegram...")
+                print("Connecting to Telegram...")
                 bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
             except Exception as e:
-                print(f"Telegram connection lost or error: {e}. Reconnecting in 15 seconds...")
+                print(f"TG Error: {e}. Retrying in 15s...")
                 time.sleep(15)
+    
+    threading.Thread(target=run_bot, daemon=True).start()
+
+    port = int(os.environ.get("PORT", 5000))
+    app.run(host="0.0.0.0", port=port, use_reloader=False)
