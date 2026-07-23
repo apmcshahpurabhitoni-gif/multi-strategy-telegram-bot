@@ -603,12 +603,14 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
     
     def run_bot():
-        print("Waiting 15 seconds to prevent 409 conflicts...")
+        print("Bot thread started. Waiting 15 seconds to prevent 409 conflicts...")
         time.sleep(15)
-        print("Connecting to Telegram...")
-        bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
         
-    threading.Thread(target=run_bot, daemon=True).start()
-
-    port = int(os.environ.get("PORT", 5000))
-    app.run(host="0.0.0.0", port=port, use_reloader=False)
+        # Infinite loop ensures the bot never permanently dies if connection drops
+        while True:
+            try:
+                print("Attempting to connect to Telegram...")
+                bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
+            except Exception as e:
+                print(f"Telegram connection lost or error: {e}. Reconnecting in 15 seconds...")
+                time.sleep(15)
