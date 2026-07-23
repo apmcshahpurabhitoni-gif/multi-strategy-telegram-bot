@@ -2,7 +2,7 @@ import os
 import json
 import threading
 import time
-import requests  # ADDED FOR PUSHBULLET
+import requests
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -38,38 +38,48 @@ def load_json(filepath, default):
         try:
             if os.path.exists(filepath):
                 with open(filepath, 'r') as f: return json.load(f)
-        except: pass
-        return default
+        except Exception as e: print(f"Error loading {filepath}: {e}")
+    return default
 
 def save_json(filepath, data):
     with json_lock:
-        with open(filepath, 'w') as f: json.dump(data, f, indent=4)
+        try:
+            with open(filepath, 'w') as f: json.dump(data, f, indent=4)
+        except Exception as e: print(f"Error saving {filepath}: {e}")
 
 # --- PUSHBULLET NOTIFICATION BRIDGE ---
 def send_phone_notification(text):
     try:
         token = os.environ.get("PUSHBULLET_TOKEN")
         if token:
-            # Strip Telegram formatting so it looks clean on phone lock screen
             clean_text = text.replace("*", "").replace("`", "").replace("➔", "->")
             payload = {"type": "note", "title": "💼 Trading Bot Alert", "body": clean_text}
             requests.post("https://api.pushbullet.com/v2/pushes", 
-                          json=payload, 
-                          headers={"Access-Token": token},
-                          timeout=5)
-    except Exception as e:
-        print(f"Push error: {e}")
+                          json=payload, headers={"Access-Token": token}, timeout=5)
+    except Exception as e: print(f"Push error: {e}")
 
 # --- INITIALIZE STATE ---
 default_accounts = {
-    "macro": {"balance": 100000, "daily_trades": 0},
-    "nifty": {"balance": 100000, "daily_trades": 0},
-    "ny_session": {"balance": 100000, "daily_trades": 0},
+    "macro": {"balance": 100000.0, "daily_trades": 0},
+    "nifty": {"balance": 100000.0, "daily_trades": 0},
+    "ny_session": {"balance": 100000.0, "daily_trades": 0},
     "last_reset_date": datetime.now(IST).strftime('%Y-%m-%d')
 }
 accounts = load_json(ACCOUNTS_FILE, default_accounts)
 active_trades = load_json(ACTIVE_TRADES_FILE, [])
 trade_history = load_json(HISTORY_FILE, [])
+
+# --- AUTO-MIGRATION: SELF-RESET IF OLD FILES DETECTED ---
+if "ny_session" not in accounts:
+    print("Old data format detected. Auto-resetting to 3 fresh accounts...")
+    for f in [ACCOUNTS_FILE, ACTIVE_TRADES_FILE, HISTORY_FILE]:
+        if os.path.exists(f):
+            try: os.remove(f)
+            except: pass
+    accounts = default_accounts.copy()
+    active_trades = []
+    trade_history = []
+# ---------------------------------------------------
 
 MONITORED_ASSETS = [
     ("BTC-USD", "Crypto", "macro"),
@@ -116,22 +126,21 @@ def calculate_sl_tp(signal_type, price, atr):
     else:
         sl = price + (atr * 1.5)
         tp = price - (atr * 3.0)
-    return sl, tp
+    return float(sl), float(tp)
 
 def calculate_position_size(account_type, symbol, entry, sl):
-    global accounts
     risk_amount = accounts[account_type]["balance"] * 0.02 
     sl_distance = abs(entry - sl)
-    if sl_distance == 0: return 0
+    if sl_distance == 0: return 0.0
     
     if account_type == "nifty":
         lot_size = 25 if "NSEI" in symbol else 15
         risk_per_lot = sl_distance * lot_size
-        if risk_per_lot == 0: return 0
+        if risk_per_lot == 0: return 0.0
         fractional_lots = risk_amount / risk_per_lot
-        return fractional_lots * lot_size 
+        return float(fractional_lots * lot_size) 
     else:
-        return risk_amount / sl_distance
+        return float(risk_amount / sl_distance)
 
 # --- STRATEGY 1: SWEEP + ENGULFING ---
 def check_sweep_engulfing_strategy(ticker):
@@ -145,15 +154,15 @@ def check_sweep_engulfing_strategy(ticker):
 
         df_4h['ATR'] = calculate_atr(df_4h, 10) 
         c1, c2, c3 = df_4h.iloc[-2], df_4h.iloc[-3], df_4h.iloc[-4]
-        atr_val = df_4h['ATR'].iloc[-2]
+        atr_val = float(df_4h['ATR'].iloc[-2])
         is_inside_bar = (c2['High'] <= c3['High']) and (c2['Low'] >= c3['Low'])
         
         if not is_inside_bar:
-            if (c1['Low'] < c2['Low']) and (c1['Close'] > c2['High']): return ("BULLISH 4H Normal Sweep", c1['Close'], atr_val)
-            if (c1['High'] > c2['High']) and (c1['Close'] < c2['Low']): return ("BEARISH 4H Normal Sweep", c1['Close'], atr_val)
+            if (c1['Low'] < c2['Low']) and (c1['Close'] > c2['High']): return ("BULLISH 4H Normal Sweep", float(c1['Close']), atr_val)
+            if (c1['High'] > c2['High']) and (c1['Close'] < c2['Low']): return ("BEARISH 4H Normal Sweep", float(c1['Close']), atr_val)
         else:
-            if (c1['Low'] < c3['Low']) and (c1['Close'] > c3['High']): return ("BULLISH 4H Mother-Child", c1['Close'], atr_val)
-            if (c1['High'] > c3['High']) and (c1['Close'] < c3['Low']): return ("BEARISH 4H Mother-Child", c1['Close'], atr_val)
+            if (c1['Low'] < c3['Low']) and (c1['Close'] > c3['High']): return ("BULLISH 4H Mother-Child", float(c1['Close']), atr_val)
+            if (c1['High'] > c3['High']) and (c1['Close'] < c3['Low']): return ("BEARISH 4H Mother-Child", float(c1['Close']), atr_val)
         return None
     except Exception as e: print(f"Sweep Error {ticker}: {e}")
 
@@ -189,8 +198,8 @@ def check_ut_bot_strategy(ticker, key_value=2, atr_period=1):
         df_5m['EMA_50'] = df_5m['Close'].ewm(span=50, adjust=False).mean()
         m5_close, m5_ema = df_5m['Close'].iloc[-2], df_5m['EMA_50'].iloc[-2]
 
-        if is_buy and m5_close > m5_ema: return ("BULLISH UT Bot", src[i], df_15m['xATR'].iloc[i])
-        if is_sell and m5_close < m5_ema: return ("BEARISH UT Bot", src[i], df_15m['xATR'].iloc[i])
+        if is_buy and m5_close > m5_ema: return ("BULLISH UT Bot", float(src[i]), float(df_15m['xATR'].iloc[i]))
+        if is_sell and m5_close < m5_ema: return ("BEARISH UT Bot", float(src[i]), float(df_15m['xATR'].iloc[i]))
     except Exception as e: print(f"UT Error {ticker}: {e}")
 
 # --- TRADE EXECUTION ENGINE ---
@@ -207,7 +216,7 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
         "id": f"{symbol}_{int(time.time())}",
         "symbol": symbol, "market": market_type, "account": account_type,
         "strat": strat_name, "type": "LONG" if "BULLISH" in sig_type else "SHORT",
-        "entry": price, "sl": sl, "tp": tp, "qty": qty,
+        "entry": float(price), "sl": float(sl), "tp": float(tp), "qty": float(qty),
         "time": datetime.now(IST).strftime('%Y-%m-%d %H:%M')
     }
     
@@ -222,14 +231,13 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
     msg = (
         f"{acc_emoji} *TRADE OPENED*\n"
         f"{'🟢' if trade['type']=='LONG' else '🔴'} *{trade['type']} {symbol}*\n"
-        f"Account: *{account_type.upper()}*\n"
-        f"⚡ {strat_name}\n"
+        f"Acc: *{account_type.upper()}*\n"
         f"Entry: `{price:,.2f}`\n"
         f"SL: `{sl:,.2f}` | TP: `{tp:,.2f}`\n"
         f"Risk: `₹{risk_amt:,.0f}`"
     )
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-    send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
+    send_phone_notification(msg) 
     return True
 
 # --- MONITORING & P&L ENGINE (15s Loop) ---
@@ -244,7 +252,7 @@ def monitor_active_trades():
                 df = yf.download(trade['symbol'], period="1d", interval="1m", progress=False)
                 if isinstance(df.columns, pd.MultiIndex): df.columns = df.columns.get_level_values(0)
                 if df.empty: continue
-                live_price = df['Close'].iloc[-1]
+                live_price = float(df['Close'].iloc[-1])
                 
                 is_long = trade['type'] == "LONG"
                 hit_tp = (is_long and live_price >= trade['tp']) or (not is_long and live_price <= trade['tp'])
@@ -254,9 +262,9 @@ def monitor_active_trades():
                     if hit_tp: pnl = abs(trade['tp'] - trade['entry']) * trade['qty']
                     else: pnl = - (abs(trade['entry'] - trade['sl']) * trade['qty'])
                     
-                    accounts[trade['account']]["balance"] += pnl
+                    accounts[trade['account']]["balance"] += float(pnl)
                     trade['exit_price'] = live_price
-                    trade['pnl'] = pnl
+                    trade['pnl'] = float(pnl)
                     trade['result'] = "WIN" if hit_tp else "LOSS"
                     trade['close_time'] = datetime.now(IST).strftime('%Y-%m-%d %H:%M')
                     
@@ -266,13 +274,13 @@ def monitor_active_trades():
                     emoji = "✅" if hit_tp else "❌"
                     msg = (
                         f"{emoji} *TRADE CLOSED*\n"
-                        f"{'🟢' if is_long else '🔴'} {trade['symbol']} ({trade['strat']})\n"
+                        f"{'🟢' if is_long else '🔴'} {trade['symbol']}\n"
                         f"Acc: *{trade['account'].upper()}*\n"
                         f"Result: *{trade['result']}*\n"
                         f"P&L: `₹{pnl:,.2f}`"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-                    send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
+                    send_phone_notification(msg) 
             except Exception as e: print(f"Monitor error {trade['symbol']}: {e}")
         
         if trades_to_close:
@@ -289,23 +297,25 @@ def daily_reset_loop():
         now_ist = datetime.now(IST)
         today_str = now_ist.strftime('%Y-%m-%d')
         
-        if now_ist.hour == 0 and now_ist.minute == 0 and accounts["last_reset_date"] != today_str:
-            daily_pnl = sum(t['pnl'] for t in trade_history if t['close_time'] and t['close_time'].startswith(today_str))
+        if accounts["last_reset_date"] != today_str:
+            yesterday_str = accounts["last_reset_date"]
+            daily_pnl = sum(float(t['pnl']) for t in trade_history if t.get('close_time') and yesterday_str in t['close_time'])
             
             msg = (
                 f"🌙 *MIDNIGHT RESET*\n"
-                f"📊 *Daily P&L:* `₹{daily_pnl:,.2f}`\n"
+                f"📊 *Yesterday P&L:* `₹{daily_pnl:,.2f}`\n"
                 f"🌐 Macro: `₹{accounts['macro']['balance']:,.2f}`\n"
                 f"🇮🇳 Nifty: `₹{accounts['nifty']['balance']:,.2f}`\n"
                 f"🇺🇸 NY Bot: `₹{accounts['ny_session']['balance']:,.2f}`"
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-            send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
+            send_phone_notification(msg) 
             
             for acc in ['macro', 'nifty', 'ny_session']:
                 accounts[acc]['daily_trades'] = 0
             accounts['last_reset_date'] = today_str
             save_json(ACCOUNTS_FILE, accounts)
+            
         time.sleep(60)
 
 # --- SCANNER LOOP (60s Loop) ---
@@ -340,7 +350,7 @@ def background_strategy_loop():
 # --- TELEGRAM COMMANDS ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "💼 *Virtual Fund Manager Active*\n\n🇺🇸 NY Session Isolated.\n📱 Pushbullet Active.", parse_mode="Markdown", reply_markup=get_main_menu_markup())
+    bot.reply_to(message, "💼 *Virtual Fund Manager Active*\n\n📱 Pushbullet Linked.", parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.message_handler(commands=['stats'])
 def handle_stats_command(message):
@@ -351,7 +361,7 @@ def handle_stats_command(message):
         trades = [t for t in trade_history if t['account'] == acc_name]
         wins = sum(1 for t in trades if t['result'] == "WIN")
         losses = sum(1 for t in trades if t['result'] == "LOSS")
-        pnl = sum(t['pnl'] for t in trades)
+        pnl = sum(float(t['pnl']) for t in trades)
         wr = (wins/(wins+losses)*100) if (wins+losses) > 0 else 0
         return wins, losses, pnl, wr
 
@@ -360,21 +370,21 @@ def handle_stats_command(message):
     ny_w, ny_l, ny_p, ny_wr = calc_stats("ny_session")
     
     text = (
-        f"📊 *Strategy Performance*\n\n"
-        f"🌐 *Macro (24/7)*\n{m_w}W/{m_l}L ({m_wr:.0f}%) ➔ `₹{m_p:,.0f}`\n\n"
-        f"🇮🇳 *Nifty (24/7)*\n{n_w}W/{n_l}L ({n_wr:.0f}%) ➔ `₹{n_p:,.0f}`\n\n"
-        f"🇺🇸 *NY Session (UT Only)*\n{ny_w}W/{ny_l}L ({ny_wr:.0f}%) ➔ `₹{ny_p:,.0f}`"
+        f"📊 *Performance*\n\n"
+        f"🌐 Macro: {m_w}W/{m_l}L ({m_wr:.0f}%) ➔ `₹{m_p:,.0f}`\n"
+        f"🇮🇳 Nifty: {n_w}W/{n_l}L ({n_wr:.0f}%) ➔ `₹{n_p:,.0f}`\n"
+        f"🇺🇸 NY Bot: {ny_w}W/{ny_l}L ({ny_wr:.0f}%) ➔ `₹{ny_p:,.0f}`"
     )
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.message_handler(commands=['balance'])
 def handle_balance_command(message):
     text = (
-        f"🏦 *Virtual Accounts*\n\n"
-        f"🌐 *Macro (Crypto/Forex)*\n`₹{accounts['macro']['balance']:,.2f}` | Trades: `{accounts['macro']['daily_trades']}/3`\n\n"
-        f"🇮🇳 *Indices (Nifty)*\n`₹{accounts['nifty']['balance']:,.2f}` | Trades: `{accounts['nifty']['daily_trades']}/3`\n\n"
-        f"🇺🇸 *NY Session (UT Bot)*\n`₹{accounts['ny_session']['balance']:,.2f}` | Trades: `{accounts['ny_session']['daily_trades']}/3`\n\n"
-        f"⏰ _NY Session: 6:00 PM to 1:30 AM IST_"
+        f"🏦 *Accounts*\n\n"
+        f"🌐 Macro: `₹{accounts['macro']['balance']:,.2f}` ({accounts['macro']['daily_trades']}/3)\n"
+        f"🇮🇳 Nifty: `₹{accounts['nifty']['balance']:,.2f}` ({accounts['nifty']['daily_trades']}/3)\n"
+        f"🇺🇸 NY Bot: `₹{accounts['ny_session']['balance']:,.2f}` ({accounts['ny_session']['daily_trades']}/3)\n\n"
+        f"⏰ _NY: 6PM to 1:30AM IST_"
     )
     bot.reply_to(message, text, parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
@@ -383,16 +393,16 @@ def handle_clear_command(message):
     global trade_history, accounts, active_trades
     trade_history, active_trades = [], []
     for acc in ['macro', 'nifty', 'ny_session']:
-        accounts[acc]['balance'] = 100000
+        accounts[acc]['balance'] = 100000.0
         accounts[acc]['daily_trades'] = 0
     save_json(HISTORY_FILE, trade_history)
     save_json(ACTIVE_TRADES_FILE, active_trades)
     save_json(ACCOUNTS_FILE, accounts)
-    bot.reply_to(message, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
+    bot.reply_to(message, "🗑 *Accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
 @bot.message_handler(func=lambda msg: True)
 def handle_all_other_messages(message):
-    bot.reply_to(message, "Use the menu buttons to navigate.", reply_markup=get_main_menu_markup())
+    bot.reply_to(message, "Use the menu buttons.", reply_markup=get_main_menu_markup())
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
