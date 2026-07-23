@@ -548,7 +548,7 @@ if __name__ == "__main__":
                 # 10 second timeout prevents infinite hanging on Render
                 bot.delete_webhook(timeout=10)
                 print("Webhook cleared. Starting polling...")
-                bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
+                bot.infinity_polling(non_stop=True, timeout=10, long_polling_timeout=5)
             except Exception as e:
                 print(f"!!! CONNECTION BLOCKED !!!")
                 print(f"Error: {e}")
