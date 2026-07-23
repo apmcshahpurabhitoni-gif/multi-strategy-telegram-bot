@@ -484,7 +484,7 @@ def handle_clear_command(message):
     save_json(ACCOUNTS_FILE, accounts)
     bot.reply_to(message, "🗑 *All virtual accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
-@bot.message_handler(func=lambda msg: True)
+@bot.message_handler(func=lambda msg: "🚨" not in msg.text and "✅" not in msg.text and "❌" not in msg.text)
 def handle_all_other_messages(message):
     bot.reply_to(message, get_guide_text(), parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
