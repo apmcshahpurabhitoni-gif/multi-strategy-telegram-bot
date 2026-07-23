@@ -486,7 +486,12 @@ def handle_clear_command(message):
 
 @bot.message_handler(func=lambda msg: "🚨" not in msg.text and "✅" not in msg.text and "❌" not in msg.text)
 def handle_all_other_messages(message):
-    bot.reply_to(message, get_guide_text(), parse_mode="Markdown", reply_markup=get_main_menu_markup())
+    try:
+        bot.reply_to(message, get_guide_text(), parse_mode="Markdown", reply_markup=get_main_menu_markup())
+    except:
+        # If Python 3.14 fails to parse the markdown, send it as plain text
+        plain_text = get_guide_text().replace("*", "").replace("━━━━━━━━━━━━━━━━━━━━━━", "======================")
+        bot.reply_to(message, plain_text, reply_markup=get_main_menu_markup())
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
