@@ -2,8 +2,6 @@ import os
 import json
 import threading
 import time
-import threading
-import multiprocessing
 import requests
 import numpy as np
 import pandas as pd
@@ -15,6 +13,7 @@ from datetime import datetime
 import pytz
 from telebot.apihelper import ApiTelegramException
 import logging
+import multiprocessing
 
 import matplotlib
 matplotlib.use('Agg')
@@ -265,14 +264,12 @@ def monitor_active_trades():
                     trade['close_time'] = datetime.now(IST).strftime('%Y-%m-%d %H:%M')
                     trade_history.append(trade)
                     trades_to_close.append(trade)
-                    
                     emoji = "✅" if hit_tp else "❌"
                     status = "WIN" if hit_tp else "LOSS"
                     arrow = "📈" if hit_tp else "📉"
                     money_emoji = "💰" if hit_tp else "💸"
                     pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
                     current_balance = accounts[trade['account']]["balance"]
-                    
                     msg = (
                         f"{emoji} *TRADE CLOSED — {status}*\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -535,9 +532,7 @@ def handle_callbacks(call):
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
-
-
-    def run_bot():
+def run_bot():
     print("Bot process started. Waiting 15 seconds...")
     time.sleep(15)
     print("Connecting to Telegram...")
@@ -547,9 +542,6 @@ if __name__ == "__main__":
     threading.Thread(target=background_strategy_loop, daemon=True).start()
     threading.Thread(target=monitor_active_trades, daemon=True).start()
     threading.Thread(target=daily_reset_loop, daemon=True).start()
-    
-    # Use a Process instead of a Thread for Telegram (Fixes Python 3.14 silent thread death)
     bot_process = multiprocessing.Process(target=run_bot, daemon=True)
     bot_process.start()
-
     app.run(host="0.0.0.0", port=10000, use_reloader=False)
