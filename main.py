@@ -931,4 +931,9 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    bot.infinity_polling(timeout=10, long_polling_timeout=5)
+    import sys
+    while True:
+        try:
+            bot.polling(timeout=60, long_polling_timeout=10)
+        except Exception:
+            time.sleep(5)
