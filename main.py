@@ -545,18 +545,13 @@ if __name__ == "__main__":
         def safe_bot_poll():
             print("Connecting to Telegram...")
             try:
-                # Force delete any lingering webhooks that might intercept messages
-                bot.delete_webhook()
-                time.sleep(2)
+                # 10 second timeout prevents infinite hanging on Render
+                bot.delete_webhook(timeout=10)
                 print("Webhook cleared. Starting polling...")
                 bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
             except Exception as e:
-                print(f"!!! TELEGRAM CRASHED !!!")
-                print(f"Error type: {type(e).__name__}")
-                print(f"Error details: {e}")
-                import traceback
-                traceback.print_exc()
-                print("Waiting 30 seconds before retrying...")
+                print(f"!!! CONNECTION BLOCKED !!!")
+                print(f"Error: {e}")
                 time.sleep(30)
                 safe_bot_poll()
 
