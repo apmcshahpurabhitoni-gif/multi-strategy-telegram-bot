@@ -319,6 +319,7 @@ def monitor_active_trades():
                         f"💼 *Account:* `{trade['account'].upper()}`\n"
                         f"{arrow} *Exit Price:* `${live_price:,.2f}`\n"
                         f"{money_emoji} *P/L:* `{pnl_str}`\n"
+                         f"🏦 *New Balance:* `₹{current_balance:,.2f}`\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
