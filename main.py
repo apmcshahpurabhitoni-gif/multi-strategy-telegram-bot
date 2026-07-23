@@ -533,10 +533,25 @@ def handle_callbacks(call):
 
 if __name__ == "__main__":
     import threading
-    print("Starting background workers...")
-    threading.Thread(target=background_strategy_loop, daemon=True).start()
-    threading.Thread(target=monitor_active_trades, daemon=True).start()
-    threading.Thread(target=daily_reset_loop, daemon=True).start()
-    
-    print("Starting Web Server and Telegram Bot...")
-    app.run(host="0.0.0.0", port=10000, threaded=True)
+    # FORCE VALIDATE CHAT_ID BEFORE THREADS SEE IT
+    if not CHAT_ID:
+        print("FATAL ERROR: CHAT_ID is missing!")
+    else:
+        print("Starting background workers...")
+        threading.Thread(target=background_strategy_loop, daemon=True).start()
+        threading.Thread(target=monitor_active_trades, daemon=True).start()
+        threading.Thread(target=daily_reset_loop, daemon=True).start()
+
+        def safe_bot_poll():
+            print("Connecting to Telegram...")
+            try:
+                bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
+            except Exception as e:
+                print(f"Bot crashed: {e}")
+                time.sleep(15)
+                safe_bot_poll() # Restart if it drops
+
+        threading.Thread(target=safe_bot_poll, daemon=True).start()
+
+    # Start Flask in the main thread
+    app.run(host="0.0.0.0", port=10000)
