@@ -2,6 +2,7 @@ import os
 import json
 import threading
 import time
+import requests  # ADDED FOR PUSHBULLET
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -44,11 +45,26 @@ def save_json(filepath, data):
     with json_lock:
         with open(filepath, 'w') as f: json.dump(data, f, indent=4)
 
+# --- PUSHBULLET NOTIFICATION BRIDGE ---
+def send_phone_notification(text):
+    try:
+        token = os.environ.get("PUSHBULLET_TOKEN")
+        if token:
+            # Strip Telegram formatting so it looks clean on phone lock screen
+            clean_text = text.replace("*", "").replace("`", "").replace("➔", "->")
+            payload = {"type": "note", "title": "💼 Trading Bot Alert", "body": clean_text}
+            requests.post("https://api.pushbullet.com/v2/pushes", 
+                          json=payload, 
+                          headers={"Access-Token": token},
+                          timeout=5)
+    except Exception as e:
+        print(f"Push error: {e}")
+
 # --- INITIALIZE STATE ---
 default_accounts = {
-    "macro": {"balance": 100000, "daily_trades": 0},       # 24/7 Account
-    "nifty": {"balance": 100000, "daily_trades": 0},       # Indian Indices
-    "ny_session": {"balance": 100000, "daily_trades": 0},  # NEW: NY Session UT Bot Only
+    "macro": {"balance": 100000, "daily_trades": 0},
+    "nifty": {"balance": 100000, "daily_trades": 0},
+    "ny_session": {"balance": 100000, "daily_trades": 0},
     "last_reset_date": datetime.now(IST).strftime('%Y-%m-%d')
 }
 accounts = load_json(ACCOUNTS_FILE, default_accounts)
@@ -67,14 +83,11 @@ MONITORED_ASSETS = [
 
 # --- NY SESSION DETECTOR ---
 def is_ny_session():
-    """Returns True if current IST time is within NY Session (8:30 AM - 4:00 PM EST)"""
     now = datetime.now(IST)
     hour = now.hour
     minute = now.minute
-    # 8:30 AM EST = 6:00 PM IST (18:00)
-    # 4:00 PM EST = 1:30 AM IST (next day)
-    is_evening = hour >= 18  # After 6:00 PM IST
-    is_early_morning = (hour <= 1) or (hour == 1 and minute <= 30) # Before 1:30 AM IST
+    is_evening = hour >= 18 
+    is_early_morning = (hour <= 1) or (hour == 1 and minute <= 30)
     return is_evening or is_early_morning
 
 # --- FLASK WEBSERVER ---
@@ -107,7 +120,7 @@ def calculate_sl_tp(signal_type, price, atr):
 
 def calculate_position_size(account_type, symbol, entry, sl):
     global accounts
-    risk_amount = accounts[account_type]["balance"] * 0.02 # 2% Risk
+    risk_amount = accounts[account_type]["balance"] * 0.02 
     sl_distance = abs(entry - sl)
     if sl_distance == 0: return 0
     
@@ -216,6 +229,7 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
         f"Risk: `₹{risk_amt:,.0f}`"
     )
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+    send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
     return True
 
 # --- MONITORING & P&L ENGINE (15s Loop) ---
@@ -258,6 +272,7 @@ def monitor_active_trades():
                         f"P&L: `₹{pnl:,.2f}`"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+                    send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
             except Exception as e: print(f"Monitor error {trade['symbol']}: {e}")
         
         if trades_to_close:
@@ -285,6 +300,7 @@ def daily_reset_loop():
                 f"🇺🇸 NY Bot: `₹{accounts['ny_session']['balance']:,.2f}`"
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+            send_phone_notification(msg)  # <--- PUSHBULLET NOTIFICATION
             
             for acc in ['macro', 'nifty', 'ny_session']:
                 accounts[acc]['daily_trades'] = 0
@@ -298,27 +314,22 @@ def background_strategy_loop():
     while True:
         try:
             if CHAT_ID:
-                ny_active = is_ny_session() # Check once per loop for efficiency
+                ny_active = is_ny_session()
                 
                 for symbol, market_type, account_type in MONITORED_ASSETS:
                     ut = check_ut_bot_strategy(symbol, key_value=2, atr_period=1)
                     sweep = check_sweep_engulfing_strategy(symbol)
                     
-                    # --- SMART ROUTING LOGIC ---
                     if account_type == "macro":
                         if ut:
                             if ny_active:
-                                # IF IT'S NY SESSION: Route UT Bot to NY Account ONLY
                                 execute_trade(symbol, market_type, "ny_session", "NY UT Bot", ut[0], ut[1], ut[2])
                             else:
-                                # IF NORMAL HOURS: Route to standard Macro Account
                                 execute_trade(symbol, market_type, "macro", "UT Bot", ut[0], ut[1], ut[2])
                         if sweep:
-                            # Sweeps ALWAYS go to Macro account (not part of NY test)
                             execute_trade(symbol, market_type, "macro", "Sweep", sweep[0], sweep[1], sweep[2])
                             
                     elif account_type == "nifty":
-                        # NIFTY trades normally in Nifty account
                         if ut: execute_trade(symbol, market_type, "nifty", "UT Bot", ut[0], ut[1], ut[2])
                         if sweep: execute_trade(symbol, market_type, "nifty", "Sweep", sweep[0], sweep[1], sweep[2])
                         
@@ -329,7 +340,7 @@ def background_strategy_loop():
 # --- TELEGRAM COMMANDS ---
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "💼 *Virtual Fund Manager Active*\n\n🇺🇸 NY Session UT Bot Isolated.\nUse buttons to track.", parse_mode="Markdown", reply_markup=get_main_menu_markup())
+    bot.reply_to(message, "💼 *Virtual Fund Manager Active*\n\n🇺🇸 NY Session Isolated.\n📱 Pushbullet Active.", parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.message_handler(commands=['stats'])
 def handle_stats_command(message):
