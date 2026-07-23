@@ -11,6 +11,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime, timedelta
 import pytz
+from telebot.apihelper import ApiTelegramException
 
 # CRITICAL: Set matplotlib backend BEFORE importing pyplot
 import matplotlib
@@ -53,7 +54,7 @@ def send_phone_notification(text):
         token = os.environ.get("PUSHBULLET_TOKEN")
         if token:
             clean_text = text.replace("*", "").replace("`", "").replace("➔", "->")
-            payload = {"type": "note", "title": "💼 Trading Bot Alert", "body": clean_text}
+            payload = {"type": "note", "title": "Trading Bot Alert", "body": clean_text}
             requests.post("https://api.pushbullet.com/v2/pushes", 
                           json=payload, headers={"Access-Token": token}, timeout=5)
     except Exception as e: print(f"Push error: {e}")
@@ -79,7 +80,6 @@ if "ny_session" not in accounts:
     accounts = default_accounts.copy()
     active_trades = []
     trade_history = []
-# ---------------------------------------------------
 
 MONITORED_ASSETS = [
     ("BTC-USD", "Crypto", "macro"),
@@ -134,7 +134,12 @@ def calculate_position_size(account_type, symbol, entry, sl):
     if sl_distance == 0: return 0.0
     
     if account_type == "nifty":
-        lot_size = 25 if "NSEI" in symbol else 15
+        # CRITICAL FIX: Check BANK first to assign correct lot size (15). Nifty gets 25.
+        if "BANK" in symbol:
+            lot_size = 15
+        else:
+            lot_size = 25
+            
         risk_per_lot = sl_distance * lot_size
         if risk_per_lot == 0: return 0.0
         fractional_lots = risk_amount / risk_per_lot
@@ -277,7 +282,7 @@ def monitor_active_trades():
                         f"{'🟢' if is_long else '🔴'} {trade['symbol']}\n"
                         f"Acc: *{trade['account'].upper()}*\n"
                         f"Result: *{trade['result']}*\n"
-                        f"P&L: `₹{pnl:,.2f}`"
+                        f"P/L: `₹{pnl:,.2f}`"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                     send_phone_notification(msg) 
@@ -303,7 +308,7 @@ def daily_reset_loop():
             
             msg = (
                 f"🌙 *MIDNIGHT RESET*\n"
-                f"📊 *Yesterday P&L:* `₹{daily_pnl:,.2f}`\n"
+                f"📊 *Yesterday P/L:* `₹{daily_pnl:,.2f}`\n"
                 f"🌐 Macro: `₹{accounts['macro']['balance']:,.2f}`\n"
                 f"🇮🇳 Nifty: `₹{accounts['nifty']['balance']:,.2f}`\n"
                 f"🇺🇸 NY Bot: `₹{accounts['ny_session']['balance']:,.2f}`"
@@ -347,15 +352,31 @@ def background_strategy_loop():
         except Exception as e: print(f"Scanner error: {e}")
         time.sleep(60)
 
-# --- TELEGRAM COMMANDS ---
+# =========================================================================
+# TELEGRAM COMMAND HANDLERS (ORDER MATTERS HERE - COMMANDS BEFORE CATCH-ALL)
+# =========================================================================
+
 @bot.message_handler(commands=['start'])
 def send_welcome(message):
-    bot.reply_to(message, "💼 *Virtual Fund Manager Active*\n\n📱 Pushbullet Linked.", parse_mode="Markdown", reply_markup=get_main_menu_markup())
+    guide = (
+        "🤖 *Virtual Fund Manager*\n\n"
+        "📘 *Commands:*\n"
+        "▸ /start : View this guide\n"
+        "▸ /stats : P/L performance\n"
+        "▸ /balance : Virtual balances\n"
+        "▸ /clear : Reset to 1L\n\n"
+        "⏰ *Sessions:*\n"
+        "▸ 🌐 24/7 Macro and Nifty\n"
+        "▸ 🇺🇸 NY Session: 6PM to 1:30AM IST\n\n"
+        "📱 Pushbullet active."
+    )
+    bot.reply_to(message, guide, parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.message_handler(commands=['stats'])
 def handle_stats_command(message):
     if not trade_history:
-        bot.reply_to(message, "📊 *No trades closed yet.*", parse_mode="Markdown"); return
+        bot.reply_to(message, "📊 *No trades closed yet.*", parse_mode="Markdown")
+        return
         
     def calc_stats(acc_name):
         trades = [t for t in trade_history if t['account'] == acc_name]
@@ -400,9 +421,22 @@ def handle_clear_command(message):
     save_json(ACCOUNTS_FILE, accounts)
     bot.reply_to(message, "🗑 *Accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
+# THIS MUST BE THE ABSOLUTE LAST MESSAGE HANDLER
 @bot.message_handler(func=lambda msg: True)
 def handle_all_other_messages(message):
-    bot.reply_to(message, "Use the menu buttons.", reply_markup=get_main_menu_markup())
+    guide = (
+        "🤖 *Virtual Fund Manager*\n\n"
+        "📘 *Commands:*\n"
+        "▸ /start : View this guide\n"
+        "▸ /stats : P/L performance\n"
+        "▸ /balance : Virtual balances\n"
+        "▸ /clear : Reset to 1L\n\n"
+        "⏰ *Sessions:*\n"
+        "▸ 🌐 24/7 Macro and Nifty\n"
+        "▸ 🇺🇸 NY Session: 6PM to 1:30AM IST\n\n"
+        "📱 Pushbullet active."
+    )
+    bot.reply_to(message, guide, parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
@@ -418,18 +452,16 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
     
     print("Starting Telegram polling in 15 seconds to prevent 409 conflicts...")
-    time.sleep(15) # CRITICAL: Wait for old Render instances to die
+    time.sleep(15)
     
-    # Custom polling loop to catch and ignore 409 errors gracefully
-    from telebot.apihelper import ApiTelegramException
-    
+    # 409 Conflict Catch
     while True:
         try:
             bot.infinity_polling(timeout=20, long_polling_timeout=10)
         except ApiTelegramException as e:
             if "409" in str(e):
-                print("409 Conflict detected. Another instance is running. Waiting 15 seconds...")
-                time.sleep(15) # Wait for the other instance to die, then retry
+                print("409 Conflict detected. Waiting 15 seconds...")
+                time.sleep(15)
             else:
                 print(f"Unhandled Telegram API error: {e}")
                 time.sleep(10)
