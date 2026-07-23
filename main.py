@@ -1,6 +1,5 @@
 import os
 import json
-import threading
 import time
 import requests
 import numpy as np
@@ -11,9 +10,7 @@ import telebot
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 import pytz
-from telebot.apihelper import ApiTelegramException
 import logging
-import multiprocessing
 
 import matplotlib
 matplotlib.use('Agg')
@@ -31,7 +28,6 @@ bot = telebot.TeleBot(TOKEN)
 app = Flask(__name__)
 
 IST = pytz.timezone('Asia/Kolkata')
-json_lock = threading.Lock()
 
 ACCOUNTS_FILE = "accounts.json"
 ACTIVE_TRADES_FILE = "active_trades.json"
@@ -39,18 +35,16 @@ HISTORY_FILE = "trade_history.json"
 MUTE_FILE = "muted_assets.json"
 
 def load_json(filepath, default):
-    with json_lock:
-        try:
-            if os.path.exists(filepath):
-                with open(filepath, 'r') as f: return json.load(f)
-        except Exception as e: print(f"Error loading {filepath}: {e}")
+    try:
+        if os.path.exists(filepath):
+            with open(filepath, 'r') as f: return json.load(f)
+    except: pass
     return default
 
 def save_json(filepath, data):
-    with json_lock:
-        try:
-            with open(filepath, 'w') as f: json.dump(data, f, indent=4)
-        except Exception as e: print(f"Error saving {filepath}: {e}")
+    try:
+        with open(filepath, 'w') as f: json.dump(data, f, indent=4)
+    except Exception as e: print(f"Error saving {filepath}: {e}")
 
 def send_phone_notification(text):
     try:
@@ -59,7 +53,7 @@ def send_phone_notification(text):
             clean_text = text.replace("*", "").replace("`", "").replace("━", "-").replace("▫️", "-").replace("🪙", "").replace("🟡", "").replace("💱", "").replace("📈", "").replace("⚡", "").replace("🟢", "").replace("🔴", "").replace("🔄", "").replace("💡", "").replace("🔘", "").replace("⏱️", "").replace("🎯", "").replace("🔥", "").replace("⚪", "").replace("💤", "").replace("⚙️", "").replace("💰", "").replace("💸", "").replace("🚨", "").replace("💼", "").replace("├", "|").replace("└", "|")
             payload = {"type": "note", "title": "Trading Bot Alert", "body": clean_text}
             requests.post("https://api.pushbullet.com/v2/pushes", json=payload, headers={"Access-Token": token}, timeout=5)
-    except Exception as e: print(f"Push error: {e}")
+    except: pass
 
 default_accounts = {
     "macro": {"balance": 100000.0, "daily_trades": 0},
@@ -532,16 +526,12 @@ def handle_callbacks(call):
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
-def run_bot():
-    print("Bot process started. Waiting 15 seconds...")
-    time.sleep(15)
-    print("Connecting to Telegram...")
-    bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
-
 if __name__ == "__main__":
+    import threading
+    print("Starting background workers...")
     threading.Thread(target=background_strategy_loop, daemon=True).start()
     threading.Thread(target=monitor_active_trades, daemon=True).start()
     threading.Thread(target=daily_reset_loop, daemon=True).start()
-    bot_process = multiprocessing.Process(target=run_bot, daemon=True)
-    bot_process.start()
-    app.run(host="0.0.0.0", port=10000, use_reloader=False)
+    
+    print("Starting Web Server and Telegram Bot...")
+    app.run(host="0.0.0.0", port=10000, threaded=True)
