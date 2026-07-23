@@ -15,7 +15,6 @@ import pytz
 import telebot
 import matplotlib
 import matplotlib.pyplot as plt
-from flask import Flask
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 
 matplotlib.use("Agg")
@@ -26,10 +25,10 @@ plt.style.use("dark_background")
 # ============================================================
 TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID")
-RR_RATIO       = float(os.environ.get("RR", "2.0"))   # Risk:Reward ratio
-ATR_MULT_SL    = 1.5   # SL  = entry ± ATR × ATR_MULT_SL
-ATR_MULT_TP    = 3.0   # TP  = entry ± ATR × ATR_MULT_TP  (≈ RR×SL for ATR_MULT_SL=1.5)
-MIN_VOLATILITY = 0.3   # Skip signal if ATR < 0.3% of price
+RR_RATIO       = float(os.environ.get("RR", "2.0"))
+ATR_MULT_SL    = 1.5
+ATR_MULT_TP    = 3.0
+MIN_VOLATILITY = 0.3
 
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
@@ -42,19 +41,24 @@ MUTE_FILE          = "muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
 PEAKS_FILE         = "peaks.json"
 
-# Globals (all accesses protected by _lock)
+# Globals
 accounts      = {}
-active_trades    = []
-trade_history    = []
-muted_assets     = set()
-sent_signals     = {}   # debounce: (symbol, candle_ts) -> True
-peaks            = {}   # peak balance per account
+active_trades = []
+trade_history = []
+muted_assets  = set()
+sent_signals  = {}
+peaks         = {}
 
-_lock = threading.Lock()
+_lock       = threading.Lock()
 _chart_lock = threading.Lock()
-_price_cache = {}      # symbol -> (price, timestamp)
+_price_cache = {}
 
 IST = pytz.timezone("Asia/Kolkata")
+
+# ============================================================
+#  BOT — instantiated BEFORE handlers
+# ============================================================
+bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 
 # ============================================================
 #  HELPERS — FILES
@@ -96,7 +100,6 @@ def init_accounts():
     for acc in defaults:
         if acc not in peaks:
             peaks[acc] = accounts[acc]["balance"]
-        # Reset daily trades at midnight
         today = datetime.now(IST).strftime("%Y-%m-%d")
         if accounts.get("last_reset_date") != today:
             accounts[acc]["daily_trades"] = 0
@@ -107,21 +110,18 @@ def init_accounts():
 #  HELPERS — TIME
 # ============================================================
 def is_ny_session():
-    """NY session: 6 PM to 1:30 AM IST."""
     now = datetime.now(IST)
     h, m = now.hour, now.minute
     return h >= 18 or (h == 1 and m <= 30) or h == 0
 
 def is_nifty_market_open():
-    """Indian market: Mon-Fri, 09:15 to 15:30 IST."""
     now = datetime.now(IST)
     if now.weekday() >= 5:
         return False
     total_min = now.hour * 60 + now.minute
-    return 555 <= total_min <= 930   # 09:15 = 555, 15:30 = 930
+    return 555 <= total_min <= 930
 
 def is_forex_session():
-    """Forex NY session: 6:30 PM to 3:30 AM IST (highest volume)."""
     now = datetime.now(IST)
     h, m = now.hour, now.minute
     total = h * 60 + m
@@ -154,7 +154,6 @@ def pushbullet_notify(text):
         token = os.environ.get("PUSHBULLET_TOKEN")
         if not token:
             return
-        # Strip only Markdown syntax characters that PushBullet can't handle
         clean = (
             text.replace("*", "").replace("`", "").replace("_", "")
                 .replace("[", "(").replace("]", ")")
@@ -179,13 +178,12 @@ def calculate_atr(df, period=10):
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
 def is_volatile_enough(df, min_pct=MIN_VOLATILITY):
-    """Return True if ATR as % of price is above threshold."""
     try:
         atr   = float(calculate_atr(df, 10).iloc[-1])
         price = float(df["Close"].iloc[-1])
         return (atr / price * 100) >= min_pct
     except Exception:
-        return True   # allow on error
+        return True
 
 def get_rsi(df, period=14):
     delta = df["Close"].diff()
@@ -203,14 +201,6 @@ def normalise_cols(df):
 #  STRATEGY 1 — SWEEP + ENGULFING + INSIDE BAR (4H)
 # ============================================================
 def check_sweep_engulfing(ticker):
-    """
-    Logic:
-      - Resample 1h candles into 4h
-      - Find the "mother bar" (handles nested inside bars)
-      - Bullish: current candle wicks below mother low AND closes above mother high
-      - Bearish: current candle wicks above mother high AND closes below mother low
-    Returns: (signal_type, entry_price, atr_value, candle_timestamp) or None
-    """
     try:
         df = yf.download(ticker, period="1mo", interval="1h",
                          progress=False, auto_adjust=True)
@@ -233,9 +223,7 @@ def check_sweep_engulfing(ticker):
         df_4h["ATR"] = calculate_atr(df_4h, 10)
         atr = float(df_4h["ATR"].iloc[-2])
 
-        # Current = most recent closed 4H candle
         curr = df_4h.iloc[-2]
-        # Walk back to find mother bar (not nested inside previous)
         off = 1
         for lookback in range(2, min(8, len(df_4h) - 1)):
             mother = df_4h.iloc[-lookback - 1]
@@ -263,12 +251,6 @@ def check_sweep_engulfing(ticker):
 #  STRATEGY 2 — UT BOT (15m + 5m EMA filter)
 # ============================================================
 def check_ut_bot(ticker, kv=2, atr_period=1):
-    """
-    UT Bot trailing-stop indicator.
-    - 15m chart for signal
-    - 5m EMA-50 for trend filter (buy only above EMA, sell only below)
-    - RSI filter: skip buy if RSI > 70, skip sell if RSI < 30
-    """
     try:
         df_15 = yf.download(ticker, period="5d", interval="15m",
                             progress=False, auto_adjust=True)
@@ -309,16 +291,16 @@ def check_ut_bot(ticker, kv=2, atr_period=1):
             else:
                 pos[i] = pos[i - 1]
 
-        i = len(df_15) - 2   # most recently closed 15m candle
+        i = len(df_15) - 2
         is_buy  = (src[i] > ts_arr[i]) and (src[i - 1] <= ts_arr[i - 1])
         is_sell = (src[i] < ts_arr[i]) and (src[i - 1] >= ts_arr[i - 1])
 
         df_5["EMA50"] = df_5["Close"].ewm(span=50, adjust=False).mean()
         df_15["RSI"]  = get_rsi(df_15)
 
-        m5_close  = float(df_5["Close"].iloc[-2])
-        m5_ema    = float(df_5["EMA50"].iloc[-2])
-        rsi_15    = float(df_15["RSI"].iloc[-2])
+        m5_close = float(df_5["Close"].iloc[-2])
+        m5_ema   = float(df_5["EMA50"].iloc[-2])
+        rsi_15   = float(df_15["RSI"].iloc[-2])
 
         ts = int(df_15.index[-2].timestamp() * 1000)
 
@@ -352,7 +334,7 @@ def calc_position_size(account, symbol, entry, sl):
         if risk_per_lot == 0:
             return 0.0
         lots = risk / risk_per_lot
-        return float(min(lots, 1)) * lot   # cap at 1 lot, return qty
+        return float(min(lots, 1)) * lot
     return float(risk / sl_dist)
 
 def append_trade_csv(trade):
@@ -369,7 +351,6 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
     global active_trades, trade_history, accounts
 
     with _lock:
-        # Debounce: same symbol + same candle timestamp = same signal
         debounce_key = (symbol, ts, sig_type)
         if debounce_key in sent_signals:
             return
@@ -380,7 +361,7 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
 
-        sl = calc_sl_tp(sig_type, price, atr)[0]   # just SL for sizing
+        sl = calc_sl_tp(sig_type, price, atr)[0]
         qty = calc_position_size(account, symbol, price, sl)
         if qty <= 0:
             return
@@ -466,7 +447,6 @@ def monitor_trades():
                 live = float(df["Close"].iloc[-1])
                 is_long = trade["type"] == "LONG"
 
-                # ---- Trailing stop (lock profit once 1.5% in profit) ----
                 profit_pct = (live - trade["entry"]) / trade["entry"] * 100
                 if profit_pct >= 1.5:
                     new_sl = trade["entry"] + (trade["entry"] * 0.005)
@@ -475,7 +455,6 @@ def monitor_trades():
                     else:
                         trade["trail_sl"] = min(trade["trail_sl"], new_sl)
 
-                # ---- Check SL/TP ----
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
                 hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
 
@@ -487,7 +466,6 @@ def monitor_trades():
 
                 with _lock:
                     accounts[trade["account"]]["balance"] += pnl
-                    # Update peak
                     peaks[trade["account"]] = max(
                         peaks.get(trade["account"], 0),
                         accounts[trade["account"]]["balance"]
@@ -502,10 +480,10 @@ def monitor_trades():
 
                 append_trade_csv(trade)
 
-                emoji    = "✅" if hit_tp else "❌"
-                arrow    = "📈" if hit_tp else "📉"
-                money    = "💰" if hit_tp else "💸"
-                pnl_str  = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
+                emoji   = "✅" if hit_tp else "❌"
+                arrow   = "📈" if hit_tp else "📉"
+                money   = "💰" if hit_tp else "💸"
+                pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
 
                 with _lock:
                     bal = accounts[trade["account"]]["balance"]
@@ -523,7 +501,6 @@ def monitor_trades():
                 bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                 pushbullet_notify(msg)
                 print(f"[CLOSE] {trade['symbol']} {trade['result']} {pnl_str}")
-
                 time.sleep(0.5)
 
             except Exception as e:
@@ -557,7 +534,6 @@ def daily_reset_loop():
         if last_reset != today_str:
             yesterday = accounts.get("last_reset_date", today_str)
 
-            # ---- Midnight daily reset ----
             if last_reset is not None:
                 day_pnl = sum(
                     float(t["pnl"]) for t in trade_history
@@ -577,18 +553,18 @@ def daily_reset_loop():
                 pushbullet_notify(msg)
                 print(f"[RESET] Daily P/L: ₹{day_pnl:,.2f}")
 
-            # ---- Sunday midnight: weekly summary ----
             if now.weekday() == 6 and last_reset is not None:
-                week_trades = [
-                    t for t in trade_history
-                    if t.get("close_time", "").startswith(
-                        (now - pd.Timedelta(days=d)).strftime("%Y-%m-%d")
-                    ) for d in range(1, 8)
-                ]
+                week_trades = []
+                for d in range(1, 8):
+                    day_str = (now - pd.Timedelta(days=d)).strftime("%Y-%m-%d")
+                    week_trades.extend(
+                        t for t in trade_history
+                        if t.get("close_time", "").startswith(day_str)
+                    )
                 week_pnl = sum(float(t["pnl"]) for t in week_trades)
                 wins     = [t for t in week_trades if t["result"] == "WIN"]
                 losses   = [t for t in week_trades if t["result"] == "LOSS"]
-                wr       = len(wins) / (len(wins) + len(losses)) * 100 if losses or wins else 0
+                wr       = len(wins) / (len(wins) + len(losses)) * 100 if (wins or losses) else 0
                 best     = max(week_trades, key=lambda t: t["pnl"], default=None)
                 worst    = min(week_trades, key=lambda t: t["pnl"], default=None)
 
@@ -647,21 +623,17 @@ def scanner_loop():
 
                 account = get_account(symbol)
 
-                # Skip Nifty outside market hours
                 if account == "nifty" and not is_nifty_market_open():
                     continue
 
-                # ---- Check UT Bot ----
                 ut = check_ut_bot(symbol)
                 if ut:
                     target = "ny_session" if ny_active else "macro"
                     execute_trade(symbol, mtype, target,
                                   "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
 
-                # ---- Check Sweep ----
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    # Sweep goes to macro only (not ny_session)
                     execute_trade(symbol, mtype, "macro",
                                   "Sweep + Engulfing", sweep[0],
                                   sweep[1], sweep[2], sweep[3])
@@ -678,8 +650,8 @@ def scanner_loop():
 # ============================================================
 def menu_markup():
     m = InlineKeyboardMarkup()
-    m.add(InlineKeyboardButton("🔍 Check Markets",   callback_data="cmd_check"))
-    m.add(InlineKeyboardButton("📊 Asset Summary",    callback_data="cmd_summary"))
+    m.add(InlineKeyboardButton("🔍 Check Markets",  callback_data="cmd_check"))
+    m.add(InlineKeyboardButton("📊 Asset Summary",  callback_data="cmd_summary"))
     return m
 
 GUIDE = (
@@ -933,19 +905,6 @@ def generate_chart(symbol, tf="1h"):
             return None
 
 # ============================================================
-#  FLASK
-# ============================================================
-app = Flask(__name__)
-
-@app.route("/")
-def home():
-    return "Trading Bot Running OK", 200
-
-@app.route("/ping")
-def ping():
-    return "pong", 200
-
-# ============================================================
 #  BOOT
 # ============================================================
 if __name__ == "__main__":
@@ -953,11 +912,10 @@ if __name__ == "__main__":
         print("FATAL: CHAT_ID not set!")
         exit(1)
 
-    # Init state
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
-    active_trades  = load_json(ACTIVE_TRADES_FILE, [])
-    trade_history  = load_json(HISTORY_FILE, [])
+    active_trades = load_json(ACTIVE_TRADES_FILE, [])
+    trade_history = load_json(HISTORY_FILE, [])
 
     print("=" * 50)
     print("  Trading Bot Starting...")
@@ -968,18 +926,9 @@ if __name__ == "__main__":
     print(f"  Nifty Open: {is_nifty_market_open()}")
     print("=" * 50)
 
-    threading.Thread(target=scanner_loop,       daemon=False).start()
-    threading.Thread(target=monitor_trades,     daemon=False).start()
-    threading.Thread(target=daily_reset_loop,  daemon=False).start()
+    threading.Thread(target=scanner_loop,      daemon=True).start()
+    threading.Thread(target=monitor_trades,    daemon=True).start()
+    threading.Thread(target=daily_reset_loop, daemon=True).start()
 
-    def poll():
-        print("[BOT] Connecting to Telegram...")
-        bot.infinity_polling(non_stop=True,
-                             timeout=10,
-                             long_polling_timeout=5)
-
-    threading.Thread(target=poll, daemon=False).start()
-
-    port = int(os.environ.get("PORT", 10000))
-    print(f"[WEB] Listening on port {port}...")
-    app.run(host="0.0.0.0", port=port)
+    print("[BOT] Connecting to Telegram...")
+    bot.infinity_polling(non_stop=True, timeout=10, long_polling_timeout=5)
