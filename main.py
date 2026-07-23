@@ -539,17 +539,15 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
     
     def run_bot():
-        print("Bot thread started. Waiting 15 seconds...")
-        time.sleep(15)
-        while True:
-            try:
-                print("Connecting to Telegram...")
-                bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
-            except Exception as e:
-                print(f"TG Error: {e}. Retrying in 15s...")
-                time.sleep(15)
-    
-    threading.Thread(target=run_bot, daemon=True).start()
+        try:
+            print("Bot thread started. Waiting 15 seconds...")
+            time.sleep(15)
+            print("Connecting to Telegram...")
+            bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
+        except Exception as e:
+            print(f"FATAL TELEGRAM ERROR: {e}")
+            import traceback
+            traceback.print_exc()
 
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=10000, use_reloader=False)
