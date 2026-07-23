@@ -2,6 +2,8 @@ import os
 import json
 import threading
 import time
+import threading
+import multiprocessing
 import requests
 import numpy as np
 import pandas as pd
@@ -533,21 +535,21 @@ def handle_callbacks(call):
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
     bot.answer_callback_query(call.id)
 
+
+
+    def run_bot():
+    print("Bot process started. Waiting 15 seconds...")
+    time.sleep(15)
+    print("Connecting to Telegram...")
+    bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
+
 if __name__ == "__main__":
     threading.Thread(target=background_strategy_loop, daemon=True).start()
     threading.Thread(target=monitor_active_trades, daemon=True).start()
     threading.Thread(target=daily_reset_loop, daemon=True).start()
     
-    def run_bot():
-        try:
-            print("Bot thread started. Waiting 15 seconds...")
-            time.sleep(15)
-            print("Connecting to Telegram...")
-            bot.infinity_polling(non_stop=True, timeout=20, long_polling_timeout=10)
-        except Exception as e:
-            print(f"FATAL TELEGRAM ERROR: {e}")
-            import traceback
-            traceback.print_exc()
+    # Use a Process instead of a Thread for Telegram (Fixes Python 3.14 silent thread death)
+    bot_process = multiprocessing.Process(target=run_bot, daemon=True)
+    bot_process.start()
 
-    port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=10000, use_reloader=False)
