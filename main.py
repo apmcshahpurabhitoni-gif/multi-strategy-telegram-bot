@@ -61,7 +61,7 @@ def send_phone_notification(text):
     try:
         token = os.environ.get("PUSHBULLET_TOKEN")
         if token:
-            # Strip all Telegram formatting and emojis for clean phone push
+            # Strip all Telegram formatting for clean phone push
             clean_text = text.replace("*", "").replace("`", "").replace("━", "-").replace("▫️", "-").replace("🪙", "").replace("🟡", "").replace("💱", "").replace("📈", "").replace("⚡", "").replace("🟢", "").replace("🔴", "").replace("🔄", "").replace("💡", "").replace("🔘", "").replace("⏱️", "").replace("🎯", "").replace("🔥", "").replace("⚪", "").replace("💤", "").replace("⚙️", "").replace("💰", "").replace("💸", "").replace("🚨", "").replace("💼", "").replace("├", "|").replace("└", "|")
             payload = {"type": "note", "title": "Trading Bot Alert", "body": clean_text}
             requests.post("https://api.pushbullet.com/v2/pushes", 
@@ -251,9 +251,9 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
     tf = "4H" if "Sweep" in strat_name else "15m"
     
     msg = (
-        f"🚨 *HIGH\-CONFLUENCE SIGNAL ALERT*\n"
+        f"🚨 *HIGH-CONFLUENCE SIGNAL ALERT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🪙 *Asset:* `{symbol}` \({market_type}\)\n"
+        f"🪙 *Asset:* `{symbol}` ({market_type})\n"
         f"⚡ *Strategy:* {strat_name}\n"
         f"🟢 *Direction:* {direction}\n"
         f"⏱️ *Timeframe:* {tf}\n"
@@ -266,7 +266,7 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
         f"├ Take Profit: `${tp:,.2f}`\n"
         f"└ Risk Amount: `₹{risk_amt:,.2f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💡 Tap below to generate a live candlestick snapshot or silence this ticker\."
+        f"💡 Tap below to generate a live candlestick snapshot or silence this ticker."
     )
     
     markup = InlineKeyboardMarkup()
@@ -313,9 +313,9 @@ def monitor_active_trades():
                     pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
                     
                     msg = (
-                        f"{emoji} *TRADE CLOSED \— {status}*\n"
+                        f"{emoji} *TRADE CLOSED — {status}*\n"
                         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                        f"{'🟢' if is_long else '🔴'} `{trade['symbol']}` \({trade['strat']}\)\n"
+                        f"{'🟢' if is_long else '🔴'} `{trade['symbol']}` ({trade['strat']})\n"
                         f"💼 *Account:* `{trade['account'].upper()}`\n"
                         f"{arrow} *Exit Price:* `${live_price:,.2f}`\n"
                         f"{money_emoji} *P/L:* `{pnl_str}`\n"
@@ -351,7 +351,7 @@ def daily_reset_loop():
                 f"├ Macro: `₹{accounts['macro']['balance']:,.2f}`\n"
                 f"├ Nifty: `₹{accounts['nifty']['balance']:,.2f}`\n"
                 f"└ NY Bot: `₹{accounts['ny_session']['balance']:,.2f}`\n"
-                f"🔄 Daily trade limits \(3 per account\) have been reset\."
+                f"🔄 Daily trade limits (3 per account) have been reset."
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
             send_phone_notification(msg) 
@@ -400,22 +400,22 @@ def get_main_menu_markup():
 
 def get_guide_text():
     return (
-        "🤖 *4H TRADING BOT \— CONTROL CENTER*\n"
+        "🤖 *4H TRADING BOT — CONTROL CENTER*\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-        "Welcome! I monitor multi\-asset markets 24/7, execute virtual paper trades with strict 2% risk management, and deliver real\-time technical analysis alerts directly to your chat\.\n\n"
-        "📘 *USER GUIDE \— HOW TO USE ME:*\n"
-        "▫️ *Auto\-Trading:* Sit back! When a setup forms, I automatically execute a paper trade, track P/L, and push an alert here\.\n"
-        "▫️ `/check` \— Instantly scans all 7 assets across both strategies right now\.\n"
-        "▫️ `/summary` \— Opens an overview of tracked assets, live prices, and alert status\.\n"
-        "▫️ `/stats` \— Views the Win Rate and P/L of your virtual accounts\.\n"
-        "▫️ `/balance` \— Views your virtual account balances \(Macro, Nifty, NY Session\)\.\n"
-        "▫️ *Interactive Buttons:* Tap \[ 📈 View Chart \] under any signal to generate a 1\-Hour candlestick snapshot!\n"
-        "▫️ *Mute Control:* Tap \[ 🔇 Mute \] to pause alerts AND paper\-trading for noisy assets\.\n\n"
+        "Welcome! I monitor multi-asset markets 24/7, execute virtual paper trades with strict 2% risk management, and deliver real-time technical analysis alerts directly to your chat.\n\n"
+        "📘 *USER GUIDE — HOW TO USE ME:*\n"
+        "▫️ *Auto-Trading:* Sit back! When a setup forms, I automatically execute a paper trade, track P/L, and push an alert here.\n"
+        "▫️ `/check` — Instantly scans all 7 assets across both strategies right now.\n"
+        "▫️ `/summary` — Opens an overview of tracked assets, live prices, and alert status.\n"
+        "▫️ `/stats` — Views the Win Rate and P/L of your virtual accounts.\n"
+        "▫️ `/balance` — Views your virtual account balances (Macro, Nifty, NY Session).\n"
+        "▫️ *Interactive Buttons:* Tap [ 📈 View Chart ] under any signal to generate a 1-Hour candlestick snapshot!\n"
+        "▫️ *Mute Control:* Tap [ 🔇 Mute ] to pause alerts AND paper-trading for noisy assets.\n\n"
         "⚡ *ACTIVE STRATEGIES:*\n"
-        "🔵 *Strategy 1:* Sweep \+ Engulfing \(4H Normal \& Mother\-Child\)\n"
-        "🟣 *Strategy 2:* UT Bot Signals \(15m \+ 5m Filter \| KV:2 \| ATR:1\)\n\n"
+        "🔵 *Strategy 1:* Sweep + Engulfing (4H Normal & Mother-Child)\n"
+        "🟣 *Strategy 2:* UT Bot Signals (15m + 5m Filter | KV:2 | ATR:1)\n\n"
         "📊 *COVERED MARKETS:*\n"
-        "🪙 Crypto • 🟡 Gold • 💱 Forex • 📈 Indices \(NIFTY/BANK NIFTY\)"
+        "🪙 Crypto • 🟡 Gold • 💱 Forex • 📈 Indices (NIFTY/BANK NIFTY)"
     )
 
 @bot.message_handler(commands=['start', 'help'])
@@ -432,9 +432,9 @@ def handle_check_command(message):
         ut = check_ut_bot_strategy(symbol)
         sweep = check_sweep_engulfing_strategy(symbol)
         
-        if ut: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {ut[0]} \(`${ut[1]:,.2f}`\)"))
-        if sweep: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {sweep[0]} \(`${sweep[1]:,.2f}`\)"))
-        if not ut and not sweep: all_assets_text.append(f"⚪ `{symbol}` \({mtype}\) ➔ Neutral / No Setup")
+        if ut: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {ut[0]} (`${ut[1]:,.2f}`)"))
+        if sweep: signals_found.append((symbol, f"🟢 `{symbol}` ➔ {sweep[0]} (`${sweep[1]:,.2f}`)"))
+        if not ut and not sweep: all_assets_text.append(f"⚪ `{symbol}` ({mtype}) ➔ Neutral / No Setup")
         time.sleep(0.5)
 
     markup = InlineKeyboardMarkup()
@@ -448,7 +448,6 @@ def handle_check_command(message):
             f"🔥 *Active Signals Found:* {len(signals_found)}\n\n"
             f"{body}"
         )
-        # Add dynamic chart button for the first signal found
         markup.add(InlineKeyboardButton(f"📈 View {signals_found[0][0]} Chart", callback_data=f"chart_{signals_found[0][0]}"))
         markup.add(InlineKeyboardButton("📊 Full Asset Summary", callback_data="cmd_summary"))
     else:
@@ -458,7 +457,7 @@ def handle_check_command(message):
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⚪ *Status:* No Active Setups\n"
             f"🎯 *Analyzed:* All 7 Assets\n\n"
-            f"💤 Markets are currently consolidating in neutral zones\. No Sweep \+ Engulfing or UT Bot conditions were triggered\."
+            f"💤 Markets are currently consolidating in neutral zones. No Sweep + Engulfing or UT Bot conditions were triggered."
         )
         markup.add(InlineKeyboardButton("📊 Asset Summary", callback_data="cmd_summary"), InlineKeyboardButton("🔄 Scan Again", callback_data="cmd_check"))
 
@@ -471,9 +470,9 @@ def handle_summary_command(message):
         status = "🔇 Muted" if symbol in muted_assets else "🟢 Active"
         try:
             price = yf.Ticker(symbol).fast_info['lastPrice']
-            summary_lines.append(f"{'🪙' if 'Crypto' in mtype else '🟡' if 'Gold' in mtype else '💱' if 'Forex' in mtype else '📈'} `{symbol}` \({mtype}\) ➔ {status} | `${price:,.2f}`")
+            summary_lines.append(f"{'🪙' if 'Crypto' in mtype else '🟡' if 'Gold' in mtype else '💱' if 'Forex' in mtype else '📈'} `{symbol}` ({mtype}) ➔ {status} | `${price:,.2f}`")
         except:
-            summary_lines.append(f"📈 `{symbol}` \({mtype}\) ➔ {status}")
+            summary_lines.append(f"📈 `{symbol}` ({mtype}) ➔ {status}")
         time.sleep(0.5)
         
     text = (
@@ -481,7 +480,7 @@ def handle_summary_command(message):
         f"━━━━━━━━━━━━━━━━━━━━━━\n" +
         "\n".join(summary_lines) +
         f"\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚙️ All systems operational and monitoring 24/7\."
+        f"⚙️ All systems operational and monitoring 24/7."
     )
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("🔍 Run Instant Scan", callback_data="cmd_check"))
@@ -506,14 +505,14 @@ def handle_stats_command(message):
     text = (
         f"📊 *STRATEGY PERFORMANCE REPORT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 *Macro \(24/7\):*\n"
-        f"├ {mw}W / {ml}L \({mwr:.0f}% Win Rate\)\n"
+        f"🌐 *Macro (24/7):*\n"
+        f"├ {mw}W / {ml}L ({mwr:.0f}% Win Rate)\n"
         f"└ Total P/L: `{'+' if mp>0 else ''}₹{mp:,.2f}`\n\n"
-        f"🇮🇳 *Nifty \(24/7\):*\n"
-        f"├ {nw}W / {nl}L \({nwr:.0f}% Win Rate\)\n"
+        f"🇮🇳 *Nifty (24/7):*\n"
+        f"├ {nw}W / {nl}L ({nwr:.0f}% Win Rate)\n"
         f"└ Total P/L: `{'+' if np_>0 else ''}₹{np_:,.2f}`\n\n"
-        f"🇺🇸 *NY Session \(UT Bot Only\):*\n"
-        f"├ {nyw}W / {nyl}L \({nywr:.0f}% Win Rate\)\n"
+        f"🇺🇸 *NY Session (UT Bot Only):*\n"
+        f"├ {nyw}W / {nyl}L ({nywr:.0f}% Win Rate)\n"
         f"└ Total P/L: `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━"
     )
@@ -524,13 +523,13 @@ def handle_balance_command(message):
     text = (
         f"🏦 *VIRTUAL ACCOUNT BALANCES*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 *Macro \(Crypto/Forex\):*\n"
+        f"🌐 *Macro (Crypto/Forex):*\n"
         f"├ Balance: `₹{accounts['macro']['balance']:,.2f}`\n"
         f"└ Trades Today: `{accounts['macro']['daily_trades']}/3`\n\n"
-        f"🇮🇳 *Indices \(Nifty\):*\n"
+        f"🇮🇳 *Indices (Nifty):*\n"
         f"├ Balance: `₹{accounts['nifty']['balance']:,.2f}`\n"
         f"└ Trades Today: `{accounts['nifty']['daily_trades']}/3`\n\n"
-        f"🇺🇸 *NY Session \(UT Bot\):*\n"
+        f"🇺🇸 *NY Session (UT Bot):*\n"
         f"├ Balance: `₹{accounts['ny_session']['balance']:,.2f}`\n"
         f"└ Trades Today: `{accounts['ny_session']['daily_trades']}/3`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -564,9 +563,9 @@ def handle_callbacks(call):
         bot.answer_callback_query(call.id, text="Generating dark-mode chart...")
         chart_buf = generate_chart(symbol)
         if chart_buf:
-            bot.send_photo(call.message.chat.id, chart_buf, caption=f"📈 `{symbol}` | 1H Dark\-Mode Candlestick Snapshot", parse_mode="Markdown")
+            bot.send_photo(call.message.chat.id, chart_buf, caption=f"📈 `{symbol}` | 1H Dark-Mode Candlestick Snapshot", parse_mode="Markdown")
         else:
-            bot.send_message(call.message.chat.id, "❌ Failed to generate chart\. Try again later\.", parse_mode="Markdown")
+            bot.send_message(call.message.chat.id, "❌ Failed to generate chart. Try again later.", parse_mode="Markdown")
             
     elif call.data.startswith("mute_"):
         symbol = call.data.split("_")[1]
@@ -577,7 +576,7 @@ def handle_callbacks(call):
         text = (
             f"🔇 *ALERT STATUS UPDATED*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Notifications and paper\-trading for `{symbol}` have been paused\. You will no longer receive signal alerts or execute virtual trades for this ticker during automated scans\."
+            f"Notifications and paper-trading for `{symbol}` have been paused. You will no longer receive signal alerts or execute virtual trades for this ticker during automated scans."
         )
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
         
@@ -590,7 +589,7 @@ def handle_callbacks(call):
         text = (
             f"🔊 *ALERT STATUS UPDATED*\n"
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"Notifications and paper\-trading for `{symbol}` have been resumed\."
+            f"Notifications and paper-trading for `{symbol}` have been resumed."
         )
         bot.edit_message_text(text, chat_id=call.message.chat.id, message_id=call.message.message_id, parse_mode="Markdown", reply_markup=markup)
         
