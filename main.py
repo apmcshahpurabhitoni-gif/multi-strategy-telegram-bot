@@ -412,10 +412,30 @@ def handle_callbacks(call):
 
 # --- START THREADS AND FLASK SERVER ---
 if __name__ == "__main__":
+    # Start background threads
     threading.Thread(target=background_strategy_loop, daemon=True).start()
     threading.Thread(target=monitor_active_trades, daemon=True).start()
     threading.Thread(target=daily_reset_loop, daemon=True).start()
-    threading.Thread(target=lambda: bot.infinity_polling(timeout=20, long_polling_timeout=10), daemon=True).start()
+    
+    print("Starting Telegram polling in 15 seconds to prevent 409 conflicts...")
+    time.sleep(15) # CRITICAL: Wait for old Render instances to die
+    
+    # Custom polling loop to catch and ignore 409 errors gracefully
+    from telebot.apihelper import ApiTelegramException
+    
+    while True:
+        try:
+            bot.infinity_polling(timeout=20, long_polling_timeout=10)
+        except ApiTelegramException as e:
+            if "409" in str(e):
+                print("409 Conflict detected. Another instance is running. Waiting 15 seconds...")
+                time.sleep(15) # Wait for the other instance to die, then retry
+            else:
+                print(f"Unhandled Telegram API error: {e}")
+                time.sleep(10)
+        except Exception as e:
+            print(f"Unexpected polling error: {e}")
+            time.sleep(10)
     
     port = int(os.environ.get("PORT", 5000))
     app.run(host="0.0.0.0", port=port)
