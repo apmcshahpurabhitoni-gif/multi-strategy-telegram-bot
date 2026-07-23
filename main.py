@@ -11,6 +11,7 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 from datetime import datetime
 import pytz
 import logging
+import threading
 
 import matplotlib
 matplotlib.use('Agg')
@@ -131,14 +132,14 @@ def calculate_sl_tp(signal_type, price, atr):
         return float(price + (atr * 1.5)), float(price - (atr * 3.0))
 
 def calculate_position_size(account_type, symbol, entry, sl):
-    risk_amount = accounts[account_type]["balance"] * 0.02 
+    risk_amount = accounts[account_type]["balance"] * 0.02
     sl_distance = abs(entry - sl)
     if sl_distance == 0: return 0.0
     if account_type == "nifty":
         lot_size = 15 if "BANK" in symbol else 25
         risk_per_lot = sl_distance * lot_size
         if risk_per_lot == 0: return 0.0
-        return float((risk_amount / risk_per_lot) * lot_size) 
+        return float((risk_amount / risk_per_lot) * lot_size)
     return float(risk_amount / sl_distance)
 
 def check_sweep_engulfing_strategy(ticker):
@@ -148,7 +149,7 @@ def check_sweep_engulfing_strategy(ticker):
         if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
         df_4h = df_1h.resample('4h').agg({'Open': 'first', 'High': 'max', 'Low': 'min', 'Close': 'last'}).dropna()
         if len(df_4h) < 5: return None
-        df_4h['ATR'] = calculate_atr(df_4h, 10) 
+        df_4h['ATR'] = calculate_atr(df_4h, 10)
         c1, c2, c3 = df_4h.iloc[-2], df_4h.iloc[-3], df_4h.iloc[-4]
         atr_val = float(df_4h['ATR'].iloc[-2])
         is_inside = (c2['High'] <= c3['High']) and (c2['Low'] >= c3['Low'])
@@ -231,7 +232,7 @@ def execute_trade(symbol, market_type, account_type, strat_name, sig_type, price
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton(f"📈 View Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
-    send_phone_notification(msg) 
+    send_phone_notification(msg)
     return True
 
 def monitor_active_trades():
@@ -275,7 +276,7 @@ def monitor_active_trades():
                         f"━━━━━━━━━━━━━━━━━━━━━━"
                     )
                     bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-                    send_phone_notification(msg) 
+                    send_phone_notification(msg)
                 time.sleep(0.5)
             except Exception as e: print(f"Monitor error {trade['symbol']}: {e}")
         if trades_to_close:
@@ -304,7 +305,7 @@ def daily_reset_loop():
                 f"🔄 Daily trade limits (3 per account) reset."
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-            send_phone_notification(msg) 
+            send_phone_notification(msg)
             for acc in ['macro', 'nifty', 'ny_session']: accounts[acc]['daily_trades'] = 0
             accounts['last_reset_date'] = today_str
             save_json(ACCOUNTS_FILE, accounts)
@@ -484,14 +485,9 @@ def handle_clear_command(message):
     save_json(ACCOUNTS_FILE, accounts)
     bot.reply_to(message, "🗑 *All virtual accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
-@bot.message_handler(func=lambda msg: "🚨" not in msg.text and "✅" not in msg.text and "❌" not in msg.text)
+@bot.message_handler(func=lambda msg: True)
 def handle_all_other_messages(message):
-    try:
-        bot.reply_to(message, get_guide_text(), parse_mode="Markdown", reply_markup=get_main_menu_markup())
-    except:
-        # If Python 3.14 fails to parse the markdown, send it as plain text
-        plain_text = get_guide_text().replace("*", "").replace("━━━━━━━━━━━━━━━━━━━━━━", "======================")
-        bot.reply_to(message, plain_text, reply_markup=get_main_menu_markup())
+    bot.reply_to(message, get_guide_text(), parse_mode="Markdown", reply_markup=get_main_menu_markup())
 
 @bot.callback_query_handler(func=lambda call: True)
 def handle_callbacks(call):
@@ -532,30 +528,24 @@ def handle_callbacks(call):
     bot.answer_callback_query(call.id)
 
 if __name__ == "__main__":
-    import threading
-    # FORCE VALIDATE CHAT_ID BEFORE THREADS SEE IT
     if not CHAT_ID:
         print("FATAL ERROR: CHAT_ID is missing!")
     else:
         print("Starting background workers...")
-        threading.Thread(target=background_strategy_loop, daemon=True).start()
-        threading.Thread(target=monitor_active_trades, daemon=True).start()
-        threading.Thread(target=daily_reset_loop, daemon=True).start()
 
+        # Start all background threads (non-daemon so they keep running)
+        threading.Thread(target=background_strategy_loop, daemon=False).start()
+        threading.Thread(target=monitor_active_trades, daemon=False).start()
+        threading.Thread(target=daily_reset_loop, daemon=False).start()
+
+        # Start Telegram polling in a separate thread
         def safe_bot_poll():
             print("Connecting to Telegram...")
-            try:
-                # 10 second timeout prevents infinite hanging on Render
-                bot.delete_webhook(timeout=10)
-                print("Webhook cleared. Starting polling...")
-                bot.infinity_polling(non_stop=True, timeout=10, long_polling_timeout=5)
-            except Exception as e:
-                print(f"!!! CONNECTION BLOCKED !!!")
-                print(f"Error: {e}")
-                time.sleep(30)
-                safe_bot_poll()
+            bot.infinity_polling(non_stop=True, timeout=10, long_polling_timeout=5)
 
-        threading.Thread(target=safe_bot_poll, daemon=True).start()
+        threading.Thread(target=safe_bot_poll, daemon=False).start()
 
-    # Start Flask in the main thread
-    app.run(host="0.0.0.0", port=10000)
+        # Start Flask server in the main thread
+        port = int(os.environ.get("PORT", 10000))
+        print(f"Flask web server listening on port {port}...")
+        app.run(host="0.0.0.0", port=port)
