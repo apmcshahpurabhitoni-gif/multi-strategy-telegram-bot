@@ -3,7 +3,7 @@ import json
 import time
 import csv
 import threading
-import logging
+import gc
 from datetime import datetime
 from io import BytesIO
 
@@ -25,7 +25,6 @@ plt.style.use("dark_background")
 # ============================================================
 TOKEN          = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID        = os.environ.get("TELEGRAM_CHAT_ID")
-RR_RATIO       = float(os.environ.get("RR", "2.0"))
 ATR_MULT_SL    = 1.5
 ATR_MULT_TP    = 3.0
 MIN_VOLATILITY = 0.3
@@ -39,15 +38,12 @@ ACTIVE_TRADES_FILE = "active_trades.json"
 HISTORY_FILE       = "trade_history.json"
 MUTE_FILE          = "muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
-PEAKS_FILE         = "peaks.json"
 
-# Globals
+# Globals — keep small
 accounts      = {}
 active_trades = []
-trade_history = []
 muted_assets  = set()
 sent_signals  = {}
-peaks         = {}
 
 _lock       = threading.Lock()
 _chart_lock = threading.Lock()
@@ -56,7 +52,7 @@ _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
 
 # ============================================================
-#  BOT — instantiated BEFORE handlers
+#  BOT
 # ============================================================
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 
@@ -76,42 +72,32 @@ def save_json(filepath, data):
     try:
         with open(filepath, "w") as f:
             json.dump(data, f, indent=4)
-    except Exception as e:
-        print(f"[WARN] Could not save {filepath}: {e}")
-
-def save_peaks():
-    save_json(PEAKS_FILE, peaks)
-
-def load_peaks():
-    return load_json(PEAKS_FILE, {})
+    except Exception:
+        pass
 
 # ============================================================
 #  HELPERS — ACCOUNTS
 # ============================================================
 def init_accounts():
-    global accounts, peaks
+    global accounts
     defaults = {
         "macro":      {"balance": 100000.0, "daily_trades": 0},
         "nifty":      {"balance": 100000.0, "daily_trades": 0},
         "ny_session": {"balance": 100000.0, "daily_trades": 0},
     }
     accounts = load_json(ACCOUNTS_FILE, defaults)
-    peaks = load_peaks()
-    for acc in defaults:
-        if acc not in peaks:
-            peaks[acc] = accounts[acc]["balance"]
-        today = datetime.now(IST).strftime("%Y-%m-%d")
-        if accounts.get("last_reset_date") != today:
+    today = datetime.now(IST).strftime("%Y-%m-%d")
+    if accounts.get("last_reset_date") != today:
+        for acc in ["macro", "nifty", "ny_session"]:
             accounts[acc]["daily_trades"] = 0
-    accounts["last_reset_date"] = datetime.now(IST).strftime("%Y-%m-%d")
+    accounts["last_reset_date"] = today
     save_json(ACCOUNTS_FILE, accounts)
 
 # ============================================================
 #  HELPERS — TIME
 # ============================================================
 def is_ny_session():
-    now = datetime.now(IST)
-    h, m = now.hour, now.minute
+    h, m = datetime.now(IST).hour, datetime.now(IST).minute
     return h >= 18 or (h == 1 and m <= 30) or h == 0
 
 def is_nifty_market_open():
@@ -121,20 +107,14 @@ def is_nifty_market_open():
     total_min = now.hour * 60 + now.minute
     return 555 <= total_min <= 930
 
-def is_forex_session():
-    now = datetime.now(IST)
-    h, m = now.hour, now.minute
-    total = h * 60 + m
-    return total >= 18 * 60 + 30 or total <= 3 * 60 + 30
-
 # ============================================================
-#  HELPERS — PRICE CACHE
+#  HELPERS — PRICE
 # ============================================================
-def get_cached_price(symbol, force=False):
+def get_price(symbol):
     now = time.time()
-    if not force and symbol in _price_cache:
+    if symbol in _price_cache:
         price, ts = _price_cache[symbol]
-        if now - ts < 55:
+        if now - ts < 60:
             return price
     try:
         df = yf.download(symbol, period="1d", interval="1m", progress=False, auto_adjust=True)
@@ -142,23 +122,21 @@ def get_cached_price(symbol, force=False):
             return None
         price = float(df["Close"].iloc[-1])
         _price_cache[symbol] = (price, now)
+        del df
+        gc.collect()
         return price
     except Exception:
         return None
 
 # ============================================================
-#  HELPERS — PUSH NOTIFICATIONS
+#  HELPERS — PUSH
 # ============================================================
 def pushbullet_notify(text):
     try:
         token = os.environ.get("PUSHBULLET_TOKEN")
         if not token:
             return
-        clean = (
-            text.replace("*", "").replace("`", "").replace("_", "")
-                .replace("[", "(").replace("]", ")")
-                .replace("━", "-").replace("├", "|").replace("└", "|")
-        )
+        clean = text.replace("*", "").replace("`", "").replace("_", "")
         requests.post(
             "https://api.pushbullet.com/v2/pushes",
             json={"type": "note", "title": "Trading Bot", "body": clean},
@@ -177,13 +155,10 @@ def calculate_atr(df, period=10):
     tr = pd.concat([high_low, high_cp, low_cp], axis=1).max(axis=1)
     return tr.ewm(alpha=1 / period, adjust=False).mean()
 
-def is_volatile_enough(df, min_pct=MIN_VOLATILITY):
-    try:
-        atr   = float(calculate_atr(df, 10).iloc[-1])
-        price = float(df["Close"].iloc[-1])
-        return (atr / price * 100) >= min_pct
-    except Exception:
-        return True
+def normalise_cols(df):
+    if isinstance(df.columns, pd.MultiIndex):
+        df.columns = df.columns.get_level_values(0)
+    return df
 
 def get_rsi(df, period=14):
     delta = df["Close"].diff()
@@ -192,49 +167,44 @@ def get_rsi(df, period=14):
     rs    = gain / loss.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-def normalise_cols(df):
-    if isinstance(df.columns, pd.MultiIndex):
-        df.columns = df.columns.get_level_values(0)
-    return df
-
 # ============================================================
-#  STRATEGY 1 — SWEEP + ENGULFING + INSIDE BAR (4H)
+#  STRATEGY 1 — SWEEP + ENGULFING (4H)
 # ============================================================
 def check_sweep_engulfing(ticker):
     try:
-        df = yf.download(ticker, period="1mo", interval="1h",
+        df = yf.download(ticker, period="10d", interval="1h",
                          progress=False, auto_adjust=True)
         df = normalise_cols(df)
-        if df.empty or len(df) < 40:
+        if df.empty or len(df) < 30:
             return None
 
-        if not is_volatile_enough(df):
-            return None
+        try:
+            atr   = float(calculate_atr(df, 10).iloc[-2])
+            price = float(df["Close"].iloc[-1])
+            if (atr / price * 100) < MIN_VOLATILITY:
+                del df
+                gc.collect()
+                return None
+        except Exception:
+            pass
 
         df_4h = (
             df.resample("4h")
             .agg({"Open": "first", "High": "max",
-                  "Low": "min",   "Close": "last"})
+                  "Low": "min", "Close": "last"})
             .dropna()
         )
-        if len(df_4h) < 5:
+        del df
+        gc.collect()
+
+        if len(df_4h) < 4:
             return None
 
         df_4h["ATR"] = calculate_atr(df_4h, 10)
         atr = float(df_4h["ATR"].iloc[-2])
 
-        curr = df_4h.iloc[-2]
-        off = 1
-        for lookback in range(2, min(8, len(df_4h) - 1)):
-            mother = df_4h.iloc[-lookback - 1]
-            inside = (
-                curr["High"] < mother["High"] and
-                curr["Low"]  > mother["Low"]
-            )
-            if not inside:
-                off = lookback
-                break
-        mother = df_4h.iloc[-off - 1]
+        curr  = df_4h.iloc[-2]
+        mother = df_4h.iloc[-3]
 
         ts = int(df_4h.index[-2].timestamp() * 1000)
 
@@ -243,33 +213,45 @@ def check_sweep_engulfing(ticker):
         if curr["High"] > mother["High"] and curr["Close"] < mother["Low"]:
             return ("BEARISH", float(curr["Close"]), atr, ts)
 
+        del df_4h
+        gc.collect()
+
     except Exception as e:
-        print(f"[ERR] Sweep strategy {ticker}: {e}")
+        print(f"[ERR] Sweep {ticker}: {e}")
     return None
 
 # ============================================================
-#  STRATEGY 2 — UT BOT (15m + 5m EMA filter)
+#  STRATEGY 2 — UT BOT (15m + 5m EMA)
 # ============================================================
-def check_ut_bot(ticker, kv=2, atr_period=1):
+def check_ut_bot(ticker, kv=2):
     try:
-        df_15 = yf.download(ticker, period="5d", interval="15m",
+        df_15 = yf.download(ticker, period="3d", interval="15m",
                             progress=False, auto_adjust=True)
-        df_5  = yf.download(ticker, period="5d", interval="5m",
+        df_5  = yf.download(ticker, period="1d", interval="5m",
                             progress=False, auto_adjust=True)
         df_15 = normalise_cols(df_15)
         df_5  = normalise_cols(df_5)
 
-        if df_15.empty or len(df_15) < 30 or df_5.empty or len(df_5) < 50:
+        if df_15.empty or len(df_15) < 20 or df_5.empty or len(df_5) < 40:
+            del df_15, df_5
+            gc.collect()
             return None
 
-        if not is_volatile_enough(df_15):
-            return None
+        try:
+            atr = float(calculate_atr(df_15, 1).iloc[-2])
+            price = float(df_15["Close"].iloc[-1])
+            if (atr / price * 100) < MIN_VOLATILITY:
+                del df_15, df_5
+                gc.collect()
+                return None
+        except Exception:
+            pass
 
-        df_15["xATR"]  = calculate_atr(df_15, atr_period)
+        df_15["xATR"]  = calculate_atr(df_15, 1)
         df_15["nLoss"] = kv * df_15["xATR"]
 
-        src    = df_15["Close"].values
-        nLoss  = df_15["nLoss"].values
+        src   = df_15["Close"].values
+        nLoss = df_15["nLoss"].values
         ts_arr = np.zeros(len(df_15))
         pos    = np.zeros(len(df_15))
 
@@ -303,11 +285,15 @@ def check_ut_bot(ticker, kv=2, atr_period=1):
         rsi_15   = float(df_15["RSI"].iloc[-2])
 
         ts = int(df_15.index[-2].timestamp() * 1000)
+        atr_val = float(df_15["xATR"].iloc[i])
+
+        del df_15, df_5
+        gc.collect()
 
         if is_buy and m5_close > m5_ema and rsi_15 < 70:
-            return ("BULLISH", float(src[i]), float(df_15["xATR"].iloc[i]), ts)
+            return ("BULLISH", float(src[i]), atr_val, ts)
         if is_sell and m5_close < m5_ema and rsi_15 > 30:
-            return ("BEARISH", float(src[i]), float(df_15["xATR"].iloc[i]), ts)
+            return ("BEARISH", float(src[i]), atr_val, ts)
 
     except Exception as e:
         print(f"[ERR] UT Bot {ticker}: {e}")
@@ -316,45 +302,27 @@ def check_ut_bot(ticker, kv=2, atr_period=1):
 # ============================================================
 #  TRADE EXECUTION
 # ============================================================
-def calc_sl_tp(signal_type, entry, atr):
-    sl = entry - atr * ATR_MULT_SL if "BULLISH" in signal_type else entry + atr * ATR_MULT_SL
-    tp = entry + atr * ATR_MULT_TP if "BULLISH" in signal_type else entry - atr * ATR_MULT_TP
-    return float(sl), float(tp)
+def calc_sl_tp(sig_type, entry, atr):
+    if "BULLISH" in sig_type:
+        return float(entry - atr * ATR_MULT_SL), float(entry + atr * ATR_MULT_TP)
+    return float(entry + atr * ATR_MULT_SL), float(entry - atr * ATR_MULT_TP)
 
-def calc_position_size(account, symbol, entry, sl):
+def calc_position_size(account, entry, sl):
     with _lock:
         balance = accounts[account]["balance"]
     risk = balance * 0.02
     sl_dist = abs(entry - sl)
     if sl_dist == 0:
         return 0.0
-    if account == "nifty":
-        lot = 25 if "NSEI" in symbol else 15
-        risk_per_lot = sl_dist * lot
-        if risk_per_lot == 0:
-            return 0.0
-        lots = risk / risk_per_lot
-        return float(min(lots, 1)) * lot
     return float(risk / sl_dist)
 
-def append_trade_csv(trade):
-    try:
-        with open(TRADE_LOG_CSV, "a", newline="") as f:
-            w = csv.DictWriter(f, fieldnames=trade.keys())
-            if f.tell() == 0:
-                w.writeheader()
-            w.writerow(trade)
-    except Exception as e:
-        print(f"[WARN] CSV write failed: {e}")
-
-def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts):
-    global active_trades, trade_history, accounts
+def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
+    global active_trades
 
     with _lock:
-        debounce_key = (symbol, ts, sig_type)
-        if debounce_key in sent_signals:
+        if (symbol, ts, sig_type) in sent_signals:
             return
-        sent_signals[debounce_key] = True
+        sent_signals[(symbol, ts, sig_type)] = True
 
         if accounts[account]["daily_trades"] >= 3:
             return
@@ -362,18 +330,18 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
             return
 
         sl = calc_sl_tp(sig_type, price, atr)[0]
-        qty = calc_position_size(account, symbol, price, sl)
+        qty = calc_position_size(account, price, sl)
         if qty <= 0:
             return
 
         actual_sl, actual_tp = calc_sl_tp(sig_type, price, atr)
-        direction = "LONG" if "BULLISH" in sig_type.upper() else "SHORT"
+        direction = "LONG" if "BULLISH" in sig_type else "SHORT"
         tf = "4H" if "Sweep" in strat else "15m"
 
         trade = {
             "id":         f"{symbol}_{int(time.time())}",
             "symbol":     symbol,
-            "market":     market_type,
+            "market":     mtype,
             "account":    account,
             "strat":      strat,
             "type":       direction,
@@ -381,7 +349,6 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
             "sl":         actual_sl,
             "tp":         actual_tp,
             "qty":        float(qty),
-            "atr_entry":  float(atr),
             "trail_sl":   actual_sl,
             "ts_trigger": ts,
             "time":       datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
@@ -392,17 +359,16 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
         save_json(ACCOUNTS_FILE, accounts)
 
     risk_amt = abs(price - actual_sl) * qty
-    emoji_dir = "STRONG BULLISH" if "BULLISH" in sig_type else "STRONG BEARISH"
+    emoji_dir = "STRONG BULLISH 🟢" if "BULLISH" in sig_type else "STRONG BEARISH 🔴"
 
     msg = (
         f"🚨 *HIGH-CONFLUENCE SIGNAL*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🪙 *Asset:* `{symbol}` ({market_type})\n"
-        f"⚡ *Strategy:* {strat}\n"
-        f"🟢 *Direction:* {emoji_dir}\n"
-        f"⏱️ *Timeframe:* {tf}\n"
-        f"📈 *Entry:* `${price:,.4f}`\n"
-        f"🕒 *Time:* {trade['time']}\n"
+        f"🪙 `{symbol}` ({mtype})\n"
+        f"⚡ {strat}\n"
+        f"🟢 {emoji_dir}\n"
+        f"⏱️ {tf}\n"
+        f"📈 Entry: `${price:,.4f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"💼 *PAPER TRADE EXECUTED*\n"
         f"├ Account: `{account.upper()}`\n"
@@ -421,13 +387,13 @@ def execute_trade(symbol, market_type, account, strat, sig_type, price, atr, ts)
     )
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     pushbullet_notify(msg)
-    print(f"[TRADE] {direction} {symbol} @ {price} | SL {actual_sl} | TP {actual_tp} | {account}")
+    print(f"[TRADE] {direction} {symbol} @ {price} | SL {actual_sl} | TP {actual_tp}")
 
 # ============================================================
-#  MONITOR ACTIVE TRADES
+#  MONITOR TRADES
 # ============================================================
 def monitor_trades():
-    global active_trades, trade_history, accounts
+    global active_trades
 
     while True:
         if not active_trades:
@@ -442,18 +408,21 @@ def monitor_trades():
                                  interval="1m", progress=False, auto_adjust=True)
                 df = normalise_cols(df)
                 if df.empty:
+                    del df
+                    gc.collect()
                     continue
 
-                live = float(df["Close"].iloc[-1])
+                live    = float(df["Close"].iloc[-1])
                 is_long = trade["type"] == "LONG"
+                del df
+                gc.collect()
 
+                # Trailing stop
                 profit_pct = (live - trade["entry"]) / trade["entry"] * 100
                 if profit_pct >= 1.5:
                     new_sl = trade["entry"] + (trade["entry"] * 0.005)
-                    if is_long:
-                        trade["trail_sl"] = max(trade["trail_sl"], new_sl)
-                    else:
-                        trade["trail_sl"] = min(trade["trail_sl"], new_sl)
+                    trade["trail_sl"] = max(trade["trail_sl"], new_sl) if is_long \
+                        else min(trade["trail_sl"], new_sl)
 
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
                 hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
@@ -466,19 +435,20 @@ def monitor_trades():
 
                 with _lock:
                     accounts[trade["account"]]["balance"] += pnl
-                    peaks[trade["account"]] = max(
-                        peaks.get(trade["account"], 0),
-                        accounts[trade["account"]]["balance"]
-                    )
-
                     trade["exit_price"] = live
                     trade["pnl"]        = float(pnl)
                     trade["result"]     = "WIN" if hit_tp else "LOSS"
                     trade["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M")
-                    trade_history.append(trade)
                     to_close.append(trade)
+                    save_json(ACCOUNTS_FILE, accounts)
 
-                append_trade_csv(trade)
+                # Append to history file directly (don't hold in memory)
+                try:
+                    history = load_json(HISTORY_FILE, [])
+                    history.append(trade)
+                    save_json(HISTORY_FILE, history)
+                except Exception:
+                    pass
 
                 emoji   = "✅" if hit_tp else "❌"
                 arrow   = "📈" if hit_tp else "📉"
@@ -501,7 +471,7 @@ def monitor_trades():
                 bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
                 pushbullet_notify(msg)
                 print(f"[CLOSE] {trade['symbol']} {trade['result']} {pnl_str}")
-                time.sleep(0.5)
+                time.sleep(0.3)
 
             except Exception as e:
                 print(f"[ERR] Monitor {trade['symbol']}: {e}")
@@ -514,86 +484,11 @@ def monitor_trades():
                     except ValueError:
                         pass
                 save_json(ACTIVE_TRADES_FILE, active_trades)
-                save_json(ACCOUNTS_FILE, accounts)
-                save_json(HISTORY_FILE, trade_history)
-                save_peaks()
 
         time.sleep(15)
 
 # ============================================================
-#  DAILY + WEEKLY RESET
-# ============================================================
-def daily_reset_loop():
-    global accounts
-    last_reset = None
-
-    while True:
-        now = datetime.now(IST)
-        today_str = now.strftime("%Y-%m-%d")
-
-        if last_reset != today_str:
-            yesterday = accounts.get("last_reset_date", today_str)
-
-            if last_reset is not None:
-                day_pnl = sum(
-                    float(t["pnl"]) for t in trade_history
-                    if t.get("close_time", "").startswith(yesterday)
-                )
-                msg = (
-                    f"🌙 *MIDNIGHT RESET*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"📊 Yesterday P/L: `₹{day_pnl:,.2f}`\n"
-                    f"🏦 Balances:\n"
-                    f"├ Macro:      `₹{accounts['macro']['balance']:,.2f}`\n"
-                    f"├ Nifty:      `₹{accounts['nifty']['balance']:,.2f}`\n"
-                    f"└ NY Session: `₹{accounts['ny_session']['balance']:,.2f}`\n"
-                    f"🔄 Trade limits reset."
-                )
-                bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-                pushbullet_notify(msg)
-                print(f"[RESET] Daily P/L: ₹{day_pnl:,.2f}")
-
-            if now.weekday() == 6 and last_reset is not None:
-                week_trades = []
-                for d in range(1, 8):
-                    day_str = (now - pd.Timedelta(days=d)).strftime("%Y-%m-%d")
-                    week_trades.extend(
-                        t for t in trade_history
-                        if t.get("close_time", "").startswith(day_str)
-                    )
-                week_pnl = sum(float(t["pnl"]) for t in week_trades)
-                wins     = [t for t in week_trades if t["result"] == "WIN"]
-                losses   = [t for t in week_trades if t["result"] == "LOSS"]
-                wr       = len(wins) / (len(wins) + len(losses)) * 100 if (wins or losses) else 0
-                best     = max(week_trades, key=lambda t: t["pnl"], default=None)
-                worst    = min(week_trades, key=lambda t: t["pnl"], default=None)
-
-                body = (
-                    f"📊 Weekly P/L: `₹{week_pnl:,.2f}`\n"
-                    f"├ Wins:   {len(wins)}\n"
-                    f"├ Losses: {len(losses)}\n"
-                    f"└ Win Rate: {wr:.0f}%\n"
-                )
-                if best:
-                    body += f"✅ Best: `{best['symbol']}` `+₹{best['pnl']:,.2f}`\n"
-                if worst:
-                    body += f"❌ Worst: `{worst['symbol']}` `₹{worst['pnl']:,.2f}`"
-
-                msg = f"📅 *WEEKLY SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n{body}"
-                bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
-
-            with _lock:
-                for acc in ["macro", "nifty", "ny_session"]:
-                    accounts[acc]["daily_trades"] = 0
-                accounts["last_reset_date"] = today_str
-                save_json(ACCOUNTS_FILE, accounts)
-
-            last_reset = today_str
-
-        time.sleep(60)
-
-# ============================================================
-#  BACKGROUND SCANNER
+#  SCANNER
 # ============================================================
 MONITORED = [
     ("BTC-USD",    "Crypto"),
@@ -606,12 +501,10 @@ MONITORED = [
 ]
 
 def get_account(symbol):
-    if "NSEI" in symbol or "BANK" in symbol:
-        return "nifty"
-    return "macro"
+    return "nifty" if ("NSEI" in symbol or "BANK" in symbol) else "macro"
 
 def scanner_loop():
-    print("[SCANNER] Started — checking markets every 60s")
+    print("[SCANNER] Started")
     while True:
         try:
             ny_active = is_ny_session()
@@ -622,7 +515,6 @@ def scanner_loop():
                         continue
 
                 account = get_account(symbol)
-
                 if account == "nifty" and not is_nifty_market_open():
                     continue
 
@@ -640,8 +532,52 @@ def scanner_loop():
 
                 time.sleep(0.5)
 
+            gc.collect()
+
         except Exception as e:
             print(f"[ERR] Scanner: {e}")
+
+        time.sleep(60)
+
+# ============================================================
+#  DAILY RESET
+# ============================================================
+def daily_reset_loop():
+    last_reset = None
+    while True:
+        now = datetime.now(IST)
+        today_str = now.strftime("%Y-%m-%d")
+
+        if last_reset != today_str:
+            with _lock:
+                for acc in ["macro", "nifty", "ny_session"]:
+                    accounts[acc]["daily_trades"] = 0
+                accounts["last_reset_date"] = today_str
+                save_json(ACCOUNTS_FILE, accounts)
+
+            history = load_json(HISTORY_FILE, [])
+            day_trades = [t for t in history if t.get("close_time", "").startswith(last_reset)] if last_reset else []
+            day_pnl = sum(float(t["pnl"]) for t in day_trades)
+
+            msg = (
+                f"🌙 *MIDNIGHT RESET*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                f"📊 Yesterday P/L: `₹{day_pnl:,.2f}`\n"
+                f"🏦 Balances:\n"
+                f"├ Macro:      `₹{accounts['macro']['balance']:,.2f}`\n"
+                f"├ Nifty:      `₹{accounts['nifty']['balance']:,.2f}`\n"
+                f"└ NY Session: `₹{accounts['ny_session']['balance']:,.2f}`\n"
+                f"🔄 Trade limits reset."
+            )
+            bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+
+            # Trim history to last 500 trades max
+            if len(history) > 500:
+                history = history[-500:]
+                save_json(HISTORY_FILE, history)
+
+            last_reset = today_str
+            gc.collect()
 
         time.sleep(60)
 
@@ -651,27 +587,23 @@ def scanner_loop():
 def menu_markup():
     m = InlineKeyboardMarkup()
     m.add(InlineKeyboardButton("🔍 Check Markets",  callback_data="cmd_check"))
-    m.add(InlineKeyboardButton("📊 Asset Summary",  callback_data="cmd_summary"))
+    m.add(InlineKeyboardButton("📊 Asset Summary",   callback_data="cmd_summary"))
     return m
 
 GUIDE = (
-    "🤖 *TRADING BOT — CONTROL CENTER*\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n\n"
-    "I monitor 7 markets 24/7, auto-execute paper trades, "
-    "and send alerts with SL/TP.\n\n"
+    "🤖 *TRADING BOT*\n"
+    "━━━━━━━━━━━━━━━━━━━━━━\n"
     "📘 *COMMANDS:*\n"
-    "▫️ `/check`    — Scan all assets now\n"
-    "▫️ `/summary`  — Live prices + status\n"
-    "▫️ `/stats`   — Win rate + P/L per account\n"
-    "▫️ `/balance` — Virtual account balances\n"
-    "▫️ `/clear`   — Reset all accounts to ₹1L\n"
-    "▫️ Tap 📈 to generate a chart\n"
-    "▫️ Tap 🔇 to mute alerts for that asset\n\n"
+    "▫️ /check    — Scan all assets\n"
+    "▫️ /summary  — Live prices\n"
+    "▫️ /stats    — Win rate + P/L\n"
+    "▫️ /balance  — Account balances\n"
+    "▫️ /clear    — Reset to ₹1L\n\n"
     "⚡ *STRATEGIES:*\n"
     "🔵 Sweep + Engulfing (4H)\n"
-    "🟣 UT Bot (15m + 5m EMA filter)\n\n"
+    "🟣 UT Bot (15m + 5m EMA)\n\n"
     "📊 *MARKETS:*\n"
-    "🪙 Crypto · 🟡 Gold · 💱 Forex · 📈 NIFTY/BANKNIFTY"
+    "🪙 Crypto · 🟡 Gold · 💱 Forex · 📈 NIFTY"
 )
 
 @bot.message_handler(commands=["start", "help"])
@@ -680,7 +612,7 @@ def cmd_start(m):
 
 @bot.message_handler(commands=["check"])
 def cmd_check(m):
-    bot.send_message(m.chat.id, "🔍 *Scanning all markets...*", parse_mode="Markdown")
+    bot.send_message(m.chat.id, "🔍 *Scanning...*", parse_mode="Markdown")
     signals, neutral = [], []
 
     for symbol, mtype in MONITORED:
@@ -688,55 +620,41 @@ def cmd_check(m):
         sweep = check_sweep_engulfing(symbol)
         if ut:
             signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
-        if sweep:
+        elif sweep:
             signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
-        if not ut and not sweep:
+        else:
             neutral.append(f"⚪ `{symbol}` — Neutral")
         time.sleep(0.3)
+        gc.collect()
 
     body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
-    status = f"🔥 *{len(signals)} Signals Found*" if signals else "⏳ *No Setups Right Now*"
+    status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
     text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
-
-    markup = InlineKeyboardMarkup()
-    if signals:
-        sym = signals[0].split("`")[1]
-        markup.add(InlineKeyboardButton(f"📈 {sym} Chart", callback_data=f"chart_{sym}"))
-    markup.add(InlineKeyboardButton("📊 Summary", callback_data="cmd_summary"))
-    bot.reply_to(m, text, parse_mode="Markdown", reply_markup=markup)
+    bot.reply_to(m, text, parse_mode="Markdown",
+                 reply_markup=InlineKeyboardMarkup().add(
+                     InlineKeyboardButton("📊 Summary", callback_data="cmd_summary")))
 
 @bot.message_handler(commands=["summary"])
 def cmd_summary(m):
     lines = []
     for symbol, mtype in MONITORED:
         status = "🔇 Muted" if symbol in muted_assets else "🟢 Active"
-        try:
-            price = get_cached_price(symbol) or 0
-            lines.append(f"📈 `{symbol}` ({mtype}) ➔ {status} `${price:,.4f}`")
-        except Exception:
-            lines.append(f"📈 `{symbol}` ({mtype}) ➔ {status}")
+        price = get_price(symbol)
+        if price:
+            lines.append(f"📈 `{symbol}` ({mtype}) {status} `${price:,.4f}`")
+        else:
+            lines.append(f"📈 `{symbol}` ({mtype}) {status}")
         time.sleep(0.3)
 
-    text = (
-        f"📊 *MARKET SUMMARY*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n" +
-        "\n".join(lines) +
-        "\n━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⚙️ All systems scanning 24/7"
-    )
-    bot.reply_to(m, text, parse_mode="Markdown",
-                 reply_markup=InlineKeyboardMarkup().add(
-                     InlineKeyboardButton("🔍 Run Scan", callback_data="cmd_check")
-                 ))
+    text = f"📊 *MARKET SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + "\n━━━━━━━━━━━━━━━━━━━━━━"
+    bot.reply_to(m, text, parse_mode="Markdown")
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
-    if not trade_history:
-        bot.reply_to(m, "📊 *No closed trades yet.*", parse_mode="Markdown")
-        return
+    history = load_json(HISTORY_FILE, [])
 
     def stats(acc):
-        ts = [x for x in trade_history if x["account"] == acc]
+        ts = [x for x in history if x["account"] == acc]
         w  = [x for x in ts if x["result"] == "WIN"]
         l  = [x for x in ts if x["result"] == "LOSS"]
         p  = sum(float(x["pnl"]) for x in ts)
@@ -750,12 +668,9 @@ def cmd_stats(m):
     text = (
         f"📊 *PERFORMANCE REPORT*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 *Macro ({mw}W/{ml}L — {mwr:.0f}%):*\n"
-        f"   P/L: `{'+' if mp>0 else ''}₹{mp:,.2f}`\n\n"
-        f"🇮🇳 *Nifty ({nw}W/{nl}L — {nwr:.0f}%):*\n"
-        f"   P/L: `{'+' if np_>0 else ''}₹{np_:,.2f}`\n\n"
-        f"🇺🇸 *NY Session ({nyw}W/{nyl}L — {nywr:.0f}%):*\n"
-        f"   P/L: `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
+        f"🌐 Macro ({mw}W/{ml}L — {mwr:.0f}%): `{'+' if mp>0 else ''}₹{mp:,.2f}`\n"
+        f"🇮🇳 Nifty ({nw}W/{nl}L — {nwr:.0f}%): `{'+' if np_>0 else ''}₹{np_:,.2f}`\n"
+        f"🇺🇸 NY ({nyw}W/{nyl}L — {nywr:.0f}%): `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
         f"━━━━━━━━━━━━━━━━━━━━━━"
     )
     bot.reply_to(m, text, parse_mode="Markdown", reply_markup=menu_markup())
@@ -774,9 +689,9 @@ def cmd_balance(m):
     text = (
         f"🏦 *VIRTUAL BALANCES*\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 *Macro* — `₹{macro_bal:,.2f}` | {macro_d}/3 today\n"
-        f"🇮🇳 *Nifty* — `₹{nifty_bal:,.2f}` | {nifty_d}/3 today\n"
-        f"🇺🇸 *NY Session* — `₹{ny_bal:,.2f}` | {ny_d}/3 today\n"
+        f"🌐 Macro:      `₹{macro_bal:,.2f}` | {macro_d}/3\n"
+        f"🇮🇳 Nifty:      `₹{nifty_bal:,.2f}` | {nifty_d}/3\n"
+        f"🇺🇸 NY Session: `₹{ny_bal:,.2f}` | {ny_d}/3\n"
         f"━━━━━━━━━━━━━━━━━━━━━━\n"
         f"⏰ NY Session: {'ACTIVE' if ny_active else 'INACTIVE'}"
     )
@@ -784,18 +699,15 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
-    global active_trades, trade_history, accounts, peaks, sent_signals
+    global active_trades
 
     with _lock:
-        active_trades, trade_history = [], []
+        active_trades = []
         for acc in ["macro", "nifty", "ny_session"]:
             accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
-        peaks = {k: 100000.0 for k in peaks}
-        sent_signals = {}
         save_json(ACCOUNTS_FILE, accounts)
-        save_json(ACTIVE_TRADES_FILE, active_trades)
-        save_json(HISTORY_FILE, trade_history)
-        save_peaks()
+        save_json(ACTIVE_TRADES_FILE, [])
+        save_json(HISTORY_FILE, [])
 
     bot.reply_to(m, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
@@ -819,7 +731,7 @@ def handle_cb(c):
             buf = generate_chart(sym)
             if buf:
                 bot.send_photo(c.message.chat.id, buf,
-                               caption=f"📈 `{sym}` | 1H Candlestick")
+                               caption=f"📈 `{sym}` | 1H Chart")
             else:
                 bot.send_message(c.message.chat.id, "❌ Chart failed.")
         elif c.data.startswith("mute_"):
@@ -831,8 +743,7 @@ def handle_cb(c):
                 InlineKeyboardButton(f"🔊 Unmute {sym}", callback_data=f"unmute_{sym}")
             )
             bot.edit_message_text(
-                f"🔇 `{sym}` muted — no alerts or trades until unmuted.",
-                c.message.chat.id, c.message.message_id,
+                f"🔇 `{sym}` muted.", c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=m
             )
         elif c.data.startswith("unmute_"):
@@ -844,8 +755,7 @@ def handle_cb(c):
                 InlineKeyboardButton(f"🔇 Mute {sym}", callback_data=f"mute_{sym}")
             )
             bot.edit_message_text(
-                f"🔊 `{sym}` unmuted — alerts resumed.",
-                c.message.chat.id, c.message.message_id,
+                f"🔊 `{sym}` unmuted.", c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=m
             )
     except Exception as e:
@@ -853,38 +763,31 @@ def handle_cb(c):
     bot.answer_callback_query(c.id)
 
 # ============================================================
-#  CHART GENERATION (thread-safe)
+#  CHART GENERATION
 # ============================================================
 def generate_chart(symbol, tf="1h"):
     with _chart_lock:
         try:
-            df = yf.download(symbol, period="5d", interval=tf,
+            df = yf.download(symbol, period="3d", interval=tf,
                               progress=False, auto_adjust=True)
             df = normalise_cols(df)
             if df.empty:
                 return None
 
-            fig, ax = plt.subplots(figsize=(12, 6),
-                                    facecolor="#0d1117", dpi=60)
+            fig, ax = plt.subplots(figsize=(10, 5), facecolor="#0d1117", dpi=50)
             ax.set_facecolor("#0d1117")
 
             for _, row in df.iterrows():
-                o, h, l, c = row["Open"], row["High"], row["Low"], row["Close"]
-                color = "#00ff88" if c >= o else "#ff4444"
-                ax.plot([df.index.get_loc(_) + 1,
-                          df.index.get_loc(_) + 1],
-                        [l, h], color=color, linewidth=1)
-                body_bottom = min(o, c)
-                body_height = abs(c - o) + 1e-8
-                ax.bar(df.index.get_loc(_) + 1, body_height,
-                       width=0.3, bottom=body_bottom,
-                       color=color, linewidth=1)
+                color = "#00ff88" if row["Close"] >= row["Open"] else "#ff4444"
+                ax.plot([df.index.get_loc(_) + 1]*2,
+                        [row["Low"], row["High"]], color=color, linewidth=1)
+                ax.bar(df.index.get_loc(_) + 1,
+                       abs(row["Close"] - row["Open"]) + 1e-8,
+                       bottom=min(row["Open"], row["Close"]),
+                       width=0.3, color=color, linewidth=1)
 
-            ax.set_title(f"{symbol} | {tf.upper()} Chart",
-                         color="white", fontsize=13, fontweight="bold")
-            ax.tick_params(colors="gray", labelsize=7)
-            ax.xaxis.set_major_locator(
-                plt.MaxNLocator(10))
+            ax.set_title(f"{symbol} | {tf.upper()}", color="white", fontsize=12, fontweight="bold")
+            ax.tick_params(colors="gray", labelsize=6)
             for spine in ax.spines.values():
                 spine.set_color("#30363d")
             ax.grid(True, color="#21262d", linestyle="--", linewidth=0.5)
@@ -894,14 +797,13 @@ def generate_chart(symbol, tf="1h"):
             plt.savefig(buf, format="png", facecolor="#0d1117")
             buf.seek(0)
             plt.close(fig)
+            del df
+            gc.collect()
             return buf
 
         except Exception as e:
             print(f"[ERR] Chart {symbol}: {e}")
-            try:
-                plt.close()
-            except Exception:
-                pass
+            plt.close()
             return None
 
 # ============================================================
@@ -915,15 +817,12 @@ if __name__ == "__main__":
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
-    trade_history = load_json(HISTORY_FILE, [])
 
     print("=" * 50)
     print("  Trading Bot Starting...")
     print(f"  Macro:      ₹{accounts['macro']['balance']:,.2f}")
     print(f"  Nifty:      ₹{accounts['nifty']['balance']:,.2f}")
     print(f"  NY Session: ₹{accounts['ny_session']['balance']:,.2f}")
-    print(f"  NY Active:  {is_ny_session()}")
-    print(f"  Nifty Open: {is_nifty_market_open()}")
     print("=" * 50)
 
     threading.Thread(target=scanner_loop,      daemon=True).start()
@@ -931,9 +830,9 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    import sys
     while True:
         try:
             bot.polling(timeout=60, long_polling_timeout=10)
-        except Exception:
+        except Exception as e:
+            print(f"[ERR] Polling: {e}")
             time.sleep(5)
