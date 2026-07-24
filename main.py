@@ -39,6 +39,7 @@ ACTIVE_TRADES_FILE = "active_trades.json"
 HISTORY_FILE       = "trade_history.json"
 MUTE_FILE          = "muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
+SENT_SIGNALS_FILE  = "sent_signals.json"
 
 # Globals
 accounts      = {}
@@ -90,6 +91,17 @@ def save_json(filepath, data):
             json.dump(data, f, indent=4)
     except Exception:
         pass
+
+def safe_send_message(chat_id, text, **kwargs):
+    try:
+        bot.send_message(chat_id, text, **kwargs)
+    except Exception as e:
+        print(f"[ERR] Failed to send message: {e}")
+        try:
+            # Fallback to plain text if markdown fails
+            bot.send_message(chat_id, f"⚠️ *Message formatting error, raw output:*\n{text}", parse_mode=None)
+        except Exception as fallback_e:
+            print(f"[ERR] Fallback message also failed: {fallback_e}")
 
 def init_accounts():
     global accounts
@@ -316,9 +328,11 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
     global active_trades
 
     with _lock:
-        if (symbol, ts, sig_type) in sent_signals:
+        key = f"{symbol}_{ts}_{sig_type}"
+        if key in sent_signals:
             return
-        sent_signals[(symbol, ts, sig_type)] = True
+        sent_signals[key] = True
+        save_json(SENT_SIGNALS_FILE, sent_signals)
 
         if accounts[account]["daily_trades"] >= 3:
             return
@@ -353,6 +367,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
         active_trades.append(trade)
         accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
+        save_json(ACTIVE_TRADES_FILE, active_trades)
 
     risk_amt = abs(price - actual_sl) * qty
     emoji_dir = "STRONG BULLISH" if "BULLISH" in sig_type else "STRONG BEARISH"
@@ -381,7 +396,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
         InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"),
         InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}")
     )
-    bot.send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
+    safe_send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     pushbullet_notify(msg)
     print(f"[TRADE] {direction} {symbol} @ {price}")
 
@@ -411,11 +426,18 @@ def monitor_trades():
                 is_long = trade["type"] == "LONG"
                 del df; gc.collect()
 
-                profit_pct = (live - trade["entry"]) / trade["entry"] * 100
+                if is_long:
+                    profit_pct = (live - trade["entry"]) / trade["entry"] * 100
+                else:
+                    profit_pct = (trade["entry"] - live) / trade["entry"] * 100
+
                 if profit_pct >= 1.5:
-                    new_sl = trade["entry"] + (trade["entry"] * 0.005)
-                    trade["trail_sl"] = max(trade["trail_sl"], new_sl) if is_long \
-                        else min(trade["trail_sl"], new_sl)
+                    if is_long:
+                        new_sl = trade["entry"] + (trade["entry"] * 0.005)
+                        trade["trail_sl"] = max(trade["trail_sl"], new_sl)
+                    else:
+                        new_sl = trade["entry"] - (trade["entry"] * 0.005)
+                        trade["trail_sl"] = min(trade["trail_sl"], new_sl)
 
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
                 hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
@@ -460,13 +482,14 @@ def monitor_trades():
                     f"🏦 Balance: `₹{bal:,.2f}`\n"
                     f"━━━━━━━━━━━━━━━━━━━━━━"
                 )
-                bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+                safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
                 pushbullet_notify(msg)
                 print(f"[CLOSE] {trade['symbol']} {trade['result']} {pnl_str}")
                 time.sleep(0.3)
 
             except Exception as e:
                 print(f"[ERR] Monitor {trade['symbol']}: {e}")
+                safe_send_message(CHAT_ID, f"⚠️ *Monitor Error ({trade['symbol']}):*\n`{e}`", parse_mode="Markdown")
 
         if to_close:
             with _lock:
@@ -528,6 +551,7 @@ def scanner_loop():
 
         except Exception as e:
             print(f"[ERR] Scanner: {e}")
+            safe_send_message(CHAT_ID, f"⚠️ *Scanner Loop Error:*\n`{e}`", parse_mode="Markdown")
 
         time.sleep(60)
 
@@ -547,6 +571,12 @@ def daily_reset_loop():
                 accounts["last_reset_date"] = today_str
                 save_json(ACCOUNTS_FILE, accounts)
 
+                global sent_signals
+                if len(sent_signals) > 500:
+                    keys = list(sent_signals.keys())
+                    sent_signals = {k: sent_signals[k] for k in keys[-500:]}
+                    save_json(SENT_SIGNALS_FILE, sent_signals)
+
             history = load_json(HISTORY_FILE, [])
             day_trades = [t for t in history if t.get("close_time", "").startswith(last_reset)] if last_reset else []
             day_pnl = sum(float(t["pnl"]) for t in day_trades)
@@ -561,7 +591,7 @@ def daily_reset_loop():
                 f"└ NY Session: `₹{accounts['ny_session']['balance']:,.2f}`\n"
                 f"🔄 Trade limits reset."
             )
-            bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
+            safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
 
             if len(history) > 500:
                 history = history[-500:]
@@ -599,12 +629,12 @@ GUIDE = (
 
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(m):
-    bot.send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+    safe_send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
 
 @bot.message_handler(commands=["check"])
 def cmd_check(m):
     chat_id = m.chat.id
-    bot.send_message(chat_id, "🔍 *Scanning...*")
+    safe_send_message(chat_id, "🔍 *Scanning...*")
 
     def run_scan():
         try:
@@ -624,9 +654,9 @@ def cmd_check(m):
             body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
             status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
             text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
-            bot.send_message(chat_id, text, parse_mode="Markdown")
+            safe_send_message(chat_id, text, parse_mode="Markdown")
         except Exception as e:
-            bot.send_message(chat_id, f"❌ *Scan Error:* `{e}`")
+            safe_send_message(chat_id, f"❌ *Scan Error:* `{e}`")
 
     threading.Thread(target=run_scan, daemon=True).start()
 
@@ -644,9 +674,9 @@ def cmd_summary(m):
             time.sleep(0.3)
 
         text = f"📊 *MARKET SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + "\n━━━━━━━━━━━━━━━━━━━━━━"
-        bot.send_message(m.chat.id, text, parse_mode="Markdown")
+        safe_send_message(m.chat.id, text, parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
@@ -673,9 +703,9 @@ def cmd_stats(m):
             f"🇺🇸 NY ({nyw}W/{nyl}L — {nywr:.0f}%): `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
             f"━━━━━━━━━━━━━━━━━━━━━━"
         )
-        bot.send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+        safe_send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
-        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(m):
@@ -698,9 +728,9 @@ def cmd_balance(m):
             f"━━━━━━━━━━━━━━━━━━━━━━\n"
             f"⏰ NY Session: {'ACTIVE' if ny_active else 'INACTIVE'}"
         )
-        bot.send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+        safe_send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
-        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
@@ -714,15 +744,15 @@ def cmd_clear(m):
             save_json(ACTIVE_TRADES_FILE, [])
             save_json(HISTORY_FILE, [])
 
-        bot.send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
+        safe_send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
     except Exception as e:
-        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(func=lambda m: True)
 def cmd_fallback(m):
     if m.text.startswith("/"):
         return
-    bot.send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+    safe_send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
 
 # ============================================================
 #  CALLBACK HANDLERS
@@ -741,7 +771,7 @@ def handle_cb(c):
             if buf:
                 bot.send_photo(c.message.chat.id, buf, caption=f"📈 `{sym}` | 1H Chart")
             else:
-                bot.send_message(c.message.chat.id, "❌ Chart failed.")
+                safe_send_message(c.message.chat.id, "❌ Chart failed.")
         elif c.data.startswith("mute_"):
             sym = c.data.split("_", 1)[1]
             with _lock:
@@ -820,6 +850,7 @@ if __name__ == "__main__":
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
+    sent_signals = load_json(SENT_SIGNALS_FILE, {})
 
     print("=" * 50)
     print("  Trading Bot Starting...")
