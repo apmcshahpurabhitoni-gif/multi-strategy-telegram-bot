@@ -863,14 +863,22 @@ def cmd_indi1(m):
         for symbol, mtype in MONITORED:
             sweep = check_sweep_engulfing(symbol)
             if sweep:
-                signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
                 execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
                 if sweep[4]:
+                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`\n   ➔ Executed on ALL accounts")
                     execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                else:
+                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`\n   ➔ Executed on NO-VOL only")
             time.sleep(0.5)
             gc.collect()
         if signals:
-            safe_send_message(chat_id, "🔥 *Strategy 1 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+            msg = (
+                f"🔥 *STRATEGY 1 EXECUTIONS*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(signals) +
+                f"\n━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            safe_send_message(chat_id, msg, parse_mode="Markdown")
         else:
             safe_send_message(chat_id, "⚪ *No Strategy 1 Signals met conditions.*", parse_mode="Markdown")
 
@@ -896,16 +904,24 @@ def cmd_indi2(m):
         for symbol, mtype in MONITORED:
             ut = check_ut_bot(symbol)
             if ut:
-                signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
                 ny_active = is_ny_session()
                 execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
                 if ut[4]:
+                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`\n   ➔ Executed on ALL accounts")
                     target = "ny_session" if ny_active else "macro"
                     execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                else:
+                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`\n   ➔ Executed on NO-VOL only")
             time.sleep(0.5)
             gc.collect()
         if signals:
-            safe_send_message(chat_id, "🔥 *Strategy 2 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+            msg = (
+                f"🔥 *STRATEGY 2 EXECUTIONS*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(signals) +
+                f"\n━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            safe_send_message(chat_id, msg, parse_mode="Markdown")
         else:
             safe_send_message(chat_id, "⚪ *No Strategy 2 Signals met conditions.*", parse_mode="Markdown")
 
