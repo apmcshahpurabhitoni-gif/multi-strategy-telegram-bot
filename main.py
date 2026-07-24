@@ -68,9 +68,9 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 # ============================================================
-#  BOT
+#  BOT — threaded=True so handlers run in separate threads
 # ============================================================
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
+bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=True)
 
 # ============================================================
 #  HELPERS
@@ -129,8 +129,7 @@ def get_price(symbol):
             return None
         price = float(df["Close"].iloc[-1])
         _price_cache[symbol] = (price, now)
-        del df
-        gc.collect()
+        del df; gc.collect()
         return price
     except Exception:
         return None
@@ -600,11 +599,12 @@ GUIDE = (
 
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(m):
-    bot.reply_to(m, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+    bot.send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
 
 @bot.message_handler(commands=["check"])
 def cmd_check(m):
-    bot.send_message(m.chat.id, "🔍 *Scanning...*")
+    chat_id = m.chat.id
+    bot.send_message(chat_id, "🔍 *Scanning...*")
 
     def run_scan():
         try:
@@ -624,96 +624,105 @@ def cmd_check(m):
             body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
             status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
             text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
-            bot.reply_to(m, text, parse_mode="Markdown",
-                         reply_markup=InlineKeyboardMarkup().add(
-                             InlineKeyboardButton("📊 Summary", callback_data="cmd_summary")))
+            bot.send_message(chat_id, text, parse_mode="Markdown")
         except Exception as e:
-            bot.reply_to(m, f"❌ *Scan Error:* `{e}`")
+            bot.send_message(chat_id, f"❌ *Scan Error:* `{e}`")
 
     threading.Thread(target=run_scan, daemon=True).start()
 
 @bot.message_handler(commands=["summary"])
 def cmd_summary(m):
-    lines = []
-    for symbol, mtype in MONITORED:
-        status = "🔇 Muted" if symbol in muted_assets else "🟢 Active"
-        price = get_price(symbol)
-        if price:
-            lines.append(f"📈 `{symbol}` ({mtype}) {status} `${price:,.4f}`")
-        else:
-            lines.append(f"📈 `{symbol}` ({mtype}) {status}")
-        time.sleep(0.3)
+    try:
+        lines = []
+        for symbol, mtype in MONITORED:
+            status = "🔇 Muted" if symbol in muted_assets else "🟢 Active"
+            price = get_price(symbol)
+            if price:
+                lines.append(f"📈 `{symbol}` ({mtype}) {status} `${price:,.4f}`")
+            else:
+                lines.append(f"📈 `{symbol}` ({mtype}) {status}")
+            time.sleep(0.3)
 
-    text = f"📊 *MARKET SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + "\n━━━━━━━━━━━━━━━━━━━━━━"
-    bot.reply_to(m, text, parse_mode="Markdown")
+        text = f"📊 *MARKET SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + "\n━━━━━━━━━━━━━━━━━━━━━━"
+        bot.send_message(m.chat.id, text, parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
-    history = load_json(HISTORY_FILE, [])
+    try:
+        history = load_json(HISTORY_FILE, [])
 
-    def stats(acc):
-        ts = [x for x in history if x["account"] == acc]
-        w  = [x for x in ts if x["result"] == "WIN"]
-        l  = [x for x in ts if x["result"] == "LOSS"]
-        p  = sum(float(x["pnl"]) for x in ts)
-        wr = len(w) / (len(w) + len(l)) * 100 if (w or l) else 0
-        return len(w), len(l), p, wr
+        def stats(acc):
+            ts = [x for x in history if x["account"] == acc]
+            w  = [x for x in ts if x["result"] == "WIN"]
+            l  = [x for x in ts if x["result"] == "LOSS"]
+            p  = sum(float(x["pnl"]) for x in ts)
+            wr = len(w) / (len(w) + len(l)) * 100 if (w or l) else 0
+            return len(w), len(l), p, wr
 
-    mw, ml, mp, mwr = stats("macro")
-    nw, nl, np_, nwr = stats("nifty")
-    nyw, nyl, nyp, nywr = stats("ny_session")
+        mw, ml, mp, mwr = stats("macro")
+        nw, nl, np_, nwr = stats("nifty")
+        nyw, nyl, nyp, nywr = stats("ny_session")
 
-    text = (
-        f"📊 *PERFORMANCE REPORT*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 Macro ({mw}W/{ml}L — {mwr:.0f}%): `{'+' if mp>0 else ''}₹{mp:,.2f}`\n"
-        f"🇮🇳 Nifty ({nw}W/{nl}L — {nwr:.0f}%): `{'+' if np_>0 else ''}₹{np_:,.2f}`\n"
-        f"🇺🇸 NY ({nyw}W/{nyl}L — {nywr:.0f}%): `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━"
-    )
-    bot.reply_to(m, text, parse_mode="Markdown", reply_markup=menu_markup())
+        text = (
+            f"📊 *PERFORMANCE REPORT*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌐 Macro ({mw}W/{ml}L — {mwr:.0f}%): `{'+' if mp>0 else ''}₹{mp:,.2f}`\n"
+            f"🇮🇳 Nifty ({nw}W/{nl}L — {nwr:.0f}%): `{'+' if np_>0 else ''}₹{np_:,.2f}`\n"
+            f"🇺🇸 NY ({nyw}W/{nyl}L — {nywr:.0f}%): `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━"
+        )
+        bot.send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(m):
-    with _lock:
-        macro_bal = accounts["macro"]["balance"]
-        nifty_bal = accounts["nifty"]["balance"]
-        ny_bal    = accounts["ny_session"]["balance"]
-        macro_d   = accounts["macro"]["daily_trades"]
-        nifty_d   = accounts["nifty"]["daily_trades"]
-        ny_d      = accounts["ny_session"]["daily_trades"]
-        ny_active = is_ny_session()
+    try:
+        with _lock:
+            macro_bal = accounts["macro"]["balance"]
+            nifty_bal = accounts["nifty"]["balance"]
+            ny_bal    = accounts["ny_session"]["balance"]
+            macro_d   = accounts["macro"]["daily_trades"]
+            nifty_d   = accounts["nifty"]["daily_trades"]
+            ny_d      = accounts["ny_session"]["daily_trades"]
+            ny_active = is_ny_session()
 
-    text = (
-        f"🏦 *VIRTUAL BALANCES*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🌐 Macro:      `₹{macro_bal:,.2f}` | {macro_d}/3\n"
-        f"🇮🇳 Nifty:      `₹{nifty_bal:,.2f}` | {nifty_d}/3\n"
-        f"🇺🇸 NY Session: `₹{ny_bal:,.2f}` | {ny_d}/3\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"⏰ NY Session: {'ACTIVE' if ny_active else 'INACTIVE'}"
-    )
-    bot.reply_to(m, text, parse_mode="Markdown", reply_markup=menu_markup())
+        text = (
+            f"🏦 *VIRTUAL BALANCES*\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"🌐 Macro:      `₹{macro_bal:,.2f}` | {macro_d}/3\n"
+            f"🇮🇳 Nifty:      `₹{nifty_bal:,.2f}` | {nifty_d}/3\n"
+            f"🇺🇸 NY Session: `₹{ny_bal:,.2f}` | {ny_d}/3\n"
+            f"━━━━━━━━━━━━━━━━━━━━━━\n"
+            f"⏰ NY Session: {'ACTIVE' if ny_active else 'INACTIVE'}"
+        )
+        bot.send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
     global active_trades
+    try:
+        with _lock:
+            active_trades = []
+            for acc in ["macro", "nifty", "ny_session"]:
+                accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
+            save_json(ACCOUNTS_FILE, accounts)
+            save_json(ACTIVE_TRADES_FILE, [])
+            save_json(HISTORY_FILE, [])
 
-    with _lock:
-        active_trades = []
-        for acc in ["macro", "nifty", "ny_session"]:
-            accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
-        save_json(ACCOUNTS_FILE, accounts)
-        save_json(ACTIVE_TRADES_FILE, [])
-        save_json(HISTORY_FILE, [])
-
-    bot.reply_to(m, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
+        bot.send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
+    except Exception as e:
+        bot.send_message(m.chat.id, f"❌ *Error:* `{e}`")
 
 @bot.message_handler(func=lambda m: True)
 def cmd_fallback(m):
     if m.text.startswith("/"):
-        return  # let specific handlers deal with commands
-    bot.reply_to(m, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+        return
+    bot.send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
 
 # ============================================================
 #  CALLBACK HANDLERS
@@ -825,4 +834,9 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop,  daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    bot.polling(timeout=60, long_polling_timeout=10)
+    while True:
+        try:
+            bot.polling(timeout=60, long_polling_timeout=10)
+        except Exception as e:
+            print(f"[ERR] Polling crashed: {e}")
+            time.sleep(5)
