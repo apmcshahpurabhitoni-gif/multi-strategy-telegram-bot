@@ -426,11 +426,18 @@ def monitor_trades():
                 is_long = trade["type"] == "LONG"
                 del df; gc.collect()
 
-                profit_pct = (live - trade["entry"]) / trade["entry"] * 100
+                if is_long:
+                    profit_pct = (live - trade["entry"]) / trade["entry"] * 100
+                else:
+                    profit_pct = (trade["entry"] - live) / trade["entry"] * 100
+
                 if profit_pct >= 1.5:
-                    new_sl = trade["entry"] + (trade["entry"] * 0.005)
-                    trade["trail_sl"] = max(trade["trail_sl"], new_sl) if is_long \
-                        else min(trade["trail_sl"], new_sl)
+                    if is_long:
+                        new_sl = trade["entry"] + (trade["entry"] * 0.005)
+                        trade["trail_sl"] = max(trade["trail_sl"], new_sl)
+                    else:
+                        new_sl = trade["entry"] - (trade["entry"] * 0.005)
+                        trade["trail_sl"] = min(trade["trail_sl"], new_sl)
 
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
                 hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
