@@ -232,6 +232,40 @@ def check_sweep_engulfing(ticker):
         print(f"[ERR] Sweep {ticker}: {e}")
     return None
 
+def debug_sweep(ticker):
+    try:
+        df = yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=True)
+        df = normalise_cols(df)
+        if df.empty or len(df) < 30: return f"Not enough 1H data ({len(df)} candles)"
+
+        atr = float(calculate_atr(df, 10).iloc[-2])
+        price = float(df["Close"].iloc[-1])
+        vol = (atr / price * 100)
+
+        df_4h = df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+        if len(df_4h) < 4: return "Not enough 4H data"
+
+        df_4h["ATR"] = calculate_atr(df_4h, 10)
+        curr = df_4h.iloc[-2]
+        mother = df_4h.iloc[-3]
+
+        res = (
+            f"`{ticker}` Sweep (4H):\n"
+            f"Vol: {vol:.2f}% (Min {MIN_VOLATILITY}%)\n"
+            f"Curr: H={curr['High']:.2f}, L={curr['Low']:.2f}, C={curr['Close']:.2f}\n"
+            f"Mother: H={mother['High']:.2f}, L={mother['Low']:.2f}, C={mother['Close']:.2f}\n"
+        )
+
+        if vol < MIN_VOLATILITY: res += "-> Failed Volatility Check\n"
+        elif curr["Low"] < mother["Low"] and curr["Close"] > mother["High"]: res += "-> BULLISH Triggered\n"
+        elif curr["High"] > mother["High"] and curr["Close"] < mother["Low"]: res += "-> BEARISH Triggered\n"
+        else: res += "-> No Sweep Condition Met\n"
+
+        return res
+    except Exception as e:
+        return f"Error: {e}"
+
+
 # ============================================================
 #  STRATEGY 2 — UT BOT (15m + 5m EMA)
 # ============================================================
@@ -306,6 +340,62 @@ def check_ut_bot(ticker, kv=2):
     except Exception as e:
         print(f"[ERR] UT Bot {ticker}: {e}")
     return None
+
+def debug_ut(ticker, kv=2):
+    try:
+        df_15 = yf.download(ticker, period="3d", interval="15m", progress=False, auto_adjust=True)
+        df_5  = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True)
+        df_15 = normalise_cols(df_15)
+        df_5  = normalise_cols(df_5)
+        if df_15.empty or len(df_15) < 20 or df_5.empty or len(df_5) < 40: return "Not enough data"
+
+        atr = float(calculate_atr(df_15, 1).iloc[-2])
+        price = float(df_15["Close"].iloc[-1])
+        vol = (atr / price * 100)
+
+        df_15["xATR"] = calculate_atr(df_15, 1)
+        df_15["nLoss"] = kv * df_15["xATR"]
+        src = df_15["Close"].values
+        nLoss = df_15["nLoss"].values
+        ts_arr = np.zeros(len(df_15))
+        pos = np.zeros(len(df_15))
+        for i in range(1, len(df_15)):
+            prev_ts, prev_src = ts_arr[i-1], src[i-1]
+            if src[i] > prev_ts and prev_src > prev_ts: ts_arr[i] = max(prev_ts, src[i] - nLoss[i])
+            elif src[i] < prev_ts and prev_src < prev_ts: ts_arr[i] = min(prev_ts, src[i] + nLoss[i])
+            elif src[i] > prev_ts: ts_arr[i] = src[i] - nLoss[i]
+            else: ts_arr[i] = src[i] + nLoss[i]
+            if prev_src < prev_ts and src[i] > ts_arr[i]: pos[i] = 1
+            elif prev_src > prev_ts and src[i] < ts_arr[i]: pos[i] = -1
+            else: pos[i] = pos[i-1]
+
+        i = len(df_15) - 2
+        is_buy  = (src[i] > ts_arr[i]) and (src[i-1] <= ts_arr[i-1])
+        is_sell = (src[i] < ts_arr[i]) and (src[i-1] >= ts_arr[i-1])
+
+        df_5["EMA50"] = df_5["Close"].ewm(span=50, adjust=False).mean()
+        df_15["RSI"]  = get_rsi(df_15)
+        m5_close = float(df_5["Close"].iloc[-2])
+        m5_ema   = float(df_5["EMA50"].iloc[-2])
+        rsi_15   = float(df_15["RSI"].iloc[-2])
+
+        res = (
+            f"`{ticker}` UT Bot (15m/5m):\n"
+            f"Vol: {vol:.2f}% (Min {MIN_VOLATILITY}%)\n"
+            f"UT Signal: Buy={is_buy}, Sell={is_sell}\n"
+            f"5m EMA: Close={m5_close:.2f}, EMA={m5_ema:.2f}\n"
+            f"15m RSI: {rsi_15:.2f} (Buy<70, Sell>30)\n"
+        )
+
+        if vol < MIN_VOLATILITY: res += "-> Failed Volatility Check\n"
+        elif is_buy and m5_close > m5_ema and rsi_15 < 70: res += "-> BULLISH Triggered\n"
+        elif is_sell and m5_close < m5_ema and rsi_15 > 30: res += "-> BEARISH Triggered\n"
+        else: res += "-> No UT Bot Condition Met\n"
+
+        return res
+    except Exception as e:
+        return f"Error: {e}"
+
 
 # ============================================================
 #  TRADE EXECUTION
@@ -619,7 +709,9 @@ GUIDE = (
     "▫️ /summary  — Live prices\n"
     "▫️ /stats    — Win rate + P/L\n"
     "▫️ /balance  — Account balances\n"
-    "▫️ /clear    — Reset to ₹1L\n\n"
+    "▫️ /clear    — Reset to ₹1L\n"
+    "▫️ /indi1    — Check Strategy 1 (Sweep)\n"
+    "▫️ /indi2    — Check Strategy 2 (UT Bot)\n\n"
     "⚡ *STRATEGIES:*\n"
     "🔵 Sweep + Engulfing (4H)\n"
     "🟣 UT Bot (15m + 5m EMA)\n\n"
@@ -747,6 +839,71 @@ def cmd_clear(m):
         safe_send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
     except Exception as e:
         safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
+
+
+@bot.message_handler(commands=["indi1"])
+def cmd_indi1(m):
+    chat_id = m.chat.id
+    safe_send_message(chat_id, "🔍 *Diagnosing Strategy 1 (Sweep)...*")
+    def run_diag():
+        results = []
+        for symbol, mtype in MONITORED:
+            results.append(debug_sweep(symbol))
+            time.sleep(0.5)
+            gc.collect()
+
+        full_text = "\n\n".join(results)
+        for i in range(0, len(full_text), 4000):
+            safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
+
+        # run actual check
+        signals = []
+        for symbol, mtype in MONITORED:
+            sweep = check_sweep_engulfing(symbol)
+            if sweep:
+                signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
+                execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+            time.sleep(0.5)
+            gc.collect()
+        if signals:
+            safe_send_message(chat_id, "🔥 *Strategy 1 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+        else:
+            safe_send_message(chat_id, "⚪ *No Strategy 1 Signals met conditions.*", parse_mode="Markdown")
+
+    threading.Thread(target=run_diag, daemon=True).start()
+
+@bot.message_handler(commands=["indi2"])
+def cmd_indi2(m):
+    chat_id = m.chat.id
+    safe_send_message(chat_id, "🔍 *Diagnosing Strategy 2 (UT Bot)...*")
+    def run_diag():
+        results = []
+        for symbol, mtype in MONITORED:
+            results.append(debug_ut(symbol))
+            time.sleep(0.5)
+            gc.collect()
+
+        full_text = "\n\n".join(results)
+        for i in range(0, len(full_text), 4000):
+            safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
+
+        # run actual check
+        signals = []
+        for symbol, mtype in MONITORED:
+            ut = check_ut_bot(symbol)
+            if ut:
+                signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
+                ny_active = is_ny_session()
+                target = "ny_session" if ny_active else "macro"
+                execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+            time.sleep(0.5)
+            gc.collect()
+        if signals:
+            safe_send_message(chat_id, "🔥 *Strategy 2 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+        else:
+            safe_send_message(chat_id, "⚪ *No Strategy 2 Signals met conditions.*", parse_mode="Markdown")
+
+    threading.Thread(target=run_diag, daemon=True).start()
 
 @bot.message_handler(func=lambda m: True)
 def cmd_fallback(m):
