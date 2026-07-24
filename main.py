@@ -6,6 +6,7 @@ import threading
 import gc
 from datetime import datetime
 from io import BytesIO
+from wsgiref.simple_server import make_server
 
 import requests
 import numpy as np
@@ -39,17 +40,32 @@ HISTORY_FILE       = "trade_history.json"
 MUTE_FILE          = "muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
 
-# Globals — keep small
+# Globals
 accounts      = {}
 active_trades = []
 muted_assets  = set()
 sent_signals  = {}
 
-_lock       = threading.Lock()
-_chart_lock = threading.Lock()
+_lock        = threading.Lock()
+_chart_lock  = threading.Lock()
 _price_cache = {}
 
 IST = pytz.timezone("Asia/Kolkata")
+
+# ============================================================
+#  WEB SERVER — keeps Render awake
+# ============================================================
+def run_web():
+    def app(environ, start_response):
+        if environ["PATH_INFO"] == "/ping":
+            start_response("200 OK", [("Content-Type", "text/plain")])
+            return [b"pong"]
+        start_response("200 OK", [("Content-Type", "text/plain")])
+        return [b"Trading Bot OK"]
+    srv = make_server("0.0.0.0", 10000, app)
+    srv.serve_forever()
+
+threading.Thread(target=run_web, daemon=True).start()
 
 # ============================================================
 #  BOT
@@ -57,7 +73,7 @@ IST = pytz.timezone("Asia/Kolkata")
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 
 # ============================================================
-#  HELPERS — FILES
+#  HELPERS
 # ============================================================
 def load_json(filepath, default):
     try:
@@ -75,9 +91,6 @@ def save_json(filepath, data):
     except Exception:
         pass
 
-# ============================================================
-#  HELPERS — ACCOUNTS
-# ============================================================
 def init_accounts():
     global accounts
     defaults = {
@@ -93,9 +106,6 @@ def init_accounts():
     accounts["last_reset_date"] = today
     save_json(ACCOUNTS_FILE, accounts)
 
-# ============================================================
-#  HELPERS — TIME
-# ============================================================
 def is_ny_session():
     h, m = datetime.now(IST).hour, datetime.now(IST).minute
     return h >= 18 or (h == 1 and m <= 30) or h == 0
@@ -107,9 +117,6 @@ def is_nifty_market_open():
     total_min = now.hour * 60 + now.minute
     return 555 <= total_min <= 930
 
-# ============================================================
-#  HELPERS — PRICE
-# ============================================================
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
@@ -128,9 +135,6 @@ def get_price(symbol):
     except Exception:
         return None
 
-# ============================================================
-#  HELPERS — PUSH
-# ============================================================
 def pushbullet_notify(text):
     try:
         token = os.environ.get("PUSHBULLET_TOKEN")
@@ -176,14 +180,14 @@ def check_sweep_engulfing(ticker):
                          progress=False, auto_adjust=True)
         df = normalise_cols(df)
         if df.empty or len(df) < 30:
+            del df; gc.collect()
             return None
 
         try:
             atr   = float(calculate_atr(df, 10).iloc[-2])
             price = float(df["Close"].iloc[-1])
             if (atr / price * 100) < MIN_VOLATILITY:
-                del df
-                gc.collect()
+                del df; gc.collect()
                 return None
         except Exception:
             pass
@@ -194,8 +198,7 @@ def check_sweep_engulfing(ticker):
                   "Low": "min", "Close": "last"})
             .dropna()
         )
-        del df
-        gc.collect()
+        del df; gc.collect()
 
         if len(df_4h) < 4:
             return None
@@ -203,18 +206,16 @@ def check_sweep_engulfing(ticker):
         df_4h["ATR"] = calculate_atr(df_4h, 10)
         atr = float(df_4h["ATR"].iloc[-2])
 
-        curr  = df_4h.iloc[-2]
+        curr   = df_4h.iloc[-2]
         mother = df_4h.iloc[-3]
-
         ts = int(df_4h.index[-2].timestamp() * 1000)
+
+        del df_4h; gc.collect()
 
         if curr["Low"] < mother["Low"] and curr["Close"] > mother["High"]:
             return ("BULLISH", float(curr["Close"]), atr, ts)
         if curr["High"] > mother["High"] and curr["Close"] < mother["Low"]:
             return ("BEARISH", float(curr["Close"]), atr, ts)
-
-        del df_4h
-        gc.collect()
 
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
@@ -233,16 +234,14 @@ def check_ut_bot(ticker, kv=2):
         df_5  = normalise_cols(df_5)
 
         if df_15.empty or len(df_15) < 20 or df_5.empty or len(df_5) < 40:
-            del df_15, df_5
-            gc.collect()
+            del df_15, df_5; gc.collect()
             return None
 
         try:
             atr = float(calculate_atr(df_15, 1).iloc[-2])
             price = float(df_15["Close"].iloc[-1])
             if (atr / price * 100) < MIN_VOLATILITY:
-                del df_15, df_5
-                gc.collect()
+                del df_15, df_5; gc.collect()
                 return None
         except Exception:
             pass
@@ -250,8 +249,8 @@ def check_ut_bot(ticker, kv=2):
         df_15["xATR"]  = calculate_atr(df_15, 1)
         df_15["nLoss"] = kv * df_15["xATR"]
 
-        src   = df_15["Close"].values
-        nLoss = df_15["nLoss"].values
+        src    = df_15["Close"].values
+        nLoss  = df_15["nLoss"].values
         ts_arr = np.zeros(len(df_15))
         pos    = np.zeros(len(df_15))
 
@@ -283,12 +282,10 @@ def check_ut_bot(ticker, kv=2):
         m5_close = float(df_5["Close"].iloc[-2])
         m5_ema   = float(df_5["EMA50"].iloc[-2])
         rsi_15   = float(df_15["RSI"].iloc[-2])
+        ts       = int(df_15.index[-2].timestamp() * 1000)
+        atr_val  = float(df_15["xATR"].iloc[i])
 
-        ts = int(df_15.index[-2].timestamp() * 1000)
-        atr_val = float(df_15["xATR"].iloc[i])
-
-        del df_15, df_5
-        gc.collect()
+        del df_15, df_5; gc.collect()
 
         if is_buy and m5_close > m5_ema and rsi_15 < 70:
             return ("BULLISH", float(src[i]), atr_val, ts)
@@ -387,7 +384,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
     )
     bot.send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     pushbullet_notify(msg)
-    print(f"[TRADE] {direction} {symbol} @ {price} | SL {actual_sl} | TP {actual_tp}")
+    print(f"[TRADE] {direction} {symbol} @ {price}")
 
 # ============================================================
 #  MONITOR TRADES
@@ -408,16 +405,13 @@ def monitor_trades():
                                  interval="1m", progress=False, auto_adjust=True)
                 df = normalise_cols(df)
                 if df.empty:
-                    del df
-                    gc.collect()
+                    del df; gc.collect()
                     continue
 
                 live    = float(df["Close"].iloc[-1])
                 is_long = trade["type"] == "LONG"
-                del df
-                gc.collect()
+                del df; gc.collect()
 
-                # Trailing stop
                 profit_pct = (live - trade["entry"]) / trade["entry"] * 100
                 if profit_pct >= 1.5:
                     new_sl = trade["entry"] + (trade["entry"] * 0.005)
@@ -442,7 +436,6 @@ def monitor_trades():
                     to_close.append(trade)
                     save_json(ACCOUNTS_FILE, accounts)
 
-                # Append to history file directly (don't hold in memory)
                 try:
                     history = load_json(HISTORY_FILE, [])
                     history.append(trade)
@@ -571,7 +564,6 @@ def daily_reset_loop():
             )
             bot.send_message(CHAT_ID, msg, parse_mode="Markdown")
 
-            # Trim history to last 500 trades max
             if len(history) > 500:
                 history = history[-500:]
                 save_json(HISTORY_FILE, history)
@@ -730,8 +722,7 @@ def handle_cb(c):
             bot.answer_callback_query(c.id, text="Generating chart...")
             buf = generate_chart(sym)
             if buf:
-                bot.send_photo(c.message.chat.id, buf,
-                               caption=f"📈 `{sym}` | 1H Chart")
+                bot.send_photo(c.message.chat.id, buf, caption=f"📈 `{sym}` | 1H Chart")
             else:
                 bot.send_message(c.message.chat.id, "❌ Chart failed.")
         elif c.data.startswith("mute_"):
@@ -740,24 +731,20 @@ def handle_cb(c):
                 muted_assets.add(sym)
                 save_json(MUTE_FILE, list(muted_assets))
             m = InlineKeyboardMarkup().add(
-                InlineKeyboardButton(f"🔊 Unmute {sym}", callback_data=f"unmute_{sym}")
-            )
+                InlineKeyboardButton(f"🔊 Unmute {sym}", callback_data=f"unmute_{sym}"))
             bot.edit_message_text(
                 f"🔇 `{sym}` muted.", c.message.chat.id, c.message.message_id,
-                parse_mode="Markdown", reply_markup=m
-            )
+                parse_mode="Markdown", reply_markup=m)
         elif c.data.startswith("unmute_"):
             sym = c.data.split("_", 1)[1]
             with _lock:
                 muted_assets.discard(sym)
                 save_json(MUTE_FILE, list(muted_assets))
             m = InlineKeyboardMarkup().add(
-                InlineKeyboardButton(f"🔇 Mute {sym}", callback_data=f"mute_{sym}")
-            )
+                InlineKeyboardButton(f"🔇 Mute {sym}", callback_data=f"mute_{sym}"))
             bot.edit_message_text(
                 f"🔊 `{sym}` unmuted.", c.message.chat.id, c.message.message_id,
-                parse_mode="Markdown", reply_markup=m
-            )
+                parse_mode="Markdown", reply_markup=m)
     except Exception as e:
         print(f"[ERR] Callback: {e}")
     bot.answer_callback_query(c.id)
@@ -797,8 +784,7 @@ def generate_chart(symbol, tf="1h"):
             plt.savefig(buf, format="png", facecolor="#0d1117")
             buf.seek(0)
             plt.close(fig)
-            del df
-            gc.collect()
+            del df; gc.collect()
             return buf
 
         except Exception as e:
@@ -823,16 +809,12 @@ if __name__ == "__main__":
     print(f"  Macro:      ₹{accounts['macro']['balance']:,.2f}")
     print(f"  Nifty:      ₹{accounts['nifty']['balance']:,.2f}")
     print(f"  NY Session: ₹{accounts['ny_session']['balance']:,.2f}")
+    print(f"  Web server: :10000/ping")
     print("=" * 50)
 
-    threading.Thread(target=scanner_loop,      daemon=True).start()
-    threading.Thread(target=monitor_trades,    daemon=True).start()
-    threading.Thread(target=daily_reset_loop, daemon=True).start()
+    threading.Thread(target=scanner_loop,       daemon=True).start()
+    threading.Thread(target=monitor_trades,      daemon=True).start()
+    threading.Thread(target=daily_reset_loop,  daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    while True:
-        try:
-            bot.polling(timeout=60, long_polling_timeout=10)
-        except Exception as e:
-            print(f"[ERR] Polling: {e}")
-            time.sleep(5)
+    bot.polling(timeout=60, long_polling_timeout=10)
