@@ -40,6 +40,7 @@ HISTORY_FILE       = "trade_history.json"
 MUTE_FILE          = "muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
 SENT_SIGNALS_FILE  = "sent_signals.json"
+SETTINGS_FILE      = "settings.json"
 
 # Globals
 accounts      = {}
@@ -52,6 +53,302 @@ _chart_lock  = threading.Lock()
 _price_cache = {}
 
 IST = pytz.timezone("Asia/Kolkata")
+
+# ============================================================
+#  UNIFIED MESSAGE TEMPLATES
+# ============================================================
+BR = "━━━━━━━━━━━━━━━━━━━━━━"
+BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
+
+def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account):
+    arrow  = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
+    label  = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
+    dir_   = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
+    return (
+        f"⚡ *ALERT — HIGH CONFLUENCE SIGNAL*\n"
+        f"{BR}\n"
+        f"{arrow}  *{label}*\n"
+        f"{BR}\n"
+        f"🪙 *Asset:*      `{symbol}`\n"
+        f"🌐 *Market:*     {mtype}\n"
+        f"🎯 *Strategy:*   {strat}\n"
+        f"📊 *Direction:*  {dir_}\n"
+        f"⏱  *Timeframe:*  {tf}\n"
+        f"{BR}\n"
+        f"💼 *PAPER TRADE EXECUTED*\n"
+        f"{BR}\n"
+        f"🏢 *Account:*   `{account.upper()}`\n"
+        f"📍 *Entry:*     `${price:,.4f}`\n"
+        f"🛑 *Stop Loss:* `${actual_sl:,.4f}`\n"
+        f"🎯 *Take Profit:* `${actual_tp:,.4f}`\n"
+        f"📦 *Quantity:*  `{qty:.4f}`\n"
+        f"💸 *Risk:*      `₹{risk_amt:,.2f}`\n"
+        f"{BR2}"
+    )
+
+def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
+    result = "🎉 WIN" if hit_tp else "💀 LOSS"
+    icon   = "✅" if hit_tp else "❌"
+    arrow  = "📈" if hit_tp else "📉"
+    money  = "💰" if hit_tp else "💸"
+    dir_   = "LONG 🟢" if is_long else "SHORT 🔴"
+    pnl_s  = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
+    return (
+        f"{icon} *TRADE CLOSED — {result}*\n"
+        f"{BR}\n"
+        f"{'🟢' if is_long else '🔴'} *{trade['symbol']}*  |  {dir_}\n"
+        f"🎯 *Strategy:*   {trade['strat']}\n"
+        f"🏢 *Account:*   `{trade['account'].upper()}`\n"
+        f"{BR}\n"
+        f"📍 *Entry:*     `${trade['entry']:,.4f}`\n"
+        f"{arrow} *Exit:*      `${live:,.4f}`\n"
+        f"🛑 *SL Hit:*    `${trade['trail_sl']:,.4f}`\n"
+        f"🎯 *TP Target:* `${trade['tp']:,.4f}`\n"
+        f"{BR}\n"
+        f"{money} *P/L:*       `{pnl_s}`\n"
+        f"🏦 *Balance:*   `₹{bal:,.2f}`\n"
+        f"{BR2}"
+    )
+
+def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal):
+    pnl_icon = "📈" if day_pnl >= 0 else "📉"
+    pnl_sign = "+" if day_pnl >= 0 else ""
+    return (
+        f"🌙 *MIDNIGHT RESET*\n"
+        f"{BR}\n"
+        f"{pnl_icon} *Yesterday P/L:*  `{pnl_sign}₹{day_pnl:,.2f}`\n"
+        f"{BR}\n"
+        f"🏦 *Account Balances:*\n"
+        f"├ 🌐 *Macro:*      `₹{macro_bal:,.2f}`\n"
+        f"├ 🇮🇳 *Nifty:*      `₹{nifty_bal:,.2f}`\n"
+        f"└ 🇺🇸 *NY Session:* `₹{ny_bal:,.2f}`\n"
+        f"{BR}\n"
+        f"🔄 *Daily trade limits reset to 0/3*\n"
+        f"🧹 *Signal cache cleaned*\n"
+        f"{BR2}"
+    )
+
+def msg_guide():
+    return (
+        f"🤖 *TRADING BOT — COMMAND CENTER*\n"
+        f"{BR}\n"
+        f"📘 *COMMANDS:*\n"
+        f"├ `/check`    🔍  Scan all assets now\n"
+        f"├ `/summary`  📊  Live prices & status\n"
+        f"├ `/stats`    📈  Win rate & P/L report\n"
+        f"├ `/balance`  🏦  Virtual account balances\n"
+        f"├ `/clear`    🗑️  Reset all to ₹1,00,000\n"
+        f"├ `/vol`      ⚙️  Toggle Volatility Filter\n"
+        f"├ `/indi1`    🔵  Diagnose Strategy 1 (Sweep)\n"
+        f"└ `/indi2`    🟣  Diagnose Strategy 2 (UT Bot)\n"
+        f"{BR}\n"
+        f"⚡ *ACTIVE STRATEGIES:*\n"
+        f"├ 🔵 *Sweep + Engulfing*  (4H timeframe)\n"
+        f"└ 🟣 *UT Bot Alerts*      (15m + 5m EMA)\n"
+        f"{BR}\n"
+        f"📊 *MONITORED MARKETS:*\n"
+        f"├ 🪙 Crypto   — BTC-USD\n"
+        f"├ 🟡 Gold     — GC=F\n"
+        f"├ 💱 Forex    — EUR · GBP · JPY\n"
+        f"└ 📈 NIFTY    — NIFTY 50 · BANK NIFTY\n"
+        f"{BR2}"
+    )
+
+
+def msg_volatility(is_enabled):
+    status = "🟢 ON" if is_enabled else "🔴 OFF"
+    desc = "Signals failing the volatility check will only go to NO-VOL accounts." if is_enabled else "ALL signals will go to main accounts regardless of volatility."
+    return (
+        f"⚙️ *VOLATILITY FILTER SETTINGS*\n"
+        f"{BR}\n"
+        f"📊 *Current Status:* `{status}`\n"
+        f"{BR}\n"
+        f"💡 {desc}\n"
+        f"{BR2}"
+    )
+
+def msg_scanning():
+    return (
+        f"🔍 *SCANNING MARKETS...*\n"
+        f"{BR}\n"
+        f"⏳ Analyzing all assets across strategies...\n"
+        f"🔵 Sweep + Engulfing (4H)\n"
+        f"🟣 UT Bot Signals (15m)\n"
+        f"{BR}\n"
+        f"⏱ Please wait ~15 seconds..."
+    )
+
+def msg_scan_results(signals, neutral):
+    if signals:
+        header = f"🔥 *{len(signals)} SIGNAL{'S' if len(signals)>1 else ''} FOUND*"
+        body = "\n".join(signals)
+    else:
+        header = "⏳ *NO ACTIVE SETUPS*"
+        body = "\n".join(neutral) if neutral else "No data available."
+    return (
+        f"🔍 *MARKET SCAN COMPLETE*\n"
+        f"{BR}\n"
+        f"{header}\n"
+        f"{BR}\n"
+        f"{body}\n"
+        f"{BR2}"
+    )
+
+def msg_summary(lines, vol_filter_on):
+    body = "\n".join(lines)
+    vol_status = "🟢 ON" if vol_filter_on else "🔴 OFF"
+    return (
+        f"📊 *LIVE MARKET SUMMARY*\n"
+        f"{BR}\n"
+        f"{body}\n"
+        f"{BR}\n"
+        f"⚙️ *Volatility Filter:* `{vol_status}`\n"
+        f"🕐 *Updated:* `{datetime.now(IST).strftime('%H:%M:%S IST')}`\n"
+        f"{BR2}"
+    )
+
+def msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr):
+    def acc_line(emoji, name, w, l, p, wr):
+        sign = "+" if p >= 0 else ""
+        color = "🟢" if p >= 0 else "🔴"
+        return f"{emoji} *{name}*\n" \
+               f"   {color} `{w}W / {l}L`  ·  *WR:* `{wr:.0f}%`  ·  *P/L:* `{sign}₹{p:,.2f}`"
+    return (
+        f"📊 *PERFORMANCE REPORT*\n"
+        f"{BR}\n"
+        f"{acc_line('🌐','Macro',mw,ml,mp,mwr)}\n"
+        f"{BR}\n"
+        f"{acc_line('🇮🇳','Nifty',nw,nl,np_,nwr)}\n"
+        f"{BR}\n"
+        f"{acc_line('🇺🇸','NY Session',nyw,nyl,nyp,nywr)}\n"
+        f"{BR2}"
+    )
+
+def msg_balance(macro_bal, nifty_bal, ny_bal, macro_d, nifty_d, ny_d, ny_active, vol_filter_on):
+    ny_icon = "🟢" if ny_active else "🔴"
+    ny_text = "ACTIVE" if ny_active else "INACTIVE"
+    return (
+        f"🏦 *VIRTUAL ACCOUNT BALANCES*\n"
+        f"{BR}\n"
+        f"🌐 *Macro Account*\n"
+        f"   💰 Balance:  `₹{macro_bal:,.2f}`\n"
+        f"   📝 Trades:   `{macro_d}/3`\n"
+        f"{BR}\n"
+        f"🇮🇳 *Nifty Account*\n"
+        f"   💰 Balance:  `₹{nifty_bal:,.2f}`\n"
+        f"   📝 Trades:   `{nifty_d}/3`\n"
+        f"{BR}\n"
+        f"🇺🇸 *NY Session Account*\n"
+        f"   💰 Balance:  `₹{ny_bal:,.2f}`\n"
+        f"   📝 Trades:   `{ny_d}/3`\n"
+        f"{BR}\n"
+        f"{ny_icon} *NY Session:* `{ny_text}`\n"
+        f"⚙️ *Volatility Filter:* `{'🟢 ON' if vol_filter_on else '🔴 OFF'}`\n"
+        f"🕐 *Time:* `{datetime.now(IST).strftime('%H:%M:%S IST')}`\n"
+        f"{BR2}"
+    )
+
+def msg_cleared():
+    return (
+        f"🗑 *ACCOUNTS RESET*\n"
+        f"{BR}\n"
+        f"✅ All balances → `₹1,00,000`\n"
+        f"✅ All active trades → *Closed*\n"
+        f"✅ All trade history → *Wiped*\n"
+        f"✅ Daily trade counters → *Reset*\n"
+        f"{BR}\n"
+        f"🆕 *Fresh start — good luck!* 🍀\n"
+        f"{BR2}"
+    )
+
+def msg_indi_diagnosing(num):
+    name = "Sweep + Engulfing (4H)" if num == 1 else "UT Bot (15m + 5m EMA)"
+    color = "🔵" if num == 1 else "🟣"
+    return (
+        f"{color} *DIAGNOSING STRATEGY {num}*\n"
+        f"{BR}\n"
+        f"📋 *Strategy:* {name}\n"
+        f"⏳ Running deep analysis on all assets...\n"
+        f"⏱ Please wait ~20 seconds...\n"
+        f"{BR2}"
+    )
+
+def msg_indi_debug_header(symbol, strategy_name):
+    return (
+        f"🔬 *DEBUG: {strategy_name}*\n"
+        f"{BR}\n"
+        f"🪙 *Asset:* `{symbol}`\n"
+    )
+
+def msg_indi_no_signals(num):
+    color = "🔵" if num == 1 else "🟣"
+    name = "Sweep + Engulfing" if num == 1 else "UT Bot"
+    return (
+        f"{color} *STRATEGY {num} — NO SIGNALS*\n"
+        f"{BR}\n"
+        f"⏳ *{name}*: No assets met trigger conditions.\n"
+        f"{BR}\n"
+        f"💡 *Possible reasons:*\n"
+        f"├ ⚪ Volatility below `{MIN_VOLATILITY}%` threshold\n"
+        f"├ ⚪ No sweep/engulfing pattern detected\n"
+        f"├ ⚪ UT Bot crossover not aligned with EMA/RSI\n"
+        f"└ ⚪ Signal already sent (dedup active)\n"
+        f"{BR2}"
+    )
+
+def msg_indi_executions(num, signals):
+    color = "🔵" if num == 1 else "🟣"
+    name = "Sweep + Engulfing" if num == 1 else "UT Bot"
+    body = "\n".join(signals)
+    return (
+        f"{color} *STRATEGY {num} — EXECUTIONS*\n"
+        f"{BR}\n"
+        f"🎯 *{name}*: *{len(signals)} signal{'s' if len(signals)>1 else ''} triggered*\n"
+        f"{BR}\n"
+        f"{body}\n"
+        f"{BR2}"
+    )
+
+def msg_error(context, error):
+    return (
+        f"⚠️ *ERROR — {context}*\n"
+        f"{BR}\n"
+        f"❌ `{error}`\n"
+        f"{BR}\n"
+        f"💡 If this persists, try `/clear` or restart the bot.\n"
+        f"{BR2}"
+    )
+
+def msg_muted(symbol):
+    return (
+        f"🔇 *ASSET MUTED*\n"
+        f"{BR}\n"
+        f"🪙 `{symbol}` will *not* trigger new signals.\n"
+        f"{BR}\n"
+        f"💡 Use the button below to unmute.\n"
+        f"{BR2}"
+    )
+
+def msg_unmuted(symbol):
+    return (
+        f"🔊 *ASSET UNMUTED*\n"
+        f"{BR}\n"
+        f"🪙 `{symbol}` is *back in the scanner*.\n"
+        f"{BR}\n"
+        f"💡 Signals will now be detected again.\n"
+        f"{BR2}"
+    )
+
+def msg_chart_failed():
+    return (
+        f"❌ *CHART GENERATION FAILED*\n"
+        f"{BR}\n"
+        f"⚠️ Could not fetch or render chart data.\n"
+        f"{BR}\n"
+        f"💡 The asset may have insufficient data at this timeframe.\n"
+        f"{BR2}"
+    )
+
 
 # ============================================================
 #  WEB SERVER — keeps Render awake
@@ -98,10 +395,17 @@ def safe_send_message(chat_id, text, **kwargs):
     except Exception as e:
         print(f"[ERR] Failed to send message: {e}")
         try:
-            # Fallback to plain text if markdown fails
-            bot.send_message(chat_id, f"⚠️ *Message formatting error, raw output:*\n{text}", parse_mode=None)
+            clean = text.replace("*", "").replace("`", "").replace("_", "")
+            bot.send_message(chat_id, f"⚠️ Message formatting error, raw output:\n{clean}", parse_mode=None)
         except Exception as fallback_e:
             print(f"[ERR] Fallback message also failed: {fallback_e}")
+
+
+def init_settings():
+    global bot_settings
+    defaults = {"volatility_filter": True}
+    bot_settings = load_json(SETTINGS_FILE, defaults)
+    save_json(SETTINGS_FILE, bot_settings)
 
 def init_accounts():
     global accounts
@@ -238,34 +542,60 @@ def debug_sweep(ticker):
     try:
         df = yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=True)
         df = normalise_cols(df)
-        if df.empty or len(df) < 30: return f"Not enough 1H data ({len(df)} candles)"
+        if df.empty or len(df) < 30:
+            return msg_indi_debug_header(ticker, "Sweep + Engulfing") + \
+                   f"├ ⚠️ Not enough 1H data (`{len(df)}` candles, need 30)\n" + BR2
 
         atr = float(calculate_atr(df, 10).iloc[-2])
         price = float(df["Close"].iloc[-1])
         vol = (atr / price * 100)
+        vol_icon = "🟢" if vol >= MIN_VOLATILITY else "🔴"
 
         df_4h = df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 4: return "Not enough 4H data"
+        if len(df_4h) < 4:
+            return msg_indi_debug_header(ticker, "Sweep + Engulfing") + \
+                   f"├ ⚠️ Not enough 4H data\n" + BR2
 
         df_4h["ATR"] = calculate_atr(df_4h, 10)
         curr = df_4h.iloc[-2]
         mother = df_4h.iloc[-3]
 
+        sweep_low  = curr["Low"] < mother["Low"]
+        sweep_high = curr["High"] > mother["High"]
+        engulf_up  = curr["Close"] > mother["High"]
+        engulf_dn  = curr["Close"] < mother["Low"]
+
+        low_icon  = "🟢" if sweep_low else "⚪"
+        high_icon = "🟢" if sweep_high else "⚪"
+        up_icon   = "🟢" if engulf_up else "⚪"
+        dn_icon   = "🟢" if engulf_dn else "⚪"
+
         res = (
-            f"`{ticker}` Sweep (4H):\n"
-            f"Vol: {vol:.2f}% (Min {MIN_VOLATILITY}%)\n"
-            f"Curr: H={curr['High']:.2f}, L={curr['Low']:.2f}, C={curr['Close']:.2f}\n"
-            f"Mother: H={mother['High']:.2f}, L={mother['Low']:.2f}, C={mother['Close']:.2f}\n"
+            f"{msg_indi_debug_header(ticker, 'Sweep + Engulfing')}"
+            f"├ {vol_icon} *Volatility:* `{vol:.2f}%` (min `{MIN_VOLATILITY}%`)\n"
+            f"├ 📊 *Current 4H:*  H=`{curr['High']:.2f}`  L=`{curr['Low']:.2f}`  C=`{curr['Close']:.2f}`\n"
+            f"├ 📊 *Mother 4H:*   H=`{mother['High']:.2f}`  L=`{mother['Low']:.2f}`  C=`{mother['Close']:.2f}`\n"
+            f"{BR}\n"
+            f"├ {low_icon}  Sweep Low:  Curr L `{curr['Low']:.2f}` {'<' if sweep_low else '>='} Mother L `{mother['Low']:.2f}`\n"
+            f"├ {high_icon} Sweep High: Curr H `{curr['High']:.2f}` {'>' if sweep_high else '<='} Mother H `{mother['High']:.2f}`\n"
+            f"├ {up_icon}   Engulf Up:  Curr C `{curr['Close']:.2f}` {'>' if engulf_up else '<='} Mother H `{mother['High']:.2f}`\n"
+            f"└ {dn_icon}   Engulf Dn:  Curr C `{curr['Close']:.2f}` {'<' if engulf_dn else '>='} Mother L `{mother['Low']:.2f}`\n"
+            f"{BR}\n"
         )
 
-        if vol < MIN_VOLATILITY: res += "-> Failed Volatility Check\n"
-        elif curr["Low"] < mother["Low"] and curr["Close"] > mother["High"]: res += "-> BULLISH Triggered\n"
-        elif curr["High"] > mother["High"] and curr["Close"] < mother["Low"]: res += "-> BEARISH Triggered\n"
-        else: res += "-> No Sweep Condition Met\n"
+        if vol < MIN_VOLATILITY:
+            res += "⛔ *RESULT:* Failed Volatility Check\n"
+        elif sweep_low and engulf_up:
+            res += "✅ *RESULT:* 🟢 BULLISH Sweep + Engulfing Triggered\n"
+        elif sweep_high and engulf_dn:
+            res += "✅ *RESULT:* 🔴 BEARISH Sweep + Engulfing Triggered\n"
+        else:
+            res += "⚪ *RESULT:* No Sweep + Engulfing Condition Met\n"
 
+        res += BR2
         return res
     except Exception as e:
-        return f"Error: {e}"
+        return msg_error(f"Debug Sweep {ticker}", str(e))
 
 
 # ============================================================
@@ -349,11 +679,14 @@ def debug_ut(ticker, kv=2):
         df_5  = yf.download(ticker, period="1d", interval="5m", progress=False, auto_adjust=True)
         df_15 = normalise_cols(df_15)
         df_5  = normalise_cols(df_5)
-        if df_15.empty or len(df_15) < 20 or df_5.empty or len(df_5) < 40: return "Not enough data"
+        if df_15.empty or len(df_15) < 20 or df_5.empty or len(df_5) < 40:
+            return msg_indi_debug_header(ticker, "UT Bot") + \
+                   f"├ ⚠️ Not enough data (15m: `{len(df_15)}`, 5m: `{len(df_5)}`)\n" + BR2
 
         atr = float(calculate_atr(df_15, 1).iloc[-2])
         price = float(df_15["Close"].iloc[-1])
         vol = (atr / price * 100)
+        vol_icon = "🟢" if vol >= MIN_VOLATILITY else "🔴"
 
         df_15["xATR"] = calculate_atr(df_15, 1)
         df_15["nLoss"] = kv * df_15["xATR"]
@@ -381,22 +714,45 @@ def debug_ut(ticker, kv=2):
         m5_ema   = float(df_5["EMA50"].iloc[-2])
         rsi_15   = float(df_15["RSI"].iloc[-2])
 
+        buy_icon  = "🟢" if is_buy else "⚪"
+        sell_icon = "🟢" if is_sell else "⚪"
+        ema_above = m5_close > m5_ema
+        ema_icon  = "🟢" if ema_above else "🔴"
+        rsi_ok_buy  = rsi_15 < 70
+        rsi_ok_sell = rsi_15 > 30
+        rsi_icon = "🟢" if (rsi_ok_buy or rsi_ok_sell) else "🔴"
+
         res = (
-            f"`{ticker}` UT Bot (15m/5m):\n"
-            f"Vol: {vol:.2f}% (Min {MIN_VOLATILITY}%)\n"
-            f"UT Signal: Buy={is_buy}, Sell={is_sell}\n"
-            f"5m EMA: Close={m5_close:.2f}, EMA={m5_ema:.2f}\n"
-            f"15m RSI: {rsi_15:.2f} (Buy<70, Sell>30)\n"
+            f"{msg_indi_debug_header(ticker, 'UT Bot')}"
+            f"├ {vol_icon} *Volatility:* `{vol:.2f}%` (min `{MIN_VOLATILITY}%`)\n"
+            f"{BR}\n"
+            f"├ {buy_icon}  *UT Buy Crossover:*  Close `{src[i]:.2f}` {'>' if is_buy else '<='} TrailingStop `{ts_arr[i]:.2f}`\n"
+            f"├ {sell_icon} *UT Sell Crossover:* Close `{src[i]:.2f}` {'<' if is_sell else '>='} TrailingStop `{ts_arr[i]:.2f}`\n"
+            f"{BR}\n"
+            f"├ {ema_icon}  *5m EMA Filter:*     Close `{m5_close:.2f}` {'>' if ema_above else '<'} EMA50 `{m5_ema:.2f}`\n"
+            f"├ {rsi_icon}  *15m RSI Filter:*    `{rsi_15:.1f}` (Buy need `<70` · Sell need `>30`)\n"
+            f"{BR}\n"
         )
 
-        if vol < MIN_VOLATILITY: res += "-> Failed Volatility Check\n"
-        elif is_buy and m5_close > m5_ema and rsi_15 < 70: res += "-> BULLISH Triggered\n"
-        elif is_sell and m5_close < m5_ema and rsi_15 > 30: res += "-> BEARISH Triggered\n"
-        else: res += "-> No UT Bot Condition Met\n"
+        if vol < MIN_VOLATILITY:
+            res += "⛔ *RESULT:* Failed Volatility Check\n"
+        elif is_buy and ema_above and rsi_ok_buy:
+            res += "✅ *RESULT:* 🟢 BULLISH UT Bot Triggered\n"
+        elif is_sell and (not ema_above) and rsi_ok_sell:
+            res += "✅ *RESULT:* 🔴 BEARISH UT Bot Triggered\n"
+        else:
+            reasons = []
+            if not is_buy and not is_sell: reasons.append("No UT crossover")
+            if is_buy and not ema_above: reasons.append("5m Close below EMA50")
+            if is_buy and not rsi_ok_buy: reasons.append(f"RSI {rsi_15:.1f} >= 70")
+            if is_sell and ema_above: reasons.append("5m Close above EMA50")
+            if is_sell and not rsi_ok_sell: reasons.append(f"RSI {rsi_15:.1f} <= 30")
+            res += f"⚪ *RESULT:* No Condition Met → {'; '.join(reasons)}\n"
 
+        res += BR2
         return res
     except Exception as e:
-        return f"Error: {e}"
+        return msg_error(f"Debug UT Bot {ticker}", str(e))
 
 
 # ============================================================
@@ -437,7 +793,6 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
             return
 
         actual_sl, actual_tp = calc_sl_tp(sig_type, price, atr)
-        direction = "LONG" if "BULLISH" in sig_type else "SHORT"
         tf = "4H" if "Sweep" in strat else "15m"
 
         trade = {
@@ -446,7 +801,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
             "market":     mtype,
             "account":    account,
             "strat":      strat,
-            "type":       direction,
+            "type":       "LONG" if "BULLISH" in sig_type else "SHORT",
             "entry":      float(price),
             "sl":         actual_sl,
             "tp":         actual_tp,
@@ -462,26 +817,8 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
         save_json(ACTIVE_TRADES_FILE, active_trades)
 
     risk_amt = abs(price - actual_sl) * qty
-    emoji_dir = "STRONG BULLISH" if "BULLISH" in sig_type else "STRONG BEARISH"
 
-    msg = (
-        f"🚨 *HIGH-CONFLUENCE SIGNAL*\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"🪙 `{symbol}` ({mtype})\n"
-        f"⚡ {strat}\n"
-        f"🟢 {emoji_dir}\n"
-        f"⏱️ {tf}\n"
-        f"📈 Entry: `${price:,.4f}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━\n"
-        f"💼 *PAPER TRADE EXECUTED*\n"
-        f"├ Account: `{account.upper()}`\n"
-        f"├ Entry:   `${price:,.4f}`\n"
-        f"├ SL:      `${actual_sl:,.4f}`\n"
-        f"├ TP:      `${actual_tp:,.4f}`\n"
-        f"├ Qty:     `{qty:.4f}`\n"
-        f"└ Risk:    `₹{risk_amt:,.2f}`\n"
-        f"━━━━━━━━━━━━━━━━━━━━━━"
-    )
+    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account)
 
     markup = InlineKeyboardMarkup()
     markup.add(
@@ -490,6 +827,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
     )
     safe_send_message(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     pushbullet_notify(msg)
+    direction = "LONG" if "BULLISH" in sig_type else "SHORT"
     print(f"[TRADE] {direction} {symbol} @ {price}")
 
 # ============================================================
@@ -556,32 +894,19 @@ def monitor_trades():
                 except Exception:
                     pass
 
-                emoji   = "✅" if hit_tp else "❌"
-                arrow   = "📈" if hit_tp else "📉"
-                money   = "💰" if hit_tp else "💸"
-                pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
-
                 with _lock:
                     bal = accounts[trade["account"]]["balance"]
 
-                msg = (
-                    f"{emoji} *TRADE CLOSED — {trade['result']}*\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                    f"{'🟢' if is_long else '🔴'} `{trade['symbol']}` ({trade['strat']})\n"
-                    f"💼 Account: `{trade['account'].upper()}`\n"
-                    f"{arrow} Exit: `${live:,.4f}`\n"
-                    f"{money} P/L: `{pnl_str}`\n"
-                    f"🏦 Balance: `₹{bal:,.2f}`\n"
-                    f"━━━━━━━━━━━━━━━━━━━━━━"
-                )
+                msg = msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp)
                 safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
                 pushbullet_notify(msg)
+                pnl_str = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
                 print(f"[CLOSE] {trade['symbol']} {trade['result']} {pnl_str}")
                 time.sleep(0.3)
 
             except Exception as e:
                 print(f"[ERR] Monitor {trade['symbol']}: {e}")
-                safe_send_message(CHAT_ID, f"⚠️ *Monitor Error ({trade['symbol']}):*\n`{e}`", parse_mode="Markdown")
+                safe_send_message(CHAT_ID, msg_error(f"Monitor {trade['symbol']}", str(e)), parse_mode="Markdown")
 
         if to_close:
             with _lock:
@@ -625,17 +950,25 @@ def scanner_loop():
                 if account == "nifty" and not is_nifty_market_open():
                     continue
 
+                vol_filter_on = bot_settings.get("volatility_filter", True)
+
                 ut = check_ut_bot(symbol)
                 if ut:
-                    target = "ny_session" if ny_active else "macro"
-                    execute_trade(symbol, mtype, target,
-                                  "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                    ny_active = is_ny_session()
+                    # Execute on novol tracker
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
+
+                    if not vol_filter_on or ut[4]:
+                        target = "ny_session" if ny_active else "macro"
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
 
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    execute_trade(symbol, mtype, "macro",
-                                  "Sweep + Engulfing", sweep[0],
-                                  sweep[1], sweep[2], sweep[3])
+                    # Execute on novol tracker
+                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
+
+                    if not vol_filter_on or sweep[4]:
+                        execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
 
                 time.sleep(0.5)
 
@@ -643,7 +976,7 @@ def scanner_loop():
 
         except Exception as e:
             print(f"[ERR] Scanner: {e}")
-            safe_send_message(CHAT_ID, f"⚠️ *Scanner Loop Error:*\n`{e}`", parse_mode="Markdown")
+            safe_send_message(CHAT_ID, msg_error("Scanner Loop", str(e)), parse_mode="Markdown")
 
         time.sleep(60)
 
@@ -651,7 +984,7 @@ def scanner_loop():
 #  DAILY RESET
 # ============================================================
 def daily_reset_loop():
-    last_reset = None
+    last_reset = datetime.now(IST).strftime('%Y-%m-%d')
     while True:
         now = datetime.now(IST)
         today_str = now.strftime("%Y-%m-%d")
@@ -673,15 +1006,11 @@ def daily_reset_loop():
             day_trades = [t for t in history if t.get("close_time", "").startswith(last_reset)] if last_reset else []
             day_pnl = sum(float(t["pnl"]) for t in day_trades)
 
-            msg = (
-                f"🌙 *MIDNIGHT RESET*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                f"📊 Yesterday P/L: `₹{day_pnl:,.2f}`\n"
-                f"🏦 Balances:\n"
-                f"├ Macro:      `₹{accounts['macro']['balance']:,.2f}`\n"
-                f"├ Nifty:      `₹{accounts['nifty']['balance']:,.2f}`\n"
-                f"└ NY Session: `₹{accounts['ny_session']['balance']:,.2f}`\n"
-                f"🔄 Trade limits reset."
+            msg = msg_midnight_reset(
+                day_pnl,
+                accounts["macro"]["balance"],
+                accounts["nifty"]["balance"],
+                accounts["ny_session"]["balance"]
             )
             safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
 
@@ -703,32 +1032,14 @@ def menu_markup():
     m.add(InlineKeyboardButton("📊 Asset Summary",   callback_data="cmd_summary"))
     return m
 
-GUIDE = (
-    "🤖 *TRADING BOT*\n"
-    "━━━━━━━━━━━━━━━━━━━━━━\n"
-    "📘 *COMMANDS:*\n"
-    "▫️ /check    — Scan all assets\n"
-    "▫️ /summary  — Live prices\n"
-    "▫️ /stats    — Win rate + P/L\n"
-    "▫️ /balance  — Account balances\n"
-    "▫️ /clear    — Reset to ₹1L\n"
-    "▫️ /indi1    — Check Strategy 1 (Sweep)\n"
-    "▫️ /indi2    — Check Strategy 2 (UT Bot)\n\n"
-    "⚡ *STRATEGIES:*\n"
-    "🔵 Sweep + Engulfing (4H)\n"
-    "🟣 UT Bot (15m + 5m EMA)\n\n"
-    "📊 *MARKETS:*\n"
-    "🪙 Crypto · 🟡 Gold · 💱 Forex · 📈 NIFTY"
-)
-
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(m):
-    safe_send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+    safe_send_message(m.chat.id, msg_guide(), parse_mode="Markdown", reply_markup=menu_markup())
 
 @bot.message_handler(commands=["check"])
 def cmd_check(m):
     chat_id = m.chat.id
-    safe_send_message(chat_id, "🔍 *Scanning...*")
+    safe_send_message(chat_id, msg_scanning())
 
     def run_scan():
         try:
@@ -737,20 +1048,17 @@ def cmd_check(m):
                 ut    = check_ut_bot(symbol)
                 sweep = check_sweep_engulfing(symbol)
                 if ut:
-                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
+                    signals.append(f"🟢 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`")
                 elif sweep:
-                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
+                    signals.append(f"🟢 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`")
                 else:
-                    neutral.append(f"⚪ `{symbol}` — Neutral")
+                    neutral.append(f"⚪ `{symbol}` — No Setup")
                 time.sleep(0.3)
                 gc.collect()
 
-            body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
-            status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
-            text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
-            safe_send_message(chat_id, text, parse_mode="Markdown")
+            safe_send_message(chat_id, msg_scan_results(signals, neutral), parse_mode="Markdown")
         except Exception as e:
-            safe_send_message(chat_id, f"❌ *Scan Error:* `{e}`")
+            safe_send_message(chat_id, msg_error("Market Scan", str(e)), parse_mode="Markdown")
 
     threading.Thread(target=run_scan, daemon=True).start()
 
@@ -759,18 +1067,19 @@ def cmd_summary(m):
     try:
         lines = []
         for symbol, mtype in MONITORED:
-            status = "🔇 Muted" if symbol in muted_assets else "🟢 Active"
+            is_muted = symbol in muted_assets
+            status = "🔇 Muted" if is_muted else "🟢 Active"
             price = get_price(symbol)
             if price:
-                lines.append(f"📈 `{symbol}` ({mtype}) {status} `${price:,.4f}`")
+                lines.append(f"{'🔴' if is_muted else '🟢'} `{symbol}`  ·  {mtype}  ·  `${price:,.4f}`  ·  {status}")
             else:
-                lines.append(f"📈 `{symbol}` ({mtype}) {status}")
+                lines.append(f"{'🔴' if is_muted else '🟢'} `{symbol}`  ·  {mtype}  ·  {status}")
             time.sleep(0.3)
 
-        text = f"📊 *MARKET SUMMARY*\n━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines) + "\n━━━━━━━━━━━━━━━━━━━━━━"
-        safe_send_message(m.chat.id, text, parse_mode="Markdown")
+        vol_filter_on = bot_settings.get("volatility_filter", True)
+        safe_send_message(m.chat.id, msg_summary(lines, vol_filter_on), parse_mode="Markdown")
     except Exception as e:
-        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, msg_error("Asset Summary", str(e)), parse_mode="Markdown")
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
@@ -789,17 +1098,9 @@ def cmd_stats(m):
         nw, nl, np_, nwr = stats("nifty")
         nyw, nyl, nyp, nywr = stats("ny_session")
 
-        text = (
-            f"📊 *PERFORMANCE REPORT*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 Macro ({mw}W/{ml}L — {mwr:.0f}%): `{'+' if mp>0 else ''}₹{mp:,.2f}`\n"
-            f"🇮🇳 Nifty ({nw}W/{nl}L — {nwr:.0f}%): `{'+' if np_>0 else ''}₹{np_:,.2f}`\n"
-            f"🇺🇸 NY ({nyw}W/{nyl}L — {nywr:.0f}%): `{'+' if nyp>0 else ''}₹{nyp:,.2f}`\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━"
-        )
-        safe_send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+        safe_send_message(m.chat.id, msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr), parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
-        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, msg_error("Performance Stats", str(e)), parse_mode="Markdown")
 
 @bot.message_handler(commands=["balance"])
 def cmd_balance(m):
@@ -813,18 +1114,10 @@ def cmd_balance(m):
             ny_d      = accounts["ny_session"]["daily_trades"]
             ny_active = is_ny_session()
 
-        text = (
-            f"🏦 *VIRTUAL BALANCES*\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"🌐 Macro:      `₹{macro_bal:,.2f}` | {macro_d}/3\n"
-            f"🇮🇳 Nifty:      `₹{nifty_bal:,.2f}` | {nifty_d}/3\n"
-            f"🇺🇸 NY Session: `₹{ny_bal:,.2f}` | {ny_d}/3\n"
-            f"━━━━━━━━━━━━━━━━━━━━━━\n"
-            f"⏰ NY Session: {'ACTIVE' if ny_active else 'INACTIVE'}"
-        )
-        safe_send_message(m.chat.id, text, parse_mode="Markdown", reply_markup=menu_markup())
+        vol_filter_on = bot_settings.get("volatility_filter", True)
+        safe_send_message(m.chat.id, msg_balance(macro_bal, nifty_bal, ny_bal, macro_d, nifty_d, ny_d, ny_active, vol_filter_on), parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
-        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, msg_error("Balance Query", str(e)), parse_mode="Markdown")
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
@@ -838,92 +1131,100 @@ def cmd_clear(m):
             save_json(ACTIVE_TRADES_FILE, [])
             save_json(HISTORY_FILE, [])
 
-        safe_send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
+        safe_send_message(m.chat.id, msg_cleared(), parse_mode="Markdown")
     except Exception as e:
-        safe_send_message(m.chat.id, f"❌ *Error:* `{e}`")
+        safe_send_message(m.chat.id, msg_error("Account Clear", str(e)), parse_mode="Markdown")
 
+
+@bot.message_handler(commands=["vol"])
+def cmd_vol(m):
+    try:
+        is_enabled = bot_settings.get("volatility_filter", True)
+        markup = InlineKeyboardMarkup()
+        if is_enabled:
+            markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
+        else:
+            markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
+
+        safe_send_message(m.chat.id, msg_volatility(is_enabled), parse_mode="Markdown", reply_markup=markup)
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Volatility Command", str(e)), parse_mode="Markdown")
 
 @bot.message_handler(commands=["indi1"])
 def cmd_indi1(m):
     chat_id = m.chat.id
-    safe_send_message(chat_id, "🔍 *Diagnosing Strategy 1 (Sweep)...*")
+    safe_send_message(chat_id, msg_indi_diagnosing(1))
     def run_diag():
-        results = []
-        for symbol, mtype in MONITORED:
-            results.append(debug_sweep(symbol))
-            time.sleep(0.5)
-            gc.collect()
+        try:
+            results = []
+            for symbol, mtype in MONITORED:
+                results.append(debug_sweep(symbol))
+                time.sleep(0.5)
+                gc.collect()
 
-        full_text = "\n\n".join(results)
-        for i in range(0, len(full_text), 4000):
-            safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
+            full_text = "\n\n".join(results)
+            for i in range(0, len(full_text), 4000):
+                safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
 
-        # run actual check
-        signals = []
-        for symbol, mtype in MONITORED:
-            sweep = check_sweep_engulfing(symbol)
-            if sweep:
-                execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
-                if sweep[4]:
-                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`\n   ➔ Executed on ALL accounts")
-                    execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
-                else:
-                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`\n   ➔ Executed on NO-VOL only")
-            time.sleep(0.5)
-            gc.collect()
-        if signals:
-            msg = (
-                f"🔥 *STRATEGY 1 EXECUTIONS*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                + "\n".join(signals) +
-                f"\n━━━━━━━━━━━━━━━━━━━━━━"
-            )
-            safe_send_message(chat_id, msg, parse_mode="Markdown")
-        else:
-            safe_send_message(chat_id, "⚪ *No Strategy 1 Signals met conditions.*", parse_mode="Markdown")
+            signals = []
+            for symbol, mtype in MONITORED:
+                sweep = check_sweep_engulfing(symbol)
+                if sweep:
+                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
+                    if sweep[4]:
+                        signals.append(f"🟢 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
+                        execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                    else:
+                        signals.append(f"🟡 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`\n   └ ⚠️ Low volatility → NO-VOL account only")
+                time.sleep(0.5)
+                gc.collect()
+
+            if signals:
+                safe_send_message(chat_id, msg_indi_executions(1, signals), parse_mode="Markdown")
+            else:
+                safe_send_message(chat_id, msg_indi_no_signals(1), parse_mode="Markdown")
+        except Exception as e:
+            safe_send_message(chat_id, msg_error("Strategy 1 Diagnosis", str(e)), parse_mode="Markdown")
 
     threading.Thread(target=run_diag, daemon=True).start()
 
 @bot.message_handler(commands=["indi2"])
 def cmd_indi2(m):
     chat_id = m.chat.id
-    safe_send_message(chat_id, "🔍 *Diagnosing Strategy 2 (UT Bot)...*")
+    safe_send_message(chat_id, msg_indi_diagnosing(2))
     def run_diag():
-        results = []
-        for symbol, mtype in MONITORED:
-            results.append(debug_ut(symbol))
-            time.sleep(0.5)
-            gc.collect()
+        try:
+            results = []
+            for symbol, mtype in MONITORED:
+                results.append(debug_ut(symbol))
+                time.sleep(0.5)
+                gc.collect()
 
-        full_text = "\n\n".join(results)
-        for i in range(0, len(full_text), 4000):
-            safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
+            full_text = "\n\n".join(results)
+            for i in range(0, len(full_text), 4000):
+                safe_send_message(chat_id, full_text[i:i+4000], parse_mode="Markdown")
 
-        # run actual check
-        signals = []
-        for symbol, mtype in MONITORED:
-            ut = check_ut_bot(symbol)
-            if ut:
-                ny_active = is_ny_session()
-                execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
-                if ut[4]:
-                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`\n   ➔ Executed on ALL accounts")
-                    target = "ny_session" if ny_active else "macro"
-                    execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
-                else:
-                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`\n   ➔ Executed on NO-VOL only")
-            time.sleep(0.5)
-            gc.collect()
-        if signals:
-            msg = (
-                f"🔥 *STRATEGY 2 EXECUTIONS*\n"
-                f"━━━━━━━━━━━━━━━━━━━━━━\n"
-                + "\n".join(signals) +
-                f"\n━━━━━━━━━━━━━━━━━━━━━━"
-            )
-            safe_send_message(chat_id, msg, parse_mode="Markdown")
-        else:
-            safe_send_message(chat_id, "⚪ *No Strategy 2 Signals met conditions.*", parse_mode="Markdown")
+            signals = []
+            for symbol, mtype in MONITORED:
+                ut = check_ut_bot(symbol)
+                if ut:
+                    ny_active = is_ny_session()
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
+                    if ut[4]:
+                        signals.append(f"🟢 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
+                        target = "ny_session" if ny_active else "macro"
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                    else:
+                        signals.append(f"🟡 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ ⚠️ Low volatility → NO-VOL account only")
+                time.sleep(0.5)
+                gc.collect()
+
+            if signals:
+                safe_send_message(chat_id, msg_indi_executions(2, signals), parse_mode="Markdown")
+            else:
+                safe_send_message(chat_id, msg_indi_no_signals(2), parse_mode="Markdown")
+        except Exception as e:
+            safe_send_message(chat_id, msg_error("Strategy 2 Diagnosis", str(e)), parse_mode="Markdown")
 
     threading.Thread(target=run_diag, daemon=True).start()
 
@@ -931,7 +1232,7 @@ def cmd_indi2(m):
 def cmd_fallback(m):
     if m.text.startswith("/"):
         return
-    safe_send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
+    safe_send_message(m.chat.id, msg_guide(), parse_mode="Markdown", reply_markup=menu_markup())
 
 # ============================================================
 #  CALLBACK HANDLERS
@@ -943,6 +1244,28 @@ def handle_cb(c):
             cmd_check(c.message)
         elif c.data == "cmd_summary":
             cmd_summary(c.message)
+        elif c.data == "vol_on":
+            with _lock:
+                bot_settings["volatility_filter"] = True
+                save_json(SETTINGS_FILE, bot_settings)
+
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
+            bot.edit_message_text(
+                msg_volatility(True), c.message.chat.id, c.message.message_id,
+                parse_mode="Markdown", reply_markup=markup)
+
+        elif c.data == "vol_off":
+            with _lock:
+                bot_settings["volatility_filter"] = False
+                save_json(SETTINGS_FILE, bot_settings)
+
+            markup = InlineKeyboardMarkup()
+            markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
+            bot.edit_message_text(
+                msg_volatility(False), c.message.chat.id, c.message.message_id,
+                parse_mode="Markdown", reply_markup=markup)
+
         elif c.data.startswith("chart_"):
             sym = c.data.split("_", 1)[1]
             bot.answer_callback_query(c.id, text="Generating chart...")
@@ -950,7 +1273,7 @@ def handle_cb(c):
             if buf:
                 bot.send_photo(c.message.chat.id, buf, caption=f"📈 `{sym}` | 1H Chart")
             else:
-                safe_send_message(c.message.chat.id, "❌ Chart failed.")
+                safe_send_message(c.message.chat.id, msg_chart_failed())
         elif c.data.startswith("mute_"):
             sym = c.data.split("_", 1)[1]
             with _lock:
@@ -959,7 +1282,7 @@ def handle_cb(c):
             m = InlineKeyboardMarkup().add(
                 InlineKeyboardButton(f"🔊 Unmute {sym}", callback_data=f"unmute_{sym}"))
             bot.edit_message_text(
-                f"🔇 `{sym}` muted.", c.message.chat.id, c.message.message_id,
+                msg_muted(sym), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=m)
         elif c.data.startswith("unmute_"):
             sym = c.data.split("_", 1)[1]
@@ -969,7 +1292,7 @@ def handle_cb(c):
             m = InlineKeyboardMarkup().add(
                 InlineKeyboardButton(f"🔇 Mute {sym}", callback_data=f"mute_{sym}"))
             bot.edit_message_text(
-                f"🔊 `{sym}` unmuted.", c.message.chat.id, c.message.message_id,
+                msg_unmuted(sym), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=m)
     except Exception as e:
         print(f"[ERR] Callback: {e}")
@@ -1027,6 +1350,7 @@ if __name__ == "__main__":
         exit(1)
 
     init_accounts()
+    init_settings()
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
     sent_signals = load_json(SENT_SIGNALS_FILE, {})

@@ -1,0 +1,23 @@
+{
+    "macro": {
+        "balance": 100000.0,
+        "daily_trades": 0
+    },
+    "nifty": {
+        "balance": 100000.0,
+        "daily_trades": 0
+    },
+    "ny_session": {
+        "balance": 100000.0,
+        "daily_trades": 0
+    },
+    "sweep_novol": {
+        "balance": 100000.0,
+        "daily_trades": 0
+    },
+    "utbot_novol": {
+        "balance": 100000.0,
+        "daily_trades": 0
+    },
+    "last_reset_date": "2026-07-24"
+}
