@@ -44,9 +44,10 @@ TRADE_LOG_CSV      = "trade_log.csv"
 accounts      = {}
 active_trades = []
 muted_assets  = set()
+SENT_SIGNALS_FILE = "sent_signals.json"
 sent_signals  = {}
 
-_lock        = threading.Lock()
+_lock        = threading.RLock()
 _chart_lock  = threading.Lock()
 _price_cache = {}
 
@@ -313,12 +314,14 @@ def calc_position_size(account, entry, sl):
     return float(risk / sl_dist)
 
 def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
-    global active_trades
+    global active_trades, sent_signals
 
     with _lock:
-        if (symbol, ts, sig_type) in sent_signals:
+        sig_key = f"{symbol}_{ts}_{sig_type}"
+        if sig_key in sent_signals:
             return
-        sent_signals[(symbol, ts, sig_type)] = True
+        sent_signals[sig_key] = True
+        save_json(SENT_SIGNALS_FILE, sent_signals)
 
         if accounts[account]["daily_trades"] >= 3:
             return
@@ -389,7 +392,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
 #  MONITOR TRADES
 # ============================================================
 def monitor_trades():
-    global active_trades
+    global active_trades, sent_signals
 
     while True:
         if not active_trades:
@@ -704,7 +707,7 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
-    global active_trades
+    global active_trades, sent_signals
     try:
         with _lock:
             active_trades = []
@@ -712,6 +715,8 @@ def cmd_clear(m):
                 accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
             save_json(ACCOUNTS_FILE, accounts)
             save_json(ACTIVE_TRADES_FILE, [])
+            sent_signals.clear()
+            save_json(SENT_SIGNALS_FILE, sent_signals)
             save_json(HISTORY_FILE, [])
 
         bot.send_message(m.chat.id, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
@@ -720,6 +725,8 @@ def cmd_clear(m):
 
 @bot.message_handler(func=lambda m: True)
 def cmd_fallback(m):
+    if getattr(m.chat, "type", "") != "private":
+        return
     if m.text.startswith("/"):
         return
     bot.send_message(m.chat.id, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
@@ -819,6 +826,7 @@ if __name__ == "__main__":
 
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
+    sent_signals = load_json(SENT_SIGNALS_FILE, {})
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
 
     print("=" * 50)
