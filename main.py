@@ -47,6 +47,7 @@ accounts      = {}
 active_trades = []
 muted_assets  = set()
 sent_signals  = {}
+bot_settings  = {"volatility_filter": True}
 
 _lock        = threading.Lock()
 _chart_lock  = threading.Lock()
@@ -153,7 +154,6 @@ def msg_guide():
         f"└ 📈 NIFTY    — NIFTY 50 · BANK NIFTY\n"
         f"{BR2}"
     )
-
 
 def msg_volatility(is_enabled):
     status = "🟢 ON" if is_enabled else "🔴 OFF"
@@ -957,7 +957,7 @@ def scanner_loop():
                     ny_active = is_ny_session()
                     # Execute on novol tracker
                     execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
-
+                    
                     if not vol_filter_on or ut[4]:
                         target = "ny_session" if ny_active else "macro"
                         execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
@@ -966,7 +966,7 @@ def scanner_loop():
                 if sweep:
                     # Execute on novol tracker
                     execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
-
+                    
                     if not vol_filter_on or sweep[4]:
                         execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
 
@@ -1145,7 +1145,7 @@ def cmd_vol(m):
             markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
         else:
             markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
-
+            
         safe_send_message(m.chat.id, msg_volatility(is_enabled), parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Volatility Command", str(e)), parse_mode="Markdown")
@@ -1248,24 +1248,24 @@ def handle_cb(c):
             with _lock:
                 bot_settings["volatility_filter"] = True
                 save_json(SETTINGS_FILE, bot_settings)
-
+            
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
             bot.edit_message_text(
                 msg_volatility(True), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=markup)
-
+                
         elif c.data == "vol_off":
             with _lock:
                 bot_settings["volatility_filter"] = False
                 save_json(SETTINGS_FILE, bot_settings)
-
+                
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
             bot.edit_message_text(
                 msg_volatility(False), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=markup)
-
+                
         elif c.data.startswith("chart_"):
             sym = c.data.split("_", 1)[1]
             bot.answer_callback_query(c.id, text="Generating chart...")
