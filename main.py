@@ -109,11 +109,13 @@ def init_accounts():
         "macro":      {"balance": 100000.0, "daily_trades": 0},
         "nifty":      {"balance": 100000.0, "daily_trades": 0},
         "ny_session": {"balance": 100000.0, "daily_trades": 0},
+        "sweep_novol": {"balance": 100000.0, "daily_trades": 0},
+        "utbot_novol": {"balance": 100000.0, "daily_trades": 0},
     }
     accounts = load_json(ACCOUNTS_FILE, defaults)
     today = datetime.now(IST).strftime("%Y-%m-%d")
     if accounts.get("last_reset_date") != today:
-        for acc in ["macro", "nifty", "ny_session"]:
+        for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
             accounts[acc]["daily_trades"] = 0
     accounts["last_reset_date"] = today
     save_json(ACCOUNTS_FILE, accounts)
@@ -194,12 +196,12 @@ def check_sweep_engulfing(ticker):
             del df; gc.collect()
             return None
 
+        vol_ok = True
         try:
             atr   = float(calculate_atr(df, 10).iloc[-2])
             price = float(df["Close"].iloc[-1])
             if (atr / price * 100) < MIN_VOLATILITY:
-                del df; gc.collect()
-                return None
+                vol_ok = False
         except Exception:
             pass
 
@@ -224,9 +226,9 @@ def check_sweep_engulfing(ticker):
         del df_4h; gc.collect()
 
         if curr["Low"] < mother["Low"] and curr["Close"] > mother["High"]:
-            return ("BULLISH", float(curr["Close"]), atr, ts)
+            return ("BULLISH", float(curr["Close"]), atr, ts, vol_ok)
         if curr["High"] > mother["High"] and curr["Close"] < mother["Low"]:
-            return ("BEARISH", float(curr["Close"]), atr, ts)
+            return ("BEARISH", float(curr["Close"]), atr, ts, vol_ok)
 
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
@@ -282,12 +284,12 @@ def check_ut_bot(ticker, kv=2):
             del df_15, df_5; gc.collect()
             return None
 
+        vol_ok = True
         try:
             atr = float(calculate_atr(df_15, 1).iloc[-2])
             price = float(df_15["Close"].iloc[-1])
             if (atr / price * 100) < MIN_VOLATILITY:
-                del df_15, df_5; gc.collect()
-                return None
+                vol_ok = False
         except Exception:
             pass
 
@@ -333,9 +335,9 @@ def check_ut_bot(ticker, kv=2):
         del df_15, df_5; gc.collect()
 
         if is_buy and m5_close > m5_ema and rsi_15 < 70:
-            return ("BULLISH", float(src[i]), atr_val, ts)
+            return ("BULLISH", float(src[i]), atr_val, ts, vol_ok)
         if is_sell and m5_close < m5_ema and rsi_15 > 30:
-            return ("BEARISH", float(src[i]), atr_val, ts)
+            return ("BEARISH", float(src[i]), atr_val, ts, vol_ok)
 
     except Exception as e:
         print(f"[ERR] UT Bot {ticker}: {e}")
@@ -418,7 +420,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
     global active_trades
 
     with _lock:
-        key = f"{symbol}_{ts}_{sig_type}"
+        key = f"{symbol}_{ts}_{sig_type}_{account}"
         if key in sent_signals:
             return
         sent_signals[key] = True
@@ -656,7 +658,7 @@ def daily_reset_loop():
 
         if last_reset != today_str:
             with _lock:
-                for acc in ["macro", "nifty", "ny_session"]:
+                for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
                     accounts[acc]["daily_trades"] = 0
                 accounts["last_reset_date"] = today_str
                 save_json(ACCOUNTS_FILE, accounts)
@@ -830,7 +832,7 @@ def cmd_clear(m):
     try:
         with _lock:
             active_trades = []
-            for acc in ["macro", "nifty", "ny_session"]:
+            for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
                 accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
             save_json(ACCOUNTS_FILE, accounts)
             save_json(ACTIVE_TRADES_FILE, [])
@@ -862,7 +864,9 @@ def cmd_indi1(m):
             sweep = check_sweep_engulfing(symbol)
             if sweep:
                 signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
-                execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
+                if sweep[4]:
+                    execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
             time.sleep(0.5)
             gc.collect()
         if signals:
@@ -894,8 +898,10 @@ def cmd_indi2(m):
             if ut:
                 signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
                 ny_active = is_ny_session()
-                target = "ny_session" if ny_active else "macro"
-                execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
+                if ut[4]:
+                    target = "ny_session" if ny_active else "macro"
+                    execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
             time.sleep(0.5)
             gc.collect()
         if signals:
