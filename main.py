@@ -872,7 +872,13 @@ def cmd_indi1(m):
             time.sleep(0.5)
             gc.collect()
         if signals:
-            safe_send_message(chat_id, "🔥 *Strategy 1 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+            msg = (
+                f"🔥 *STRATEGY 1 EXECUTIONS*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(signals) +
+                f"\n━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            safe_send_message(chat_id, msg, parse_mode="Markdown")
         else:
             safe_send_message(chat_id, "⚪ *No Strategy 1 Signals met conditions.*", parse_mode="Markdown")
 
@@ -909,7 +915,13 @@ def cmd_indi2(m):
             time.sleep(0.5)
             gc.collect()
         if signals:
-            safe_send_message(chat_id, "🔥 *Strategy 2 Signals Found & Executed:*\n" + "\n".join(signals), parse_mode="Markdown")
+            msg = (
+                f"🔥 *STRATEGY 2 EXECUTIONS*\n"
+                f"━━━━━━━━━━━━━━━━━━━━━━\n"
+                + "\n".join(signals) +
+                f"\n━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            safe_send_message(chat_id, msg, parse_mode="Markdown")
         else:
             safe_send_message(chat_id, "⚪ *No Strategy 2 Signals met conditions.*", parse_mode="Markdown")
 
