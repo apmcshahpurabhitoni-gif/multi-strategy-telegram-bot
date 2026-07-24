@@ -356,7 +356,7 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
         save_json(ACCOUNTS_FILE, accounts)
 
     risk_amt = abs(price - actual_sl) * qty
-    emoji_dir = "STRONG BULLISH 🟢" if "BULLISH" in sig_type else "STRONG BEARISH 🔴"
+    emoji_dir = "STRONG BULLISH" if "BULLISH" in sig_type else "STRONG BEARISH"
 
     msg = (
         f"🚨 *HIGH-CONFLUENCE SIGNAL*\n"
@@ -604,27 +604,33 @@ def cmd_start(m):
 
 @bot.message_handler(commands=["check"])
 def cmd_check(m):
-    bot.send_message(m.chat.id, "🔍 *Scanning...*", parse_mode="Markdown")
-    signals, neutral = [], []
+    bot.send_message(m.chat.id, "🔍 *Scanning...*")
 
-    for symbol, mtype in MONITORED:
-        ut    = check_ut_bot(symbol)
-        sweep = check_sweep_engulfing(symbol)
-        if ut:
-            signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
-        elif sweep:
-            signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
-        else:
-            neutral.append(f"⚪ `{symbol}` — Neutral")
-        time.sleep(0.3)
-        gc.collect()
+    def run_scan():
+        try:
+            signals, neutral = [], []
+            for symbol, mtype in MONITORED:
+                ut    = check_ut_bot(symbol)
+                sweep = check_sweep_engulfing(symbol)
+                if ut:
+                    signals.append(f"🟢 `{symbol}` ➔ UT Bot {ut[0]} `${ut[1]:,.4f}`")
+                elif sweep:
+                    signals.append(f"🟢 `{symbol}` ➔ Sweep {sweep[0]} `${sweep[1]:,.4f}`")
+                else:
+                    neutral.append(f"⚪ `{symbol}` — Neutral")
+                time.sleep(0.3)
+                gc.collect()
 
-    body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
-    status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
-    text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
-    bot.reply_to(m, text, parse_mode="Markdown",
-                 reply_markup=InlineKeyboardMarkup().add(
-                     InlineKeyboardButton("📊 Summary", callback_data="cmd_summary")))
+            body = "\n".join(signals + neutral) if signals else "\n".join(neutral)
+            status = f"🔥 *{len(signals)} Signals*" if signals else "⏳ *No Setups*"
+            text = f"🔍 *MARKET SCAN*\n━━━━━━━━━━━━━━━━━━━━━━\n{status}\n\n{body}"
+            bot.reply_to(m, text, parse_mode="Markdown",
+                         reply_markup=InlineKeyboardMarkup().add(
+                             InlineKeyboardButton("📊 Summary", callback_data="cmd_summary")))
+        except Exception as e:
+            bot.reply_to(m, f"❌ *Scan Error:* `{e}`")
+
+    threading.Thread(target=run_scan, daemon=True).start()
 
 @bot.message_handler(commands=["summary"])
 def cmd_summary(m):
@@ -703,8 +709,10 @@ def cmd_clear(m):
 
     bot.reply_to(m, "🗑 *All accounts reset to ₹1,00,000.*", parse_mode="Markdown")
 
-@bot.message_handler(func=lambda m: m.text and not m.text.startswith("/"))
+@bot.message_handler(func=lambda m: True)
 def cmd_fallback(m):
+    if m.text.startswith("/"):
+        return  # let specific handlers deal with commands
     bot.reply_to(m, GUIDE, parse_mode="Markdown", reply_markup=menu_markup())
 
 # ============================================================
