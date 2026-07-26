@@ -1,4 +1,4 @@
-# 🤖 Multi-Strategy 2-Way Interactive Trading Bot
+[# 🤖 Multi-Strategy 2-Way Interactive Trading Bot
 
 An automated trading bot hosted on **Render** that scans financial markets 24/7 and sends real-time signals to Telegram. It features interactive 2-way Telegram messaging, market diagnostics, and custom visual alerts.
 
@@ -34,3 +34,4 @@ An automated trading bot hosted on **Render** that scans financial markets 24/7 
 - **Environment Variables:**
   - `TELEGRAM_BOT_TOKEN`
   - `TELEGRAM_CHAT_ID`
+](https://matrix-internal.oss-us-east-1.aliyuncs.com/Mavis/536721651376349185/files/424088103698616/README.md?Expires=1785097421&OSSAccessKeyId=LTAI5tRgbJ63ieNp3YeXRwFH&Signature=9pdg4O3yapNlmzyqhzwMViyiCQQ%3D)
