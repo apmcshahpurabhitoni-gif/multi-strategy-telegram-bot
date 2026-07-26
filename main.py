@@ -172,7 +172,7 @@ def msg_scanning():
         f"🔍 *SCANNING MARKETS...*\n"
         f"{BR}\n"
         f"⏳ Analyzing all assets across strategies...\n"
-        f"🔵 Sweep + Engulfing (4H)\n"
+        f"🔵 Sweep + Reverse (4H / 1H)\n"
         f"🟣 UT Bot Signals (15m)\n"
         f"{BR}\n"
         f"⏱ Please wait ~15 seconds..."
@@ -500,39 +500,46 @@ def check_sweep_engulfing(ticker):
             del df; gc.collect()
             return None
 
-        vol_ok = True
-        try:
-            atr   = float(calculate_atr(df, 10).iloc[-2])
-            price = float(df["Close"].iloc[-1])
-            if (atr / price * 100) < MIN_VOLATILITY:
-                vol_ok = False
-        except Exception:
-            pass
+        is_nifty = "^NSEI" in ticker or "^NSEBANK" in ticker
 
-        df_4h = (
-            df.resample("4h")
-            .agg({"Open": "first", "High": "max",
-                  "Low": "min", "Close": "last"})
-            .dropna()
-        )
-        del df; gc.collect()
+        if is_nifty:
+            df_target = df
+        else:
+            df_target = (
+                df.resample("4h")
+                .agg({"Open": "first", "High": "max",
+                      "Low": "min", "Close": "last"})
+                .dropna()
+            )
+            del df; gc.collect()
 
-        if len(df_4h) < 4:
+        if len(df_target) < 4:
             return None
 
-        df_4h["ATR"] = calculate_atr(df_4h, 10)
-        atr = float(df_4h["ATR"].iloc[-2])
+        curr   = df_target.iloc[-2]  # Candle 2
+        mother = df_target.iloc[-3]  # Candle 1
+        ts = int(df_target.index[-2].timestamp() * 1000)
 
-        curr   = df_4h.iloc[-2]
-        mother = df_4h.iloc[-3]
-        ts = int(df_4h.index[-2].timestamp() * 1000)
+        price = float(curr["Close"])
 
-        del df_4h; gc.collect()
+        if not is_nifty:
+            del df_target; gc.collect()
 
-        if curr["Low"] < mother["Low"] and curr["Close"] > mother["High"]:
-            return ("BULLISH", float(curr["Close"]), atr, ts, vol_ok)
-        if curr["High"] > mother["High"] and curr["Close"] < mother["Low"]:
-            return ("BEARISH", float(curr["Close"]), atr, ts, vol_ok)
+        # Bullish: 2nd candle breaks low of 1st, breaks high of 1st, closes above high of 1st
+        if curr["Low"] < mother["Low"] and curr["High"] > mother["High"] and curr["Close"] > mother["High"]:
+            sl = float(curr["Low"])
+            risk = price - sl
+            if risk <= 0: return None
+            tp = price + (risk * 2.0)  # 1:2 RR
+            return ("BULLISH", price, sl, tp, ts, True) # True for vol_ok (always executes)
+
+        # Bearish: 2nd candle breaks high of 1st, breaks low of 1st, closes below low of 1st
+        if curr["High"] > mother["High"] and curr["Low"] < mother["Low"] and curr["Close"] < mother["Low"]:
+            sl = float(curr["High"])
+            risk = sl - price
+            if risk <= 0: return None
+            tp = price - (risk * 2.0)  # 1:2 RR
+            return ("BEARISH", price, sl, tp, ts, True) # True for vol_ok (always executes)
 
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
@@ -543,54 +550,65 @@ def debug_sweep(ticker):
         df = yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=True)
         df = normalise_cols(df)
         if df.empty or len(df) < 30:
-            return msg_indi_debug_header(ticker, "Sweep + Engulfing") + \
+            return msg_indi_debug_header(ticker, "Sweep + Reverse") + \
                    f"├ ⚠️ Not enough 1H data (`{len(df)}` candles, need 30)\n" + BR2
 
-        atr = float(calculate_atr(df, 10).iloc[-2])
-        price = float(df["Close"].iloc[-1])
-        vol = (atr / price * 100)
-        vol_icon = "🟢" if vol >= MIN_VOLATILITY else "🔴"
+        is_nifty = "^NSEI" in ticker or "^NSEBANK" in ticker
+        tf_label = "1H" if is_nifty else "4H"
 
-        df_4h = df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 4:
-            return msg_indi_debug_header(ticker, "Sweep + Engulfing") + \
-                   f"├ ⚠️ Not enough 4H data\n" + BR2
+        if is_nifty:
+            df_target = df
+        else:
+            df_target = df.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
 
-        df_4h["ATR"] = calculate_atr(df_4h, 10)
-        curr = df_4h.iloc[-2]
-        mother = df_4h.iloc[-3]
+        if len(df_target) < 4:
+            return msg_indi_debug_header(ticker, "Sweep + Reverse") + \
+                   f"├ ⚠️ Not enough {tf_label} data\n" + BR2
 
-        sweep_low  = curr["Low"] < mother["Low"]
-        sweep_high = curr["High"] > mother["High"]
-        engulf_up  = curr["Close"] > mother["High"]
-        engulf_dn  = curr["Close"] < mother["Low"]
+        curr = df_target.iloc[-2]
+        mother = df_target.iloc[-3]
 
-        low_icon  = "🟢" if sweep_low else "⚪"
-        high_icon = "🟢" if sweep_high else "⚪"
-        up_icon   = "🟢" if engulf_up else "⚪"
-        dn_icon   = "🟢" if engulf_dn else "⚪"
+        # Bullish conditions
+        bull_break_low = curr["Low"] < mother["Low"]
+        bull_break_high = curr["High"] > mother["High"]
+        bull_close_above = curr["Close"] > mother["High"]
+
+        # Bearish conditions
+        bear_break_high = curr["High"] > mother["High"]
+        bear_break_low = curr["Low"] < mother["Low"]
+        bear_close_below = curr["Close"] < mother["Low"]
+
+        b_low_icon  = "🟢" if bull_break_low else "⚪"
+        b_high_icon = "🟢" if bull_break_high else "⚪"
+        b_close_icon = "🟢" if bull_close_above else "⚪"
+
+        br_high_icon = "🔴" if bear_break_high else "⚪"
+        br_low_icon = "🔴" if bear_break_low else "⚪"
+        br_close_icon = "🔴" if bear_close_below else "⚪"
 
         res = (
-            f"{msg_indi_debug_header(ticker, 'Sweep + Engulfing')}"
-            f"├ {vol_icon} *Volatility:* `{vol:.2f}%` (min `{MIN_VOLATILITY}%`)\n"
-            f"├ 📊 *Current 4H:*  H=`{curr['High']:.2f}`  L=`{curr['Low']:.2f}`  C=`{curr['Close']:.2f}`\n"
-            f"├ 📊 *Mother 4H:*   H=`{mother['High']:.2f}`  L=`{mother['Low']:.2f}`  C=`{mother['Close']:.2f}`\n"
+            f"{msg_indi_debug_header(ticker, f'Sweep + Reverse ({tf_label})')}"
+            f"├ 📊 *Candle 2:*  H=`{curr['High']:.2f}`  L=`{curr['Low']:.2f}`  C=`{curr['Close']:.2f}`\n"
+            f"├ 📊 *Candle 1:*  H=`{mother['High']:.2f}`  L=`{mother['Low']:.2f}`  C=`{mother['Close']:.2f}`\n"
             f"{BR}\n"
-            f"├ {low_icon}  Sweep Low:  Curr L `{curr['Low']:.2f}` {'<' if sweep_low else '>='} Mother L `{mother['Low']:.2f}`\n"
-            f"├ {high_icon} Sweep High: Curr H `{curr['High']:.2f}` {'>' if sweep_high else '<='} Mother H `{mother['High']:.2f}`\n"
-            f"├ {up_icon}   Engulf Up:  Curr C `{curr['Close']:.2f}` {'>' if engulf_up else '<='} Mother H `{mother['High']:.2f}`\n"
-            f"└ {dn_icon}   Engulf Dn:  Curr C `{curr['Close']:.2f}` {'<' if engulf_dn else '>='} Mother L `{mother['Low']:.2f}`\n"
+            f"🟢 *BULLISH LOGIC:*\n"
+            f"├ {b_low_icon}  Break Low:  C2 L `{curr['Low']:.2f}` < C1 L `{mother['Low']:.2f}`\n"
+            f"├ {b_high_icon} Break High: C2 H `{curr['High']:.2f}` > C1 H `{mother['High']:.2f}`\n"
+            f"├ {b_close_icon} Close Abv:  C2 C `{curr['Close']:.2f}` > C1 H `{mother['High']:.2f}`\n"
+            f"{BR}\n"
+            f"🔴 *BEARISH LOGIC:*\n"
+            f"├ {br_high_icon} Break High: C2 H `{curr['High']:.2f}` > C1 H `{mother['High']:.2f}`\n"
+            f"├ {br_low_icon} Break Low:  C2 L `{curr['Low']:.2f}` < C1 L `{mother['Low']:.2f}`\n"
+            f"├ {br_close_icon} Close Blw:  C2 C `{curr['Close']:.2f}` < C1 L `{mother['Low']:.2f}`\n"
             f"{BR}\n"
         )
 
-        if vol < MIN_VOLATILITY:
-            res += "⛔ *RESULT:* Failed Volatility Check\n"
-        elif sweep_low and engulf_up:
-            res += "✅ *RESULT:* 🟢 BULLISH Sweep + Engulfing Triggered\n"
-        elif sweep_high and engulf_dn:
-            res += "✅ *RESULT:* 🔴 BEARISH Sweep + Engulfing Triggered\n"
+        if bull_break_low and bull_break_high and bull_close_above:
+            res += f"✅ *RESULT:* 🟢 BULLISH Sweep Triggered (SL: {curr['Low']:.2f})\n"
+        elif bear_break_high and bear_break_low and bear_close_below:
+            res += f"✅ *RESULT:* 🔴 BEARISH Sweep Triggered (SL: {curr['High']:.2f})\n"
         else:
-            res += "⚪ *RESULT:* No Sweep + Engulfing Condition Met\n"
+            res += "⚪ *RESULT:* No Setup\n"
 
         res += BR2
         return res
@@ -758,11 +776,6 @@ def debug_ut(ticker, kv=2):
 # ============================================================
 #  TRADE EXECUTION
 # ============================================================
-def calc_sl_tp(sig_type, entry, atr):
-    if "BULLISH" in sig_type:
-        return float(entry - atr * ATR_MULT_SL), float(entry + atr * ATR_MULT_TP)
-    return float(entry + atr * ATR_MULT_SL), float(entry - atr * ATR_MULT_TP)
-
 def calc_position_size(account, entry, sl):
     with _lock:
         balance = accounts[account]["balance"]
@@ -956,19 +969,17 @@ def scanner_loop():
                 if ut:
                     ny_active = is_ny_session()
                     # Execute on novol tracker
-                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3], ut[4])
 
-                    if not vol_filter_on or ut[4]:
+                    if not vol_filter_on or ut[5]:
                         target = "ny_session" if ny_active else "macro"
-                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3], ut[4])
 
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    # Execute on novol tracker
-                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
-
-                    if not vol_filter_on or sweep[4]:
-                        execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                    # Strategy 1 executes on pure logic (no volatility filters apply)
+                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
+                    execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
 
                 time.sleep(0.5)
 
@@ -1170,7 +1181,7 @@ def cmd_indi1(m):
             for symbol, mtype in MONITORED:
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
+                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
                     if sweep[4]:
                         signals.append(f"🟢 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
                         execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
@@ -1209,11 +1220,11 @@ def cmd_indi2(m):
                 ut = check_ut_bot(symbol)
                 if ut:
                     ny_active = is_ny_session()
-                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
-                    if ut[4]:
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3], ut[4])
+                    if ut[5]:
                         signals.append(f"🟢 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
                         target = "ny_session" if ny_active else "macro"
-                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3], ut[4])
                     else:
                         signals.append(f"🟡 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ ⚠️ Low volatility → NO-VOL account only")
                 time.sleep(0.5)
