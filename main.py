@@ -47,10 +47,9 @@ accounts      = {}
 active_trades = []
 muted_assets  = set()
 sent_signals  = {}
-bot_settings  = {"volatility_filter": True}
 
-_lock        = threading.Lock()
-_chart_lock  = threading.Lock()
+_lock        = threading.RLock()
+_chart_lock  = threading.RLock()
 _price_cache = {}
 
 IST = pytz.timezone("Asia/Kolkata")
@@ -154,6 +153,7 @@ def msg_guide():
         f"└ 📈 NIFTY    — NIFTY 50 · BANK NIFTY\n"
         f"{BR2}"
     )
+
 
 def msg_volatility(is_enabled):
     status = "🟢 ON" if is_enabled else "🔴 OFF"
@@ -417,10 +417,17 @@ def init_accounts():
         "utbot_novol": {"balance": 100000.0, "daily_trades": 0},
     }
     accounts = load_json(ACCOUNTS_FILE, defaults)
+
+    # Ensure all defaults exist in case accounts.json is missing keys
+    for key, val in defaults.items():
+        if key not in accounts:
+            accounts[key] = val
+
     today = datetime.now(IST).strftime("%Y-%m-%d")
     if accounts.get("last_reset_date") != today:
         for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
-            accounts[acc]["daily_trades"] = 0
+            if acc in accounts:
+                accounts[acc]["daily_trades"] = 0
     accounts["last_reset_date"] = today
     save_json(ACCOUNTS_FILE, accounts)
 
@@ -492,6 +499,7 @@ def get_rsi(df, period=14):
 #  STRATEGY 1 — SWEEP + ENGULFING (4H)
 # ============================================================
 def check_sweep_engulfing(ticker):
+    df_target = None
     try:
         df = yf.download(ticker, period="10d", interval="1h",
                          progress=False, auto_adjust=True)
@@ -522,15 +530,14 @@ def check_sweep_engulfing(ticker):
 
         price = float(curr["Close"])
 
-        if not is_nifty:
-            del df_target; gc.collect()
-
         # Bullish: 2nd candle breaks low of 1st, breaks high of 1st, closes above high of 1st
         if curr["Low"] < mother["Low"] and curr["High"] > mother["High"] and curr["Close"] > mother["High"]:
             sl = float(curr["Low"])
             risk = price - sl
             if risk <= 0: return None
             tp = price + (risk * 2.0)  # 1:2 RR
+            if not is_nifty:
+                del df_target; gc.collect()
             return ("BULLISH", price, sl, tp, ts, True) # True for vol_ok (always executes)
 
         # Bearish: 2nd candle breaks high of 1st, breaks low of 1st, closes below low of 1st
@@ -539,13 +546,19 @@ def check_sweep_engulfing(ticker):
             risk = sl - price
             if risk <= 0: return None
             tp = price - (risk * 2.0)  # 1:2 RR
+            if not is_nifty:
+                del df_target; gc.collect()
             return ("BEARISH", price, sl, tp, ts, True) # True for vol_ok (always executes)
+
+        if not is_nifty:
+            del df_target; gc.collect()
 
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
     return None
 
 def debug_sweep(ticker):
+    df_target = None
     try:
         df = yf.download(ticker, period="10d", interval="1h", progress=False, auto_adjust=True)
         df = normalise_cols(df)
@@ -776,6 +789,13 @@ def debug_ut(ticker, kv=2):
 # ============================================================
 #  TRADE EXECUTION
 # ============================================================
+
+def calc_sl_tp(sig_type, entry, atr):
+    if "BULLISH" in sig_type:
+        return entry - (atr * 2), entry + (atr * 4)
+    else:
+        return entry + (atr * 2), entry - (atr * 4)
+
 def calc_position_size(account, entry, sl):
     with _lock:
         balance = accounts[account]["balance"]
@@ -785,8 +805,20 @@ def calc_position_size(account, entry, sl):
         return 0.0
     return float(risk / sl_dist)
 
-def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
+def execute_trade(symbol, mtype, account, strat, sig_type, price, arg1, arg2, arg3=None):
     global active_trades
+
+    # Handle overloads:
+    # UT Bot: execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts)
+    # Sweep:  execute_trade(symbol, mtype, account, strat, sig_type, price, sl, tp, ts)
+    if "Sweep" in strat:
+        sl = float(arg1)
+        tp = float(arg2)
+        ts = arg3
+    else:
+        atr = float(arg1)
+        ts = arg2
+        sl, tp = calc_sl_tp(sig_type, price, atr)
 
     with _lock:
         key = f"{symbol}_{ts}_{sig_type}_{account}"
@@ -800,13 +832,11 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
 
-        sl = calc_sl_tp(sig_type, price, atr)[0]
         qty = calc_position_size(account, price, sl)
         if qty <= 0:
             return
 
-        actual_sl, actual_tp = calc_sl_tp(sig_type, price, atr)
-        tf = "4H" if "Sweep" in strat else "15m"
+        tf = "1H" if ("Sweep" in strat and "^NSE" in symbol) else ("4H" if "Sweep" in strat else "15m")
 
         trade = {
             "id":         f"{symbol}_{int(time.time())}",
@@ -816,22 +846,21 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts):
             "strat":      strat,
             "type":       "LONG" if "BULLISH" in sig_type else "SHORT",
             "entry":      float(price),
-            "sl":         actual_sl,
-            "tp":         actual_tp,
+            "sl":         float(sl),
+            "tp":         float(tp),
             "qty":        float(qty),
-            "trail_sl":   actual_sl,
+            "trail_sl":   float(sl),
             "ts_trigger": ts,
             "time":       datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
         }
-
         active_trades.append(trade)
         accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
 
-    risk_amt = abs(price - actual_sl) * qty
+    risk_amt = abs(price - sl) * qty
 
-    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account)
+    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk_amt, account)
 
     markup = InlineKeyboardMarkup()
     markup.add(
@@ -969,19 +998,17 @@ def scanner_loop():
                 if ut:
                     ny_active = is_ny_session()
                     # Execute on novol tracker
-                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3], ut[4])
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
 
                     if not vol_filter_on or ut[5]:
                         target = "ny_session" if ny_active else "macro"
-                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3], ut[4])
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
 
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    # Execute on novol tracker
-                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3])
-                    
-                    if not vol_filter_on or sweep[4]:
-                        execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                    # Strategy 1 executes on pure logic (no volatility filters apply)
+                    execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
+                    execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
 
                 time.sleep(0.5)
 
@@ -1158,7 +1185,7 @@ def cmd_vol(m):
             markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
         else:
             markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
-            
+
         safe_send_message(m.chat.id, msg_volatility(is_enabled), parse_mode="Markdown", reply_markup=markup)
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Volatility Command", str(e)), parse_mode="Markdown")
@@ -1186,7 +1213,7 @@ def cmd_indi1(m):
                     execute_trade(symbol, mtype, "sweep_novol", "Sweep (No-Vol)", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
                     if sweep[4]:
                         signals.append(f"🟢 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
-                        execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3])
+                        execute_trade(symbol, mtype, get_account(symbol), "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
                     else:
                         signals.append(f"🟡 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`\n   └ ⚠️ Low volatility → NO-VOL account only")
                 time.sleep(0.5)
@@ -1222,11 +1249,11 @@ def cmd_indi2(m):
                 ut = check_ut_bot(symbol)
                 if ut:
                     ny_active = is_ny_session()
-                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3], ut[4])
-                    if ut[5]:
+                    execute_trade(symbol, mtype, "utbot_novol", "UT Bot (No-Vol)", ut[0], ut[1], ut[2], ut[3])
+                    if ut[4]:
                         signals.append(f"🟢 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ 🏢 Executed on *ALL* accounts")
                         target = "ny_session" if ny_active else "macro"
-                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3], ut[4])
+                        execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
                     else:
                         signals.append(f"🟡 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`\n   └ ⚠️ Low volatility → NO-VOL account only")
                 time.sleep(0.5)
@@ -1261,24 +1288,24 @@ def handle_cb(c):
             with _lock:
                 bot_settings["volatility_filter"] = True
                 save_json(SETTINGS_FILE, bot_settings)
-            
+
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🔴 Turn OFF Volatility Filter", callback_data="vol_off"))
             bot.edit_message_text(
                 msg_volatility(True), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=markup)
-                
+
         elif c.data == "vol_off":
             with _lock:
                 bot_settings["volatility_filter"] = False
                 save_json(SETTINGS_FILE, bot_settings)
-                
+
             markup = InlineKeyboardMarkup()
             markup.add(InlineKeyboardButton("🟢 Turn ON Volatility Filter", callback_data="vol_on"))
             bot.edit_message_text(
                 msg_volatility(False), c.message.chat.id, c.message.message_id,
                 parse_mode="Markdown", reply_markup=markup)
-                
+
         elif c.data.startswith("chart_"):
             sym = c.data.split("_", 1)[1]
             bot.answer_callback_query(c.id, text="Generating chart...")

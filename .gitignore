@@ -1,21 +1,3 @@
-# Python Bytecode & Cache
+*.json
 __pycache__/
-*.py[cod]
-*$py.class
-
-# Environment variables & secrets
 .env
-.env.local
-
-# Virtual environments
-venv/
-.venv/
-env/
-
-# IDE configurations
-.vscode/
-.idea/
-
-# OS metadata files
-.DS_Store
-Thumbs.db
