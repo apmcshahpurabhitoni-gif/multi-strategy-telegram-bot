@@ -271,17 +271,10 @@ def msg_indi_debug_header(symbol, strategy_name):
 
 def msg_indi_no_signals(num):
     color = "🔵" if num == 1 else "🟣"
-    name = "Sweep + Engulfing" if num == 1 else "UT Bot"
     return (
         f"{color} *STRATEGY {num} — NO SIGNALS*\n"
         f"{BR}\n"
-        f"⏳ *{name}*: No assets met trigger conditions.\n"
-        f"{BR}\n"
-        f"💡 *Possible reasons:*\n"
-        f"├ ⚪ Volatility below `{MIN_VOLATILITY}%` threshold\n"
-        f"├ ⚪ No sweep/engulfing pattern detected\n"
-        f"├ ⚪ UT Bot crossover not aligned with EMA/RSI\n"
-        f"└ ⚪ Signal already sent (dedup active)\n"
+        f"⚪ No assets met conditions.\n"
         f"{BR2}"
     )
 
@@ -554,14 +547,7 @@ def check_ut_bot(ticker, kv=2):
             del df_15, df_5; gc.collect()
             return None
 
-        vol_ok = True
-        try:
-            atr = float(calculate_atr(df_15, 1).iloc[-2])
-            price = float(df_15["Close"].iloc[-1])
-            if (atr / price * 100) < MIN_VOLATILITY:
-                vol_ok = False
-        except Exception:
-            pass
+
 
         df_15["xATR"]  = calculate_atr(df_15, 1)
         df_15["nLoss"] = kv * df_15["xATR"]
