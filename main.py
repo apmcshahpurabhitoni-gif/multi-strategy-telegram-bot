@@ -378,16 +378,16 @@ def load_json(filepath, default):
         if os.path.exists(filepath):
             with open(filepath) as f:
                 return json.load(f)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ERR] load_json({filepath}): {e}")
     return default
 
 def save_json(filepath, data):
     try:
         with open(filepath, "w") as f:
             json.dump(data, f, indent=4)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ERR] save_json({filepath}): {e}")
 
 def safe_send_message(chat_id, text, **kwargs):
     try:
@@ -448,7 +448,7 @@ def get_price(symbol):
             return None
         price = float(df["Close"].iloc[-1])
         _price_cache[symbol] = (price, now)
-        del df; gc.collect()
+        del df
         return price
     except Exception:
         return None
@@ -499,7 +499,7 @@ def check_sweep_engulfing(ticker):
                          progress=False, auto_adjust=True)
         df = normalise_cols(df)
         if df.empty or len(df) < 30:
-            del df; gc.collect()
+            del df
             return None
 
         is_nifty = "^NSEI" in ticker or "^NSEBANK" in ticker
@@ -513,7 +513,7 @@ def check_sweep_engulfing(ticker):
                       "Low": "min", "Close": "last"})
                 .dropna()
             )
-            del df; gc.collect()
+            del df
 
         if len(df_target) < 4:
             return None
@@ -728,12 +728,12 @@ def monitor_trades():
                                  interval="1m", progress=False, auto_adjust=True)
                 df = normalise_cols(df)
                 if df.empty:
-                    del df; gc.collect()
+                    del df
                     continue
 
                 live    = float(df["Close"].iloc[-1])
                 is_long = trade["type"] == "LONG"
-                del df; gc.collect()
+                del df
 
                 if is_long:
                     profit_pct = (live - trade["entry"]) / trade["entry"] * 100
@@ -744,12 +744,17 @@ def monitor_trades():
                 # The max()/min() guard ensures SL only ever ratchets in the profitable direction,
                 # so existing positions with the old static trail keep their floor.
                 if profit_pct >= 1.0:
+                    old_trail = trade["trail_sl"]
                     if is_long:
                         new_sl = trade["entry"] + (live - trade["entry"]) * 0.5
                         trade["trail_sl"] = max(trade["trail_sl"], new_sl)
                     else:
                         new_sl = trade["entry"] - (trade["entry"] - live) * 0.5
                         trade["trail_sl"] = min(trade["trail_sl"], new_sl)
+
+                    if trade["trail_sl"] != old_trail:
+                        with _lock:
+                            save_json(ACTIVE_TRADES_FILE, active_trades)
 
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
                 hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
@@ -836,7 +841,10 @@ def scanner_loop():
 
                 ut = check_ut_bot(symbol)
                 if ut:
-                    target = "ny_session" if is_ny_session() else "macro"
+                    if account == "nifty":
+                        target = "nifty"
+                    else:
+                        target = "ny_session" if is_ny_session() else "macro"
                     execute_trade(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
 
                 sweep = check_sweep_engulfing(symbol)
@@ -1038,8 +1046,6 @@ def cmd_indi1(m):
                 else:
                     results.append(f"⚪ `{symbol}`  →  No Setup")
                 time.sleep(0.5)
-                import gc
-                gc.collect()
 
             has_signals = any("BULLISH" in r or "BEARISH" in r for r in results)
 
@@ -1051,7 +1057,6 @@ def cmd_indi1(m):
                 safe_send_message(chat_id, msg_indi_no_signals(1), parse_mode="Markdown")
         except Exception as e:
             safe_send_message(chat_id, msg_error("Strategy 1 Diagnosis", str(e)), parse_mode="Markdown")
-    import threading
     threading.Thread(target=run_diag, daemon=True).start()
 
 @bot.message_handler(commands=["indi2"])
@@ -1072,8 +1077,6 @@ def cmd_indi2(m):
                 else:
                     results.append(f"⚪ `{symbol}`  →  No Setup")
                 time.sleep(0.5)
-                import gc
-                gc.collect()
 
             has_signals = any("BULLISH" in r or "BEARISH" in r for r in results)
 
@@ -1085,7 +1088,6 @@ def cmd_indi2(m):
                 safe_send_message(chat_id, msg_indi_no_signals(2), parse_mode="Markdown")
         except Exception as e:
             safe_send_message(chat_id, msg_error("Strategy 2 Diagnosis", str(e)), parse_mode="Markdown")
-    import threading
     threading.Thread(target=run_diag, daemon=True).start()
 
 @bot.message_handler(func=lambda m: True)
@@ -1184,7 +1186,7 @@ def generate_chart(symbol, tf="1h"):
             plt.savefig(buf, format="png", facecolor="#0d1117")
             buf.seek(0)
             plt.close(fig)
-            del df; gc.collect()
+            del df
             return buf
 
         except Exception as e:
