@@ -39,6 +39,19 @@ MUTE_FILE          = "/workspace/muted_assets.json"
 TRADE_LOG_CSV      = "trade_log.csv"
 SENT_SIGNALS_FILE  = "/workspace/sent_signals.json"
 
+# Per-account max trades per day
+# - macro: BTC/Gold/Forex UT Bot (during non-NY hours)
+# - ny_session: everything during NY hours
+# - nifty: NIFTY 50 / BANK NIFTY only
+# - sweep_4h: dedicated 4H Sweep + Engulfing strategy
+ACCOUNT_LIMITS = {
+    "macro":      20,
+    "nifty":      3,
+    "ny_session": 3,
+    "sweep_4h":   3,
+}
+
+
 # Globals
 accounts      = {}
 active_trades = []
@@ -115,7 +128,7 @@ def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
         f"{BR2}"
     )
 
-def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal):
+def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal, sweep_bal):
     pnl_icon = "📈" if day_pnl >= 0 else "📉"
     pnl_sign = "+" if day_pnl >= 0 else ""
     return (
@@ -126,9 +139,10 @@ def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal):
         f"🏦 *Account Balances:*\n"
         f"├ 🌐 *Macro:*      `₹{macro_bal:,.2f}`\n"
         f"├ 🇮🇳 *Nifty:*      `₹{nifty_bal:,.2f}`\n"
-        f"└ 🇺🇸 *NY Session:* `₹{ny_bal:,.2f}`\n"
+        f"├ 🇺🇸 *NY Session:* `₹{ny_bal:,.2f}`\n"
+        f"└ 🔵 *Sweep 4H:*   `₹{sweep_bal:,.2f}`\n"
         f"{BR}\n"
-        f"🔄 *Daily trade limits reset to 0/3*\n"
+        f"🔄 *Daily trade limits reset*\n"
         f"🧹 *Signal cache cleaned*\n"
         f"{BR2}"
     )
@@ -143,7 +157,6 @@ def msg_guide():
         f"├ `/stats`    📈  Win rate & P/L report\n"
         f"├ `/balance`  🏦  Virtual account balances\n"
         f"├ `/clear`    🗑️  Reset all to ₹1,00,000\n"
-        f"├ `/vol`      ⚙️  Toggle Volatility Filter\n"
         f"├ `/indi1`    🔵  Diagnose Strategy 1 (Sweep)\n"
         f"└ `/indi2`    🟣  Diagnose Strategy 2 (UT Bot)\n"
         f"{BR}\n"
@@ -197,7 +210,7 @@ def msg_summary(lines):
         f"{BR2}"
     )
 
-def msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr):
+def msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr, sw, sl, sp, swr):
     def acc_line(emoji, name, w, l, p, wr):
         sign = "+" if p >= 0 else ""
         color = "🟢" if p >= 0 else "🔴"
@@ -211,10 +224,12 @@ def msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr):
         f"{acc_line('🇮🇳','Nifty',nw,nl,np_,nwr)}\n"
         f"{BR}\n"
         f"{acc_line('🇺🇸','NY Session',nyw,nyl,nyp,nywr)}\n"
+        f"{BR}\n"
+        f"{acc_line('🔵','Sweep 4H',sw,sl,sp,swr)}\n"
         f"{BR2}"
     )
 
-def msg_balance(macro_bal, nifty_bal, ny_bal, macro_d, nifty_d, ny_d, ny_active):
+def msg_balance(macro_bal, nifty_bal, ny_bal, sweep_bal, macro_d, nifty_d, ny_d, sweep_d, macro_lim, nifty_lim, ny_lim, sweep_lim, ny_active):
     ny_icon = "🟢" if ny_active else "🔴"
     ny_text = "ACTIVE" if ny_active else "INACTIVE"
     return (
@@ -222,15 +237,19 @@ def msg_balance(macro_bal, nifty_bal, ny_bal, macro_d, nifty_d, ny_d, ny_active)
         f"{BR}\n"
         f"🌐 *Macro Account*\n"
         f"   💰 Balance:  `₹{macro_bal:,.2f}`\n"
-        f"   📝 Trades:   `{macro_d}/3`\n"
+        f"   📝 Trades:   `{macro_d}/{macro_lim}`\n"
         f"{BR}\n"
         f"🇮🇳 *Nifty Account*\n"
         f"   💰 Balance:  `₹{nifty_bal:,.2f}`\n"
-        f"   📝 Trades:   `{nifty_d}/3`\n"
+        f"   📝 Trades:   `{nifty_d}/{nifty_lim}`\n"
         f"{BR}\n"
         f"🇺🇸 *NY Session Account*\n"
         f"   💰 Balance:  `₹{ny_bal:,.2f}`\n"
-        f"   📝 Trades:   `{ny_d}/3`\n"
+        f"   📝 Trades:   `{ny_d}/{ny_lim}`\n"
+        f"{BR}\n"
+        f"🔵 *Sweep 4H Account*\n"
+        f"   💰 Balance:  `₹{sweep_bal:,.2f}`\n"
+        f"   📝 Trades:   `{sweep_d}/{sweep_lim}`\n"
         f"{BR}\n"
         f"{ny_icon} *NY Session:* `{ny_text}`\n"
         f"🕐 *Time:* `{datetime.now(IST).strftime('%H:%M:%S IST')}`\n"
@@ -386,7 +405,8 @@ def init_accounts():
     defaults = {
         "macro":      {"balance": 100000.0, "daily_trades": 0},
         "nifty":      {"balance": 100000.0, "daily_trades": 0},
-        "ny_session": {"balance": 100000.0, "daily_trades": 0}
+        "ny_session": {"balance": 100000.0, "daily_trades": 0},
+        "sweep_4h":   {"balance": 100000.0, "daily_trades": 0},
     }
     accounts = load_json(ACCOUNTS_FILE, defaults)
 
@@ -640,7 +660,8 @@ def execute_trade(symbol, mtype, account, strat, sig_type, price, arg1, arg2, ar
         sent_signals[key] = True
         save_json(SENT_SIGNALS_FILE, sent_signals)
 
-        if accounts[account]["daily_trades"] >= 3:
+        limit = ACCOUNT_LIMITS.get(account, 3)
+        if accounts[account]["daily_trades"] >= limit:
             return
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
@@ -719,12 +740,15 @@ def monitor_trades():
                 else:
                     profit_pct = (trade["entry"] - live) / trade["entry"] * 100
 
-                if profit_pct >= 1.5:
+                # Dynamic trailing stop — once profit >= 1%, lock in 50% of unrealized gain.
+                # The max()/min() guard ensures SL only ever ratchets in the profitable direction,
+                # so existing positions with the old static trail keep their floor.
+                if profit_pct >= 1.0:
                     if is_long:
-                        new_sl = trade["entry"] + (trade["entry"] * 0.005)
+                        new_sl = trade["entry"] + (live - trade["entry"]) * 0.5
                         trade["trail_sl"] = max(trade["trail_sl"], new_sl)
                     else:
-                        new_sl = trade["entry"] - (trade["entry"] * 0.005)
+                        new_sl = trade["entry"] - (trade["entry"] - live) * 0.5
                         trade["trail_sl"] = min(trade["trail_sl"], new_sl)
 
                 hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
@@ -746,9 +770,10 @@ def monitor_trades():
                     save_json(ACCOUNTS_FILE, accounts)
 
                 try:
-                    history = load_json(HISTORY_FILE, [])
-                    history.append(trade)
-                    save_json(HISTORY_FILE, history)
+                    with _lock:
+                        history = load_json(HISTORY_FILE, [])
+                        history.append(trade)
+                        save_json(HISTORY_FILE, history)
                 except Exception:
                     pass
 
@@ -816,7 +841,7 @@ def scanner_loop():
 
                 sweep = check_sweep_engulfing(symbol)
                 if sweep:
-                    execute_trade(symbol, mtype, account, "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
+                    execute_trade(symbol, mtype, "sweep_4h", "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
 
                 time.sleep(0.5)
 
@@ -839,8 +864,9 @@ def daily_reset_loop():
 
         if last_reset != today_str:
             with _lock:
-                for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
-                    accounts[acc]["daily_trades"] = 0
+                for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
+                    if acc in accounts:
+                        accounts[acc]["daily_trades"] = 0
                 accounts["last_reset_date"] = today_str
                 save_json(ACCOUNTS_FILE, accounts)
 
@@ -941,11 +967,14 @@ def cmd_stats(m):
             wr = len(w) / (len(w) + len(l)) * 100 if (w or l) else 0
             return len(w), len(l), p, wr
 
-        mw, ml, mp, mwr = stats("macro")
-        nw, nl, np_, nwr = stats("nifty")
+        mw, ml, mp, mwr   = stats("macro")
+        nw, nl, np_, nwr  = stats("nifty")
         nyw, nyl, nyp, nywr = stats("ny_session")
+        sw, sl, sp, swr   = stats("sweep_4h")
 
-        safe_send_message(m.chat.id, msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr), parse_mode="Markdown", reply_markup=menu_markup())
+        safe_send_message(m.chat.id,
+            msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr, sw, sl, sp, swr),
+            parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Performance Stats", str(e)), parse_mode="Markdown")
 
@@ -953,15 +982,25 @@ def cmd_stats(m):
 def cmd_balance(m):
     try:
         with _lock:
-            macro_bal = accounts["macro"]["balance"]
-            nifty_bal = accounts["nifty"]["balance"]
-            ny_bal    = accounts["ny_session"]["balance"]
-            macro_d   = accounts["macro"]["daily_trades"]
-            nifty_d   = accounts["nifty"]["daily_trades"]
-            ny_d      = accounts["ny_session"]["daily_trades"]
-            ny_active = is_ny_session()
+            macro_bal  = accounts["macro"]["balance"]
+            nifty_bal  = accounts["nifty"]["balance"]
+            ny_bal     = accounts["ny_session"]["balance"]
+            sweep_bal  = accounts.get("sweep_4h", {"balance": 100000.0})["balance"]
+            macro_d    = accounts["macro"]["daily_trades"]
+            nifty_d    = accounts["nifty"]["daily_trades"]
+            ny_d       = accounts["ny_session"]["daily_trades"]
+            sweep_d    = accounts.get("sweep_4h", {"daily_trades": 0})["daily_trades"]
+            ny_active  = is_ny_session()
 
-        safe_send_message(m.chat.id, msg_balance(macro_bal, nifty_bal, ny_bal, macro_d, nifty_d, ny_d, ny_active), parse_mode="Markdown", reply_markup=menu_markup())
+        safe_send_message(m.chat.id,
+            msg_balance(
+                macro_bal, nifty_bal, ny_bal, sweep_bal,
+                macro_d, nifty_d, ny_d, sweep_d,
+                ACCOUNT_LIMITS["macro"], ACCOUNT_LIMITS["nifty"],
+                ACCOUNT_LIMITS["ny_session"], ACCOUNT_LIMITS["sweep_4h"],
+                ny_active
+            ),
+            parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Balance Query", str(e)), parse_mode="Markdown")
 
@@ -971,7 +1010,7 @@ def cmd_clear(m):
     try:
         with _lock:
             active_trades = []
-            for acc in ["macro", "nifty", "ny_session", "sweep_novol", "utbot_novol"]:
+            for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
                 accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
             save_json(ACCOUNTS_FILE, accounts)
             save_json(ACTIVE_TRADES_FILE, [])
@@ -980,9 +1019,6 @@ def cmd_clear(m):
         safe_send_message(m.chat.id, msg_cleared(), parse_mode="Markdown")
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Account Clear", str(e)), parse_mode="Markdown")
-
-    except Exception as e:
-        safe_send_message(m.chat.id, msg_error("Volatility Command", str(e)), parse_mode="Markdown")
 
 @bot.message_handler(commands=["indi1"])
 def cmd_indi1(m):
@@ -1119,14 +1155,23 @@ def generate_chart(symbol, tf="1h"):
             fig, ax = plt.subplots(figsize=(10, 5), facecolor="#0d1117", dpi=50)
             ax.set_facecolor("#0d1117")
 
-            for _, row in df.iterrows():
-                color = "#00ff88" if row["Close"] >= row["Open"] else "#ff4444"
-                ax.plot([df.index.get_loc(_) + 1]*2,
-                        [row["Low"], row["High"]], color=color, linewidth=1)
-                ax.bar(df.index.get_loc(_) + 1,
-                       abs(row["Close"] - row["Open"]) + 1e-8,
-                       bottom=min(row["Open"], row["Close"]),
-                       width=0.3, color=color, linewidth=1)
+            # Vectorized candlestick drawing — replaces the O(n) iterrows loop
+            # with O(1) vlines + bar calls, so the chart is fast even on
+            # higher-resolution frames.
+            x       = np.arange(len(df))
+            close   = df["Close"].to_numpy()
+            open_   = df["Open"].to_numpy()
+            high    = df["High"].to_numpy()
+            low     = df["Low"].to_numpy()
+            colors  = np.where(close >= open_, "#00ff88", "#ff4444")
+
+            # Wicks (high-low)
+            ax.vlines(x, low, high, color=colors, linewidth=1)
+
+            # Bodies (open-close)
+            body_h  = np.abs(close - open_) + 1e-8
+            body_b  = np.minimum(open_, close)
+            ax.bar(x, body_h, bottom=body_b, width=0.6, color=colors, linewidth=0)
 
             ax.set_title(f"{symbol} | {tf.upper()}", color="white", fontsize=12, fontweight="bold")
             ax.tick_params(colors="gray", labelsize=6)
@@ -1174,9 +1219,14 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop,  daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
+    # Exponential backoff on polling crash — fixed retry was 5s flat which
+    # would tight-loop on a real outage. Now we back off up to 5 minutes.
+    backoff = 5
     while True:
         try:
             bot.polling(timeout=60, long_polling_timeout=10)
+            backoff = 5  # reset on clean exit
         except Exception as e:
             print(f"[ERR] Polling crashed: {e}")
-            time.sleep(5)
+            time.sleep(backoff)
+            backoff = min(backoff * 2, 300)
