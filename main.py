@@ -36,7 +36,7 @@ ACCOUNTS_FILE      = "/workspace/accounts.json"
 ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
 HISTORY_FILE       = "/workspace/trade_history.json"
 MUTE_FILE          = "/workspace/muted_assets.json"
-TRADE_LOG_CSV      = "trade_log.csv"
+TRADE_LOG_CSV      = "/workspace/trade_log.csv"
 SENT_SIGNALS_FILE  = "/workspace/sent_signals.json"
 
 # Per-account max trades per day
@@ -128,6 +128,33 @@ def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
         f"{BR2}"
     )
 
+def msg_active_trades(trades_list, total_unrealized_pnl):
+    body = "\n".join(trades_list)
+    return (
+        f"📋 *ACTIVE POSITIONS*\n"
+        f"{BR}\n"
+        f"{body}\n"
+        f"{BR}\n"
+        f"💵 *Total Unrealized PnL:* `₹{total_unrealized_pnl:,.2f}`\n"
+        f"{BR2}"
+    )
+
+def msg_no_active_trades():
+    return (
+        f"📋 *ACTIVE POSITIONS*\n"
+        f"{BR}\n"
+        f"⚪ No open positions.\n"
+        f"{BR2}"
+    )
+
+def msg_export_ready(count):
+    return (
+        f"📁 *Trade Log Exported*\n"
+        f"{BR}\n"
+        f"Total rows: {count}\n"
+        f"{BR2}"
+    )
+
 def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal, sweep_bal):
     pnl_icon = "📈" if day_pnl >= 0 else "📉"
     pnl_sign = "+" if day_pnl >= 0 else ""
@@ -156,6 +183,9 @@ def msg_guide():
         f"├ `/summary`  📊  Live prices & status\n"
         f"├ `/stats`    📈  Win rate & P/L report\n"
         f"├ `/balance`  🏦  Virtual account balances\n"
+        f"├ `/active`   📋  View open positions & unrealized PnL\n"
+        f"├ `/close`    ✋  Manually close a trade (e.g., `/close BTC-USD`)\n"
+        f"├ `/export`   📁  Download trade_log.csv\n"
         f"├ `/clear`    🗑️  Reset all to ₹1,00,000\n"
         f"├ `/indi1`    🔵  Diagnose Strategy 1 (Sweep)\n"
         f"└ `/indi2`    🟣  Diagnose Strategy 2 (UT Bot)\n"
@@ -229,7 +259,7 @@ def msg_stats(mw, ml, mp, mwr, nw, nl, np_, nwr, nyw, nyl, nyp, nywr, sw, sl, sp
         f"{BR2}"
     )
 
-def msg_balance(macro_bal, nifty_bal, ny_bal, sweep_bal, macro_d, nifty_d, ny_d, sweep_d, macro_lim, nifty_lim, ny_lim, sweep_lim, ny_active):
+def msg_balance(macro_bal, nifty_bal, ny_bal, sweep_bal, macro_d, nifty_d, ny_d, sweep_d, macro_lim, nifty_lim, ny_lim, sweep_lim, ny_active, u_pnl):
     ny_icon = "🟢" if ny_active else "🔴"
     ny_text = "ACTIVE" if ny_active else "INACTIVE"
     return (
@@ -237,18 +267,22 @@ def msg_balance(macro_bal, nifty_bal, ny_bal, sweep_bal, macro_d, nifty_d, ny_d,
         f"{BR}\n"
         f"🌐 *Macro Account*\n"
         f"   💰 Balance:  `₹{macro_bal:,.2f}`\n"
+        f"   💸 Open PnL: `₹{u_pnl.get('macro', 0.0):,.2f}`\n"
         f"   📝 Trades:   `{macro_d}/{macro_lim}`\n"
         f"{BR}\n"
         f"🇮🇳 *Nifty Account*\n"
         f"   💰 Balance:  `₹{nifty_bal:,.2f}`\n"
+        f"   💸 Open PnL: `₹{u_pnl.get('nifty', 0.0):,.2f}`\n"
         f"   📝 Trades:   `{nifty_d}/{nifty_lim}`\n"
         f"{BR}\n"
         f"🇺🇸 *NY Session Account*\n"
         f"   💰 Balance:  `₹{ny_bal:,.2f}`\n"
+        f"   💸 Open PnL: `₹{u_pnl.get('ny_session', 0.0):,.2f}`\n"
         f"   📝 Trades:   `{ny_d}/{ny_lim}`\n"
         f"{BR}\n"
         f"🔵 *Sweep 4H Account*\n"
         f"   💰 Balance:  `₹{sweep_bal:,.2f}`\n"
+        f"   💸 Open PnL: `₹{u_pnl.get('sweep_4h', 0.0):,.2f}`\n"
         f"   📝 Trades:   `{sweep_d}/{sweep_lim}`\n"
         f"{BR}\n"
         f"{ny_icon} *NY Session:* `{ny_text}`\n"
@@ -569,7 +603,7 @@ def check_ut_bot(ticker, kv=2):
 
 
 
-        df_15["xATR"]  = calculate_atr(df_15, 1)
+        df_15["xATR"]  = calculate_atr(df_15, 10)
         df_15["nLoss"] = kv * df_15["xATR"]
 
         src    = df_15["Close"].values
@@ -625,9 +659,9 @@ def check_ut_bot(ticker, kv=2):
 
 def calc_sl_tp(sig_type, entry, atr):
     if "BULLISH" in sig_type:
-        return entry - (atr * 2), entry + (atr * 4)
+        return entry - (atr * ATR_MULT_SL), entry + (atr * ATR_MULT_TP)
     else:
-        return entry + (atr * 2), entry - (atr * 4)
+        return entry + (atr * ATR_MULT_SL), entry - (atr * ATR_MULT_TP)
 
 def calc_position_size(account, entry, sl):
     with _lock:
@@ -640,6 +674,8 @@ def calc_position_size(account, entry, sl):
 
 def execute_trade(symbol, mtype, account, strat, sig_type, price, arg1, arg2, arg3=None):
     global active_trades
+    if symbol in muted_assets:
+        return
 
     # Handle overloads:
     # UT Bot: execute_trade(symbol, mtype, account, strat, sig_type, price, atr, ts)
@@ -735,37 +771,38 @@ def monitor_trades():
                 is_long = trade["type"] == "LONG"
                 del df
 
-                if is_long:
-                    profit_pct = (live - trade["entry"]) / trade["entry"] * 100
-                else:
-                    profit_pct = (trade["entry"] - live) / trade["entry"] * 100
-
-                # Dynamic trailing stop — once profit >= 1%, lock in 50% of unrealized gain.
-                # The max()/min() guard ensures SL only ever ratchets in the profitable direction,
-                # so existing positions with the old static trail keep their floor.
-                if profit_pct >= 1.0:
-                    old_trail = trade["trail_sl"]
+                with _lock:
+                    if trade not in active_trades:
+                        continue # ensure trade hasn't been closed by another thread/command
                     if is_long:
-                        new_sl = trade["entry"] + (live - trade["entry"]) * 0.5
-                        trade["trail_sl"] = max(trade["trail_sl"], new_sl)
+                        profit_pct = (live - trade["entry"]) / trade["entry"] * 100
                     else:
-                        new_sl = trade["entry"] - (trade["entry"] - live) * 0.5
-                        trade["trail_sl"] = min(trade["trail_sl"], new_sl)
+                        profit_pct = (trade["entry"] - live) / trade["entry"] * 100
 
-                    if trade["trail_sl"] != old_trail:
-                        with _lock:
+                    # Dynamic trailing stop — once profit >= 1%, lock in 50% of unrealized gain.
+                    # The max()/min() guard ensures SL only ever ratchets in the profitable direction,
+                    # so existing positions with the old static trail keep their floor.
+                    if profit_pct >= 1.0:
+                        old_trail = trade["trail_sl"]
+                        if is_long:
+                            new_sl = trade["entry"] + (live - trade["entry"]) * 0.5
+                            trade["trail_sl"] = max(trade["trail_sl"], new_sl)
+                        else:
+                            new_sl = trade["entry"] - (trade["entry"] - live) * 0.5
+                            trade["trail_sl"] = min(trade["trail_sl"], new_sl)
+
+                        if trade["trail_sl"] != old_trail:
                             save_json(ACTIVE_TRADES_FILE, active_trades)
 
-                hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
-                hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
+                    hit_tp = (is_long and live >= trade["tp"]) or (not is_long and live <= trade["tp"])
+                    hit_sl = (is_long and live <= trade["trail_sl"]) or (not is_long and live >= trade["trail_sl"])
 
-                if not (hit_tp or hit_sl):
-                    continue
+                    if not (hit_tp or hit_sl):
+                        continue
 
-                pnl = abs(trade["tp"] - trade["entry"]) * trade["qty"] if hit_tp \
-                    else -(abs(trade["entry"] - trade["trail_sl"]) * trade["qty"])
+                    pnl = abs(trade["tp"] - trade["entry"]) * trade["qty"] if hit_tp \
+                        else -(abs(trade["entry"] - trade["trail_sl"]) * trade["qty"])
 
-                with _lock:
                     accounts[trade["account"]]["balance"] += pnl
                     trade["exit_price"] = live
                     trade["pnl"]        = float(pnl)
@@ -774,13 +811,35 @@ def monitor_trades():
                     to_close.append(trade)
                     save_json(ACCOUNTS_FILE, accounts)
 
-                try:
-                    with _lock:
+                    try:
                         history = load_json(HISTORY_FILE, [])
                         history.append(trade)
                         save_json(HISTORY_FILE, history)
-                except Exception:
-                    pass
+
+                        import csv
+                        import os
+                        file_exists = os.path.isfile(TRADE_LOG_CSV)
+                        with open(TRADE_LOG_CSV, 'a', newline='') as csvfile:
+                            fieldnames = ['close_time', 'symbol', 'account', 'strategy', 'type', 'entry', 'exit_price', 'sl', 'tp', 'qty', 'pnl', 'result']
+                            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                            if not file_exists:
+                                writer.writeheader()
+                            writer.writerow({
+                                'close_time': trade['close_time'],
+                                'symbol': trade['symbol'],
+                                'account': trade['account'],
+                                'strategy': trade['strat'],
+                                'type': trade['type'],
+                                'entry': trade['entry'],
+                                'exit_price': trade['exit_price'],
+                                'sl': trade['sl'],
+                                'tp': trade['tp'],
+                                'qty': trade['qty'],
+                                'pnl': trade['pnl'],
+                                'result': trade['result']
+                            })
+                    except Exception as e:
+                        print(f"[ERR] Log trade: {e}")
 
                 with _lock:
                     bal = accounts[trade["account"]]["balance"]
@@ -871,34 +930,38 @@ def daily_reset_loop():
         today_str = now.strftime("%Y-%m-%d")
 
         if last_reset != today_str:
-            with _lock:
-                for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
-                    if acc in accounts:
-                        accounts[acc]["daily_trades"] = 0
-                accounts["last_reset_date"] = today_str
-                save_json(ACCOUNTS_FILE, accounts)
+            try:
+                with _lock:
+                    for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
+                        if acc in accounts:
+                            accounts[acc]["daily_trades"] = 0
+                    accounts["last_reset_date"] = today_str
+                    save_json(ACCOUNTS_FILE, accounts)
 
-                global sent_signals
-                if len(sent_signals) > 500:
-                    keys = list(sent_signals.keys())
-                    sent_signals = {k: sent_signals[k] for k in keys[-500:]}
-                    save_json(SENT_SIGNALS_FILE, sent_signals)
+                    global sent_signals
+                    if len(sent_signals) > 500:
+                        keys = list(sent_signals.keys())
+                        sent_signals = {k: sent_signals[k] for k in keys[-500:]}
+                        save_json(SENT_SIGNALS_FILE, sent_signals)
 
-            history = load_json(HISTORY_FILE, [])
-            day_trades = [t for t in history if t.get("close_time", "").startswith(last_reset)] if last_reset else []
-            day_pnl = sum(float(t["pnl"]) for t in day_trades)
+                    history = load_json(HISTORY_FILE, [])
+                    day_trades = [t for t in history if t.get("close_time", "").startswith(last_reset)] if last_reset else []
+                    day_pnl = sum(float(t["pnl"]) for t in day_trades)
 
-            msg = msg_midnight_reset(
-                day_pnl,
-                accounts["macro"]["balance"],
-                accounts["nifty"]["balance"],
-                accounts["ny_session"]["balance"]
-            )
-            safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
+                    if len(history) > 500:
+                        history = history[-500:]
+                        save_json(HISTORY_FILE, history)
 
-            if len(history) > 500:
-                history = history[-500:]
-                save_json(HISTORY_FILE, history)
+                    msg = msg_midnight_reset(
+                        day_pnl,
+                        accounts["macro"]["balance"],
+                        accounts["nifty"]["balance"],
+                        accounts["ny_session"]["balance"],
+                        accounts.get("sweep_4h", {"balance": 100000.0})["balance"]
+                    )
+                safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
+            except Exception as e:
+                print(f"[ERR] Daily reset: {e}")
 
             last_reset = today_str
             gc.collect()
@@ -931,7 +994,7 @@ def cmd_check(m):
                 sweep = check_sweep_engulfing(symbol)
                 if ut:
                     signals.append(f"🟢 `{symbol}` ➔ 🟣 UT Bot *{ut[0]}*  `${ut[1]:,.4f}`")
-                elif sweep:
+                if sweep:
                     signals.append(f"🟢 `{symbol}` ➔ 🔵 Sweep *{sweep[0]}*  `${sweep[1]:,.4f}`")
                 else:
                     neutral.append(f"⚪ `{symbol}` — No Setup")
@@ -986,6 +1049,137 @@ def cmd_stats(m):
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Performance Stats", str(e)), parse_mode="Markdown")
 
+@bot.message_handler(commands=["active"])
+def cmd_active(m):
+    try:
+        with _lock:
+            trades = list(active_trades)
+
+        if not trades:
+            safe_send_message(m.chat.id, msg_no_active_trades(), parse_mode="Markdown")
+            return
+
+        trades_list = []
+        total_pnl = 0.0
+        prices = {}
+
+        for t in trades:
+            symbol = t["symbol"]
+            if symbol not in prices:
+                prices[symbol] = get_price(symbol)
+                time.sleep(0.3)
+
+            live = prices[symbol]
+            if not live:
+                continue
+
+            is_long = t["type"] == "LONG"
+            if is_long:
+                pnl = (live - t["entry"]) * t["qty"]
+            else:
+                pnl = (t["entry"] - live) * t["qty"]
+
+            total_pnl += pnl
+
+            arrow = "📈" if is_long else "📉"
+            trades_list.append(
+                f"🪙 `{symbol}` | `{t['account']}` | {t['type']} {arrow}\n"
+                f"   📍 Entry: `₹{t['entry']:,.4f}` | 🛑 SL: `₹{t['trail_sl']:,.4f}` | 🎯 TP: `₹{t['tp']:,.4f}`\n"
+                f"   📦 Qty: `{t['qty']:.4f}` | 💰 U.PnL: `₹{pnl:,.2f}`\n"
+            )
+
+        safe_send_message(m.chat.id, msg_active_trades(trades_list, total_pnl), parse_mode="Markdown")
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Active Trades", str(e)), parse_mode="Markdown")
+
+@bot.message_handler(commands=["close"])
+def cmd_close(m):
+    try:
+        parts = m.text.split()
+        if len(parts) < 2:
+            safe_send_message(m.chat.id, msg_error("Manual Close", "Provide a symbol. Example: /close BTC-USD"), parse_mode="Markdown")
+            return
+
+        target_symbol = parts[1].upper()
+
+        with _lock:
+            trade_to_close = next((t for t in active_trades if t["symbol"].upper() == target_symbol), None)
+
+            if not trade_to_close:
+                safe_send_message(m.chat.id, msg_error("Manual Close", f"No active trade found for {target_symbol}"), parse_mode="Markdown")
+                return
+
+        live = get_price(target_symbol)
+        if not live:
+            safe_send_message(m.chat.id, msg_error("Manual Close", f"Could not fetch current price for {target_symbol}"), parse_mode="Markdown")
+            return
+
+        is_long = trade_to_close["type"] == "LONG"
+        pnl = (live - trade_to_close["entry"]) * trade_to_close["qty"] if is_long else (trade_to_close["entry"] - live) * trade_to_close["qty"]
+        hit_tp = pnl > 0
+
+        with _lock:
+            if trade_to_close not in active_trades:
+                return # Already closed
+            active_trades.remove(trade_to_close)
+            accounts[trade_to_close["account"]]["balance"] += pnl
+            trade_to_close["exit_price"] = live
+            trade_to_close["pnl"] = float(pnl)
+            trade_to_close["result"] = "MANUAL_CLOSE"
+            trade_to_close["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+
+            save_json(ACCOUNTS_FILE, accounts)
+            save_json(ACTIVE_TRADES_FILE, active_trades)
+
+            history = load_json(HISTORY_FILE, [])
+            history.append(trade_to_close)
+            save_json(HISTORY_FILE, history)
+
+            import csv
+            import os
+            file_exists = os.path.isfile(TRADE_LOG_CSV)
+            with open(TRADE_LOG_CSV, 'a', newline='') as csvfile:
+                fieldnames = ['close_time', 'symbol', 'account', 'strategy', 'type', 'entry', 'exit_price', 'sl', 'tp', 'qty', 'pnl', 'result']
+                writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+                if not file_exists:
+                    writer.writeheader()
+                writer.writerow({
+                    'close_time': trade_to_close['close_time'],
+                    'symbol': trade_to_close['symbol'],
+                    'account': trade_to_close['account'],
+                    'strategy': trade_to_close['strat'],
+                    'type': trade_to_close['type'],
+                    'entry': trade_to_close['entry'],
+                    'exit_price': trade_to_close['exit_price'],
+                    'sl': trade_to_close['sl'],
+                    'tp': trade_to_close['tp'],
+                    'qty': trade_to_close['qty'],
+                    'pnl': trade_to_close['pnl'],
+                    'result': trade_to_close['result']
+                })
+
+        msg = msg_trade_closed(trade_to_close, live, float(pnl), accounts[trade_to_close["account"]]["balance"], is_long, hit_tp)
+        safe_send_message(m.chat.id, msg, parse_mode="Markdown")
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Manual Close", str(e)), parse_mode="Markdown")
+
+@bot.message_handler(commands=["export"])
+def cmd_export(m):
+    try:
+        import os
+        import csv
+        if not os.path.exists(TRADE_LOG_CSV) or os.path.getsize(TRADE_LOG_CSV) == 0:
+            safe_send_message(m.chat.id, msg_error("Export", "No trade log available yet."), parse_mode="Markdown")
+            return
+
+        with open(TRADE_LOG_CSV, 'r') as f:
+            count = sum(1 for row in f) - 1 # exclude header
+
+        with open(TRADE_LOG_CSV, 'rb') as doc:
+            bot.send_document(m.chat.id, doc, caption=msg_export_ready(count), parse_mode="Markdown")
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Export", str(e)), parse_mode="Markdown")
+
 @bot.message_handler(commands=["balance"])
 def cmd_balance(m):
     try:
@@ -999,6 +1193,23 @@ def cmd_balance(m):
             ny_d       = accounts["ny_session"]["daily_trades"]
             sweep_d    = accounts.get("sweep_4h", {"daily_trades": 0})["daily_trades"]
             ny_active  = is_ny_session()
+            trades = list(active_trades)
+
+        prices = {}
+        u_pnl = {"macro": 0.0, "nifty": 0.0, "ny_session": 0.0, "sweep_4h": 0.0}
+
+        for t in trades:
+            sym = t["symbol"]
+            if sym not in prices:
+                prices[sym] = get_price(sym)
+                time.sleep(0.3)
+
+            live = prices[sym]
+            if live:
+                if t["type"] == "LONG":
+                    u_pnl[t["account"]] += (live - t["entry"]) * t["qty"]
+                else:
+                    u_pnl[t["account"]] += (t["entry"] - live) * t["qty"]
 
         safe_send_message(m.chat.id,
             msg_balance(
@@ -1006,7 +1217,7 @@ def cmd_balance(m):
                 macro_d, nifty_d, ny_d, sweep_d,
                 ACCOUNT_LIMITS["macro"], ACCOUNT_LIMITS["nifty"],
                 ACCOUNT_LIMITS["ny_session"], ACCOUNT_LIMITS["sweep_4h"],
-                ny_active
+                ny_active, u_pnl
             ),
             parse_mode="Markdown", reply_markup=menu_markup())
     except Exception as e:
@@ -1023,6 +1234,9 @@ def cmd_clear(m):
             save_json(ACCOUNTS_FILE, accounts)
             save_json(ACTIVE_TRADES_FILE, [])
             save_json(HISTORY_FILE, [])
+            global sent_signals
+            sent_signals = {}
+            save_json(SENT_SIGNALS_FILE, sent_signals)
 
         safe_send_message(m.chat.id, msg_cleared(), parse_mode="Markdown")
     except Exception as e:
