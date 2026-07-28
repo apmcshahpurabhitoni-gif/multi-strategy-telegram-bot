@@ -986,6 +986,104 @@ def daily_reset_loop():
 
         time.sleep(60)
 
+
+# ============================================================
+#  API ROUTES (for dashboard)
+# ============================================================
+@flask_app.route("/api/scan")
+def api_scan():
+    signals, neutral = [], []
+    for symbol, mtype in MONITORED:
+        ut = check_ut_bot(symbol)
+        sweep = check_sweep_engulfing(symbol)
+        if ut:
+            signals.append({"symbol": symbol, "direction": ut[0], "price": ut[1], "strategy": "UT Bot", "timeframe": "15m"})
+        if sweep:
+            signals.append({"symbol": symbol, "direction": sweep[0], "price": sweep[1], "strategy": "Sweep + Engulfing", "timeframe": "4H"})
+        time.sleep(0.3)
+    return jsonify({"signals": signals, "neutral": neutral})
+
+@flask_app.route("/api/close/<symbol>", methods=["POST"])
+def api_close_symbol(symbol):
+    target_symbol = symbol.upper()
+    with _lock:
+        trade_to_close = next((t for t in active_trades if t["symbol"].upper() == target_symbol), None)
+        if not trade_to_close:
+            return jsonify({"success": False, "error": "No active trade found"}), 404
+
+    live = get_price(target_symbol)
+    if not live:
+        return jsonify({"success": False, "error": "Price fetch failed"}), 500
+
+    is_long = trade_to_close["type"] == "LONG"
+    pnl = (live - trade_to_close["entry"]) * trade_to_close["qty"] if is_long else (trade_to_close["entry"] - live) * trade_to_close["qty"]
+
+    with _lock:
+        if trade_to_close not in active_trades:
+            return jsonify({"success": False, "error": "Trade already closed"}), 409
+        active_trades.remove(trade_to_close)
+        accounts[trade_to_close["account"]]["balance"] += pnl
+        trade_to_close["exit_price"] = live
+        trade_to_close["pnl"] = float(pnl)
+        trade_to_close["result"] = "WIN" if pnl > 0 else "LOSS"
+        trade_to_close["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+        bal = accounts[trade_to_close["account"]]["balance"]
+        save_json(ACCOUNTS_FILE, accounts)
+        save_json(ACTIVE_TRADES_FILE, active_trades)
+        history = load_json(HISTORY_FILE, [])
+        history.append(trade_to_close)
+        save_json(HISTORY_FILE, history)
+
+    try:
+        file_exists = os.path.isfile(TRADE_LOG_CSV)
+        with open(TRADE_LOG_CSV, 'a', newline='') as csvfile:
+            fieldnames = ['close_time', 'symbol', 'account', 'strategy', 'type', 'entry', 'exit_price', 'sl', 'tp', 'qty', 'pnl', 'result']
+            writer = csv.DictWriter(csvfile, fieldnames=fieldnames)
+            if not file_exists:
+                writer.writeheader()
+            writer.writerow({
+                'close_time': trade_to_close['close_time'],
+                'symbol': trade_to_close['symbol'],
+                'account': trade_to_close['account'],
+                'strategy': trade_to_close['strat'],
+                'type': trade_to_close['type'],
+                'entry': trade_to_close['entry'],
+                'exit_price': trade_to_close['exit_price'],
+                'sl': trade_to_close['sl'],
+                'tp': trade_to_close['tp'],
+                'qty': trade_to_close['qty'],
+                'pnl': trade_to_close['pnl'],
+                'result': trade_to_close['result']
+            })
+    except Exception as e:
+        print("[ERR] Log trade: " + str(e))
+
+    msg = msg_trade_closed(trade_to_close, live, float(pnl), bal, is_long, pnl > 0)
+    safe_send_message(CHAT_ID, msg, parse_mode="Markdown")
+    return jsonify({"success": True, "pnl": float(pnl), "balance": bal, "result": trade_to_close["result"]})
+
+@flask_app.route("/api/clear", methods=["POST"])
+def api_clear():
+    global active_trades
+    with _lock:
+        active_trades = []
+        for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
+            accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
+        save_json(ACCOUNTS_FILE, accounts)
+        save_json(ACTIVE_TRADES_FILE, [])
+        save_json(HISTORY_FILE, [])
+        global sent_signals
+        sent_signals = {}
+        save_json(SENT_SIGNALS_FILE, sent_signals)
+    return jsonify({"success": True})
+
+@flask_app.route("/api/export")
+def api_export():
+    if not os.path.exists(TRADE_LOG_CSV) or os.path.getsize(TRADE_LOG_CSV) == 0:
+        return "No trade log available yet.", 404
+    from flask import send_file
+    return send_file(TRADE_LOG_CSV, as_attachment=True, download_name="trade_log.csv")
+
 # ============================================================
 #  TELEGRAM HANDLERS
 # ============================================================
@@ -1430,145 +1528,435 @@ DASHBOARD_HTML = """
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0">
-<title>Trading Bot Dashboard</title>
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="theme-color" content="#0d1117">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+<title>Trading Bot</title>
 <style>
-* { margin: 0; padding: 0; box-sizing: border-box; }
-body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding: 16px; }
-.header { font-size: 24px; font-weight: bold; color: #58a6ff; margin-bottom: 16px; text-align: center; }
-.card { background: #161b22; border: 1px solid #30363d; border-radius: 12px; padding: 16px; margin-bottom: 12px; }
-.card-title { color: #58a6ff; font-weight: bold; margin-bottom: 8px; font-size: 14px; text-transform: uppercase; }
-.row { display: flex; justify-content: space-between; padding: 6px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
-.row:last-child { border-bottom: none; }
-.label { color: #8b949e; }
+* { margin: 0; padding: 0; box-sizing: border-box; -webkit-tap-highlight-color: transparent; }
+body { background: #0d1117; color: #c9d1d9; font-family: -apple-system, BlinkMacSystemFont, 'Segoe UI', Roboto, sans-serif; padding-bottom: 80px; }
+
+/* Header */
+.header { position: sticky; top: 0; z-index: 100; background: rgba(13,17,23,0.95); backdrop-filter: blur(10px); padding: 12px 16px; border-bottom: 1px solid #21262d; display: flex; justify-content: space-between; align-items: center; }
+.header-title { font-size: 20px; font-weight: bold; color: #58a6ff; display: flex; align-items: center; gap: 8px; }
+.header-status { display: flex; align-items: center; gap: 6px; font-size: 11px; color: #8b949e; }
+.dot { width: 8px; height: 8px; border-radius: 50%; background: #3fb950; animation: pulse 2s infinite; }
+@keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+/* Tabs */
+.tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: rgba(22,27,34,0.98); backdrop-filter: blur(20px); border-top: 1px solid #30363d; display: flex; justify-content: space-around; padding: 8px 0 16px; z-index: 100; }
+.tab-btn { background: none; border: none; color: #8b949e; font-size: 10px; display: flex; flex-direction: column; align-items: center; gap: 3px; padding: 4px 12px; cursor: pointer; transition: 0.2s; }
+.tab-btn.active { color: #58a6ff; }
+.tab-btn svg { width: 22px; height: 22px; }
+
+/* Sections */
+.section { display: none; padding: 12px 16px; animation: fadeIn 0.3s; }
+.section.active { display: block; }
+@keyframes fadeIn { from { opacity: 0; transform: translateY(10px); } to { opacity: 1; transform: translateY(0); } }
+
+/* Cards */
+.card { background: #161b22; border: 1px solid #30363d; border-radius: 14px; padding: 14px; margin-bottom: 12px; transition: transform 0.15s, box-shadow 0.15s; }
+.card:active { transform: scale(0.98); }
+.card-title { color: #58a6ff; font-weight: bold; margin-bottom: 10px; font-size: 12px; text-transform: uppercase; letter-spacing: 0.5px; display: flex; align-items: center; gap: 6px; }
+.card-row { display: flex; justify-content: space-between; align-items: center; padding: 8px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
+.card-row:last-child { border-bottom: none; }
+.card-row.clickable { cursor: pointer; }
+.card-row.clickable:hover { background: rgba(48,54,61,0.3); margin: 0 -14px; padding: 8px 14px; border-radius: 8px; border-bottom: none; }
+.label { color: #8b949e; display: flex; align-items: center; gap: 6px; }
 .value { font-weight: 600; }
 .positive { color: #3fb950; }
 .negative { color: #f85149; }
-.badge { display: inline-block; padding: 2px 8px; border-radius: 10px; font-size: 11px; font-weight: bold; }
-.badge-long { background: #0d2818; color: #3fb950; }
-.badge-short { background: #2d0d0d; color: #f85149; }
-.trade-item { padding: 10px 0; border-bottom: 1px solid #21262d; }
+.neutral { color: #8b949e; }
+
+/* Buttons */
+.btn { width: 100%; padding: 14px; border: none; border-radius: 12px; font-size: 15px; font-weight: 600; cursor: pointer; margin-bottom: 10px; display: flex; align-items: center; justify-content: center; gap: 8px; transition: 0.15s; }
+.btn:active { transform: scale(0.97); opacity: 0.9; }
+.btn-primary { background: #238636; color: white; }
+.btn-danger { background: #da3633; color: white; }
+.btn-secondary { background: #1f6feb; color: white; }
+.btn-ghost { background: #21262d; color: #c9d1d9; border: 1px solid #30363d; }
+.btn:disabled { opacity: 0.5; cursor: not-allowed; }
+
+/* Badges */
+.badge { display: inline-block; padding: 3px 10px; border-radius: 20px; font-size: 11px; font-weight: bold; }
+.badge-long { background: rgba(63,185,80,0.15); color: #3fb950; border: 1px solid rgba(63,185,80,0.3); }
+.badge-short { background: rgba(248,81,73,0.15); color: #f85149; border: 1px solid rgba(248,81,73,0.3); }
+.badge-win { background: rgba(63,185,80,0.15); color: #3fb950; }
+.badge-loss { background: rgba(248,81,73,0.15); color: #f85149; }
+
+/* Trade items */
+.trade-item { padding: 12px 0; border-bottom: 1px solid #21262d; cursor: pointer; }
 .trade-item:last-child { border-bottom: none; }
 .trade-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 6px; }
-.trade-symbol { font-weight: bold; color: #fff; font-size: 15px; }
-.trade-meta { font-size: 12px; color: #8b949e; margin-top: 4px; }
-.empty { text-align: center; color: #8b949e; padding: 20px; font-style: italic; }
-.refresh-btn { display: block; width: 100%; padding: 12px; background: #238636; color: white; border: none; border-radius: 8px; font-size: 16px; font-weight: bold; margin-bottom: 16px; cursor: pointer; }
-.refresh-btn:active { background: #2ea043; }
-.timestamp { text-align: center; color: #8b949e; font-size: 11px; margin-top: 8px; }
+.trade-symbol { font-weight: bold; color: #fff; font-size: 16px; }
+.trade-meta { font-size: 12px; color: #8b949e; line-height: 1.6; }
+.trade-pnl { font-size: 14px; font-weight: 600; }
+
+/* Empty state */
+.empty { text-align: center; color: #484f58; padding: 30px 20px; }
+.empty-icon { font-size: 40px; margin-bottom: 8px; }
+
+/* Modal */
+.modal-overlay { display: none; position: fixed; inset: 0; background: rgba(0,0,0,0.7); z-index: 200; justify-content: center; align-items: flex-end; }
+.modal-overlay.show { display: flex; }
+.modal { background: #161b22; border-top: 1px solid #30363d; border-radius: 20px 20px 0 0; width: 100%; max-height: 85vh; overflow-y: auto; padding: 20px; animation: slideUp 0.25s; }
+@keyframes slideUp { from { transform: translateY(100%); } to { transform: translateY(0); } }
+.modal-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 16px; }
+.modal-title { font-size: 18px; font-weight: bold; color: #fff; }
+.modal-close { background: #21262d; border: none; color: #8b949e; width: 32px; height: 32px; border-radius: 50%; font-size: 18px; cursor: pointer; }
+.modal-row { display: flex; justify-content: space-between; padding: 10px 0; border-bottom: 1px solid #21262d; font-size: 14px; }
+.modal-row:last-child { border-bottom: none; }
+
+/* Toast */
+.toast { position: fixed; top: 60px; left: 50%; transform: translateX(-50%) translateY(-100px); background: #238636; color: white; padding: 12px 20px; border-radius: 10px; font-size: 14px; font-weight: 500; z-index: 300; opacity: 0; transition: 0.3s; box-shadow: 0 4px 20px rgba(0,0,0,0.4); }
+.toast.show { transform: translateX(-50%) translateY(0); opacity: 1; }
+.toast.error { background: #da3633; }
+
+/* Loading */
+.spinner { width: 16px; height: 16px; border: 2px solid transparent; border-top-color: currentColor; border-radius: 50%; animation: spin 0.8s linear infinite; display: inline-block; }
+@keyframes spin { to { transform: rotate(360deg); } }
+
+/* Scrollbar hide */
+::-webkit-scrollbar { display: none; }
 </style>
 </head>
 <body>
-<div class="header">🤖 Trading Bot</div>
-<button class="refresh-btn" onclick="loadAll()">🔄 Refresh Data</button>
 
-<div class="card">
-  <div class="card-title">🏦 Account Balances</div>
-  <div id="balances">Loading...</div>
+<div class="header">
+  <div class="header-title">🤖 Trading Bot</div>
+  <div class="header-status"><div class="dot"></div><span id="connStatus">Live</span></div>
 </div>
 
-<div class="card">
-  <div class="card-title">📋 Active Trades</div>
-  <div id="active">Loading...</div>
+<!-- TAB: DASHBOARD -->
+<div class="section active" id="tab-dashboard">
+  <button class="btn btn-primary" onclick="scanNow()" id="btnScan">
+    <span>🔍</span> Scan Markets Now
+  </button>
+
+  <div class="card">
+    <div class="card-title">🏦 Account Balances</div>
+    <div id="balances">Loading...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📊 Market Overview</div>
+    <div id="marketOverview">Loading...</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">⚡ Quick Actions</div>
+    <button class="btn btn-ghost" onclick="exportCSV()">📁 Export Trade Log</button>
+    <button class="btn btn-danger" onclick="clearAll()">🗑 Reset All Accounts</button>
+  </div>
 </div>
 
-<div class="card">
-  <div class="card-title">📊 Recent History</div>
-  <div id="history">Loading...</div>
+<!-- TAB: ACTIVE TRADES -->
+<div class="section" id="tab-active">
+  <div class="card">
+    <div class="card-title">📋 Open Positions <span id="activeCount" style="color:#8b949e"></span></div>
+    <div id="activeTrades"><div class="empty"><div class="empty-icon">📭</div>No open positions</div></div>
+  </div>
 </div>
 
-<div class="card">
-  <div class="card-title">💹 Market Prices</div>
-  <div id="prices">Loading...</div>
+<!-- TAB: HISTORY -->
+<div class="section" id="tab-history">
+  <div class="card">
+    <div class="card-title">📈 Recent History</div>
+    <div id="historyList"><div class="empty"><div class="empty-icon">📭</div>No history yet</div></div>
+  </div>
 </div>
 
-<div class="timestamp" id="timestamp"></div>
+<!-- TAB: SCANNER -->
+<div class="section" id="tab-scanner">
+  <button class="btn btn-primary" onclick="scanNow()" id="btnScan2">
+    <span>🔍</span> Run Full Scan
+  </button>
+  <div id="scanResults"></div>
+</div>
+
+<!-- TAB: SETTINGS -->
+<div class="section" id="tab-settings">
+  <div class="card">
+    <div class="card-title">🔔 Notifications</div>
+    <div class="card-row clickable" onclick="requestNotify()">
+      <span class="label">Browser Push Alerts</span>
+      <span class="value" id="notifyStatus">Off</span>
+    </div>
+    <div style="font-size:11px;color:#484f58;margin-top:8px">Get instant alerts when signals fire</div>
+  </div>
+
+  <div class="card">
+    <div class="card-title">📱 App</div>
+    <div class="card-row">
+      <span class="label">Auto Refresh</span>
+      <span class="value">Every 15s</span>
+    </div>
+    <div class="card-row">
+      <span class="label">Version</span>
+      <span class="value">2.0</span>
+    </div>
+  </div>
+</div>
+
+<!-- BOTTOM TAB BAR -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('dashboard')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M3 9l9-7 9 7v11a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"/><polyline points="9 22 9 12 15 12 15 22"/></svg>
+    Home
+  </button>
+  <button class="tab-btn" onclick="switchTab('active')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><path d="M22 12h-4l-3 9L9 3l-3 9H2"/></svg>
+    Active
+  </button>
+  <button class="tab-btn" onclick="switchTab('scanner')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"/><line x1="21" y1="21" x2="16.65" y2="16.65"/></svg>
+    Scan
+  </button>
+  <button class="tab-btn" onclick="switchTab('history')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>
+    History
+  </button>
+  <button class="tab-btn" onclick="switchTab('settings')">
+    <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.65 1.65 0 0 0 .33 1.82l.06.06a2 2 0 0 1 0 2.83 2 2 0 0 1-2.83 0l-.06-.06a1.65 1.65 0 0 0-1.82-.33 1.65 1.65 0 0 0-1 1.51V21a2 2 0 0 1-2 2 2 2 0 0 1-2-2v-.09A1.65 1.65 0 0 0 9 19.4a1.65 1.65 0 0 0-1.82.33l-.06.06a2 2 0 0 1-2.83 0 2 2 0 0 1 0-2.83l.06-.06A1.65 1.65 0 0 0 4.68 15a1.65 1.65 0 0 0-1.51-1H3a2 2 0 0 1-2-2 2 2 0 0 1 2-2h.09A1.65 1.65 0 0 0 4.68 9a1.65 1.65 0 0 0-.33-1.82l-.06-.06a2 2 0 0 1 0-2.83 2 2 0 0 1 2.83 0l.06.06a1.65 1.65 0 0 0 1.82.33H9a1.65 1.65 0 0 0 1-1.51V3a2 2 0 0 1 2-2 2 2 0 0 1 2 2v.09a1.65 1.65 0 0 0 1 1.51 1.65 1.65 0 0 0 1.82-.33l.06-.06a2 2 0 0 1 2.83 0 2 2 0 0 1 0 2.83l-.06.06a1.65 1.65 0 0 0-.33 1.82V9a1.65 1.65 0 0 0 1.51 1H21a2 2 0 0 1 2 2 2 2 0 0 1-2 2h-.09a1.65 1.65 0 0 0-1.51 1z"/></svg>
+    Settings
+  </button>
+</div>
+
+<!-- TRADE DETAIL MODAL -->
+<div class="modal-overlay" id="tradeModal" onclick="if(event.target===this)closeModal()">
+  <div class="modal">
+    <div class="modal-header">
+      <div class="modal-title" id="modalTitle">Trade Details</div>
+      <button class="modal-close" onclick="closeModal()">×</button>
+    </div>
+    <div id="modalBody"></div>
+    <button class="btn btn-danger" id="modalCloseBtn" style="margin-top:16px">✋ Close This Trade</button>
+  </div>
+</div>
+
+<!-- TOAST -->
+<div class="toast" id="toast"></div>
 
 <script>
-async function fetchJSON(url) {
-  try { return await (await fetch(url)).json(); } catch(e) { return null; }
+let currentTab = 'dashboard';
+let notifyEnabled = false;
+
+function switchTab(name) {
+  document.querySelectorAll('.section').forEach(s => s.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + name).classList.add('active');
+  event.currentTarget.classList.add('active');
+  currentTab = name;
+  if (name === 'active') loadActive();
+  if (name === 'history') loadHistory();
+}
+
+async function fetchJSON(url, opts) {
+  try { return await (await fetch(url, opts)).json(); } catch(e) { return null; }
+}
+
+function showToast(msg, isError) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.className = 'toast' + (isError ? ' error' : '') + ' show';
+  setTimeout(() => t.classList.remove('show'), 3000);
 }
 
 function fmtMoney(n) {
   return '₹' + (n || 0).toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2});
 }
 
+function fmtUSD(n) {
+  return '$' + (n || 0).toLocaleString('en-US', {minimumFractionDigits: 4, maximumFractionDigits: 4});
+}
+
+// ===== BALANCES =====
 async function loadBalances() {
   const data = await fetchJSON('/api/balance');
   const el = document.getElementById('balances');
   if (!data) { el.innerHTML = '<div class="empty">Failed to load</div>'; return; }
-  const accounts = [
-    {key:'macro', name:'🌐 Macro', data:data.macro},
-    {key:'nifty', name:'🇮🇳 Nifty', data:data.nifty},
-    {key:'ny_session', name:'🇺🇸 NY Session', data:data.ny_session},
-    {key:'sweep_4h', name:'🔵 Sweep 4H', data:data.sweep_4h},
+  const accs = [
+    {name:'🌐 Macro', k:'macro', data:data.macro},
+    {name:'🇮🇳 Nifty', k:'nifty', data:data.nifty},
+    {name:'🇺🇸 NY Session', k:'ny_session', data:data.ny_session},
+    {name:'🔵 Sweep 4H', k:'sweep_4h', data:data.sweep_4h},
   ];
-  el.innerHTML = accounts.map(a => `
-    <div class="row">
+  el.innerHTML = accs.map(a => `
+    <div class="card-row clickable" onclick="showAccountDetail('${a.k}')">
       <span class="label">${a.name}</span>
-      <span class="value ${(a.data.balance >= 100000) ? 'positive' : 'negative'}">${fmtMoney(a.data.balance)}</span>
+      <span class="value ${a.data.balance >= 100000 ? 'positive' : (a.data.balance < 100000 ? 'negative' : 'neutral')}">${fmtMoney(a.data.balance)}</span>
     </div>
-    <div class="row">
-      <span class="label">   Trades Today</span>
-      <span class="value">${a.data.daily_trades}</span>
+    <div style="padding:0 0 8px 24px; font-size:11px; color:#484f58;">
+      Trades today: ${a.data.daily_trades}
     </div>
   `).join('');
 }
 
+// ===== MARKET OVERVIEW =====
+async function loadMarketOverview() {
+  const data = await fetchJSON('/api/summary');
+  const el = document.getElementById('marketOverview');
+  if (!data) { el.innerHTML = '<div class="empty">Failed</div>'; return; }
+  el.innerHTML = data.assets.slice(0, 4).map(a => `
+    <div class="card-row">
+      <span class="label">${a.symbol} <small style="color:#484f58">${a.market}</small></span>
+      <span class="value">${a.price ? fmtUSD(a.price) : '—'} ${a.muted ? '🔇' : ''}</span>
+    </div>
+  `).join('') + `
+    <div class="card-row clickable" onclick="switchTab('scanner'); document.querySelectorAll('.tab-btn')[2].click();">
+      <span class="label" style="color:#58a6ff">View all assets →</span>
+    </div>
+  `;
+}
+
+// ===== ACTIVE TRADES =====
+let activeTradesData = [];
 async function loadActive() {
   const data = await fetchJSON('/api/active');
-  const el = document.getElementById('active');
-  if (!data) { el.innerHTML = '<div class="empty">Failed to load</div>'; return; }
-  if (data.count === 0) { el.innerHTML = '<div class="empty">No open positions</div>'; return; }
-  el.innerHTML = data.trades.map(t => `
-    <div class="trade-item">
+  const el = document.getElementById('activeTrades');
+  document.getElementById('activeCount').textContent = data ? '(' + data.count + ')' : '';
+  if (!data || data.count === 0) { el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>No open positions</div>'; return; }
+  activeTradesData = data.trades;
+  el.innerHTML = data.trades.map((t, i) => `
+    <div class="trade-item" onclick="openTradeModal(${i})">
       <div class="trade-header">
         <span class="trade-symbol">${t.symbol}</span>
         <span class="badge badge-${t.type === 'LONG' ? 'long' : 'short'}">${t.type}</span>
       </div>
       <div class="trade-meta">
-        Entry: $${t.entry.toFixed(4)} | Qty: ${t.qty.toFixed(4)}<br>
-        SL: $${t.trail_sl.toFixed(4)} | TP: $${t.tp.toFixed(4)}<br>
-        Account: ${t.account} | Strategy: ${t.strat}
+        Entry: ${fmtUSD(t.entry)} | Qty: ${t.qty.toFixed(4)}<br>
+        SL: ${fmtUSD(t.trail_sl)} | TP: ${fmtUSD(t.tp)}<br>
+        <span style="color:#484f58">${t.strat} • ${t.account}</span>
       </div>
     </div>
   `).join('');
 }
 
+function openTradeModal(idx) {
+  const t = activeTradesData[idx];
+  if (!t) return;
+  document.getElementById('modalTitle').textContent = t.symbol + ' ' + t.type;
+  document.getElementById('modalBody').innerHTML = `
+    <div class="modal-row"><span class="label">Account</span><span class="value">${t.account}</span></div>
+    <div class="modal-row"><span class="label">Strategy</span><span class="value">${t.strat}</span></div>
+    <div class="modal-row"><span class="label">Entry</span><span class="value">${fmtUSD(t.entry)}</span></div>
+    <div class="modal-row"><span class="label">Quantity</span><span class="value">${t.qty.toFixed(4)}</span></div>
+    <div class="modal-row"><span class="label">Stop Loss</span><span class="value">${fmtUSD(t.trail_sl)}</span></div>
+    <div class="modal-row"><span class="label">Take Profit</span><span class="value">${fmtUSD(t.tp)}</span></div>
+    <div class="modal-row"><span class="label">Opened</span><span class="value">${t.time}</span></div>
+  `;
+  const btn = document.getElementById('modalCloseBtn');
+  btn.onclick = () => closeTradeManual(t.symbol);
+  document.getElementById('tradeModal').classList.add('show');
+}
+
+function closeModal() {
+  document.getElementById('tradeModal').classList.remove('show');
+}
+
+async function closeTradeManual(symbol) {
+  closeModal();
+  showToast('Closing ' + symbol + '...');
+  const res = await fetchJSON('/api/close/' + encodeURIComponent(symbol), {method:'POST'});
+  if (res && res.success) {
+    showToast('✅ Closed! PnL: ' + fmtMoney(res.pnl));
+    if (notifyEnabled) new Notification('Trade Closed', {body: symbol + ' ' + (res.pnl >= 0 ? 'WIN' : 'LOSS') + ' ' + fmtMoney(res.pnl)});
+    loadActive(); loadBalances(); loadHistory();
+  } else {
+    showToast('❌ Failed: ' + (res?.error || 'Unknown'), true);
+  }
+}
+
+// ===== HISTORY =====
 async function loadHistory() {
   const data = await fetchJSON('/api/history');
-  const el = document.getElementById('history');
-  if (!data || !data.trades.length) { el.innerHTML = '<div class="empty">No history yet</div>'; return; }
-  el.innerHTML = data.trades.slice().reverse().slice(0, 10).map(t => `
+  const el = document.getElementById('historyList');
+  if (!data || !data.trades.length) { el.innerHTML = '<div class="empty"><div class="empty-icon">📭</div>No history yet</div>'; return; }
+  el.innerHTML = data.trades.slice().reverse().slice(0, 20).map(t => `
     <div class="trade-item">
       <div class="trade-header">
         <span class="trade-symbol">${t.symbol}</span>
-        <span class="value ${t.result === 'WIN' ? 'positive' : 'negative'}">${t.result} ${fmtMoney(t.pnl)}</span>
+        <span class="trade-pnl ${t.result === 'WIN' ? 'positive' : 'negative'}">${t.result} ${fmtMoney(t.pnl)}</span>
       </div>
-      <div class="trade-meta">${t.type} | ${t.strat} | ${t.close_time || 'Open'}</div>
+      <div class="trade-meta">${t.type} • ${t.strat} • ${t.close_time || t.time}</div>
     </div>
   `).join('');
 }
 
-async function loadPrices() {
-  const data = await fetchJSON('/api/summary');
-  const el = document.getElementById('prices');
-  if (!data) { el.innerHTML = '<div class="empty">Failed to load</div>'; return; }
-  el.innerHTML = data.assets.map(a => `
-    <div class="row">
-      <span class="label">${a.symbol} <small style="color:#484f58">${a.market}</small></span>
-      <span class="value">${a.price ? '$' + a.price.toFixed(4) : '—'} ${a.muted ? '🔇' : ''}</span>
-    </div>
-  `).join('');
+// ===== SCANNER =====
+async function scanNow() {
+  const btns = [document.getElementById('btnScan'), document.getElementById('btnScan2')];
+  btns.forEach(b => { if(b) { b.disabled = true; b.innerHTML = '<span class="spinner"></span> Scanning...'; }});
+  const el = document.getElementById('scanResults');
+  el.innerHTML = '<div class="card"><div class="card-title">⏳ Scanning...</div><div style="padding:20px;text-align:center;color:#8b949e">Analyzing all assets across strategies...</div></div>';
+
+  const data = await fetchJSON('/api/scan');
+  btns.forEach(b => { if(b) { b.disabled = false; b.innerHTML = '<span>🔍</span> Scan Markets Now'; }});
+
+  if (!data) { el.innerHTML = '<div class="card"><div class="empty">Scan failed</div></div>'; return; }
+
+  let html = '';
+  if (data.signals && data.signals.length) {
+    html += '<div class="card"><div class="card-title">🔥 Signals Found</div>';
+    html += data.signals.map(s => `
+      <div class="card-row" style="border-left:3px solid ${s.direction === 'BULLISH' ? '#3fb950' : '#f85149'}; padding-left:10px; margin:6px 0; border-radius:4px;">
+        <div>
+          <div style="font-weight:bold;color:#fff">${s.symbol}</div>
+          <div style="font-size:11px;color:#8b949e">${s.strategy} • ${s.timeframe}</div>
+        </div>
+        <span class="badge badge-${s.direction === 'BULLISH' ? 'long' : 'short'}">${s.direction}</span>
+      </div>
+    `).join('');
+    html += '</div>';
+    if (notifyEnabled) new Notification('Signals Found!', {body: data.signals.length + ' setup(s) detected'});
+  } else {
+    html += '<div class="card"><div class="empty"><div class="empty-icon">😴</div>No active setups right now</div></div>';
+  }
+  el.innerHTML = html;
 }
 
+// ===== ACTIONS =====
+async function clearAll() {
+  if (!confirm('⚠️ Reset ALL accounts to ₹1,00,000?
+This wipes history and closes all trades.')) return;
+  showToast('Resetting...');
+  const res = await fetchJSON('/api/clear', {method:'POST'});
+  if (res && res.success) {
+    showToast('✅ All accounts reset');
+    loadAll();
+  } else {
+    showToast('❌ Reset failed', true);
+  }
+}
+
+async function exportCSV() {
+  window.location.href = '/api/export';
+}
+
+function requestNotify() {
+  if (!('Notification' in window)) { showToast('Notifications not supported', true); return; }
+  Notification.requestPermission().then(p => {
+    notifyEnabled = p === 'granted';
+    document.getElementById('notifyStatus').textContent = notifyEnabled ? 'On' : 'Off';
+    document.getElementById('notifyStatus').className = 'value ' + (notifyEnabled ? 'positive' : 'neutral');
+    if (notifyEnabled) showToast('🔔 Notifications enabled');
+  });
+}
+
+function showAccountDetail(acc) {
+  // Could expand to show account-specific stats
+  showToast('Account: ' + acc);
+}
+
+// ===== LOAD ALL =====
 async function loadAll() {
-  await Promise.all([loadBalances(), loadActive(), loadHistory(), loadPrices()]);
-  document.getElementById('timestamp').textContent = 'Updated: ' + new Date().toLocaleTimeString();
+  await Promise.all([loadBalances(), loadMarketOverview(), loadActive(), loadHistory()]);
+  document.getElementById('connStatus').textContent = 'Live';
 }
 
 loadAll();
-setInterval(loadAll, 15000);
+setInterval(() => { if (currentTab !== 'scanner') loadAll(); }, 15000);
 </script>
 </body>
 </html>
