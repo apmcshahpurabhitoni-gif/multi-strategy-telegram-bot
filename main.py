@@ -31,16 +31,17 @@ ATR_MULT_TP    = 3.0
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
 
-# Ensure workspace exists (Render ephemeral disk)
-os.makedirs("/workspace", exist_ok=True)
+# FIX #1: Use relative path — Render allows writing to project root, not /workspace
+DATA_DIR = "./data"
+os.makedirs(DATA_DIR, exist_ok=True)
 
 # Files
-ACCOUNTS_FILE      = "/workspace/accounts.json"
-ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
-HISTORY_FILE       = "/workspace/trade_history.json"
-MUTE_FILE          = "/workspace/muted_assets.json"
-TRADE_LOG_CSV      = "/workspace/trade_log.csv"
-SENT_SIGNALS_FILE  = "/workspace/sent_signals.json"
+ACCOUNTS_FILE      = os.path.join(DATA_DIR, "accounts.json")
+ACTIVE_TRADES_FILE = os.path.join(DATA_DIR, "active_trades.json")
+HISTORY_FILE       = os.path.join(DATA_DIR, "trade_history.json")
+MUTE_FILE          = os.path.join(DATA_DIR, "muted_assets.json")
+TRADE_LOG_CSV      = os.path.join(DATA_DIR, "trade_log.csv")
+SENT_SIGNALS_FILE  = os.path.join(DATA_DIR, "sent_signals.json")
 
 # Per-account max trades per day
 ACCOUNT_LIMITS = {
@@ -81,17 +82,20 @@ _YF_SESSION.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"
 })
 
+# FIX #2: Read PORT from Render env (defaults to 10000 for local testing)
+PORT = int(os.environ.get("PORT", 10000))
+
 # ============================================================
 #  HELPERS
 # ============================================================
 def is_market_open(symbol):
     now = datetime.now(IST)
     w, total_min = now.weekday(), now.hour * 60 + now.minute
-    if symbol in ("BTC-USD", "GC=F"): 
+    if symbol in ("BTC-USD", "GC=F"):
         return True
-    if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"): 
+    if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
         return w < 5
-    if symbol in ("^NSEI", "^NSEBANK"): 
+    if symbol in ("^NSEI", "^NSEBANK"):
         return w < 5 and 555 <= total_min <= 930
     return False
 
@@ -367,7 +371,7 @@ def check_sweep_engulfing(ticker):
         if curr["Low"] < mother["Low"] and curr["High"] > mother["High"] and curr["Close"] > mother["High"]:
             sl = float(curr["Low"])
             risk = price - sl
-            if risk <= 0: 
+            if risk <= 0:
                 return None
             tp = price + (risk * 2.0)
             if not is_nifty:
@@ -377,7 +381,7 @@ def check_sweep_engulfing(ticker):
         if curr["High"] > mother["High"] and curr["Low"] < mother["Low"] and curr["Close"] < mother["Low"]:
             sl = float(curr["High"])
             risk = sl - price
-            if risk <= 0: 
+            if risk <= 0:
                 return None
             tp = price - (risk * 2.0)
             if not is_nifty:
@@ -1386,7 +1390,7 @@ if __name__ == "__main__":
     print("  Nifty:      ₹" + f"{accounts['nifty']['balance']:,.2f}")
     print("  NY Session: ₹" + f"{accounts['ny_session']['balance']:,.2f}")
     print("  Dashboard:  /dashboard")
-    print("  Web server: :10000/ping")
+    print("  Web server: :" + str(PORT))
     print("=" * 50)
 
     threading.Thread(target=scanner_loop, daemon=True).start()
@@ -1394,7 +1398,8 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset_loop, daemon=True).start()
 
     def run_flask():
-        flask_app.run(host="0.0.0.0", port=10000, threaded=True)
+        # FIX #2: Bind to Render's PORT env var, default 10000 for local
+        flask_app.run(host="0.0.0.0", port=PORT, threaded=True)
 
     threading.Thread(target=run_flask, daemon=True).start()
 
