@@ -1,10 +1,3 @@
-The `SyntaxError: invalid character '₹'` happened because your file got corrupted (likely Line 5 literally became the print statement instead of `import` statements). 
-
-To completely eliminate this headache and the Yahoo Finance rate-limit crashes, **replace your entire `main.py` with this complete, flawless file.** 
-
-I have replaced `₹` with `Rs.` in all Python `print()` statements to guarantee zero encoding errors on Render, while keeping `₹` safely inside the Telegram message strings. I have also fully integrated the rate-limit fix and the missing Boot/Thread blocks.
-
-```python
 import os
 import json
 import time
