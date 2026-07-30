@@ -798,9 +798,26 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
-    bot.delete_webhook() # KILL 409 CONFLICTS
+    try:
+        bot.delete_webhook()
+        time.sleep(2) # Give Telegram API time to register the kill
+    except Exception:
+        pass
+        
+    # Import specific exception to handle Render's slow shutdown behavior
+    from telebot.apihelper import ApiTelegramException
+    
     while True:
-        try: bot.polling(timeout=60, long_polling_timeout=10)
+        try:
+            bot.polling(timeout=60, long_polling_timeout=10)
+        except ApiTelegramException as e:
+            if e.error_code == 409:
+                # This is normal on Render during re-deploys. Old instance is still dying.
+                print("[BOT] 409 Conflict: Waiting for old instance to shut down...")
+                time.sleep(15) # Wait longer than usual to let Render kill the old pod
+            else:
+                print(f"[ERR] Telegram API Error: {e}")
+                time.sleep(5)
         except Exception as e:
             print(f"[ERR] Polling crashed: {e}")
             time.sleep(5)
