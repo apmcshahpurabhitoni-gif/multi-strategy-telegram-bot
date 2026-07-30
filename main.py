@@ -809,12 +809,13 @@ if __name__ == "__main__":
     
     while True:
         try:
-            bot.polling(timeout=60, long_polling_timeout=10)
+            # threaded=False forces errors to hit this exact try/except block
+            bot.polling(non_stop=True, timeout=60, long_polling_timeout=10, threaded=False)
         except ApiTelegramException as e:
             if e.error_code == 409:
                 # This is normal on Render during re-deploys. Old instance is still dying.
                 print("[BOT] 409 Conflict: Waiting for old instance to shut down...")
-                time.sleep(15) # Wait longer than usual to let Render kill the old pod
+                time.sleep(15)
             else:
                 print(f"[ERR] Telegram API Error: {e}")
                 time.sleep(5)
