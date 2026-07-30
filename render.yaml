@@ -1,0 +1,14 @@
+services:
+  - type: web
+    name: multi-strategy-telegram-bot
+    runtime: docker
+    plan: free
+    envVars:
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: PORT
+        value: 10000
+    healthCheckPath: /ping
+    autoDeploy: true
