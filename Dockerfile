@@ -2,19 +2,15 @@ FROM python:3.12-slim
 
 WORKDIR /app
 
-# Install build deps that yfinance / pandas sometimes need
-RUN apt-get update && apt-get install -y --no-install-recommends \
-    gcc \
-    && rm -rf /var/lib/apt/lists/*
-
+# Install dependencies first to leverage Docker cache
 COPY requirements.txt .
 RUN pip install --no-cache-dir -r requirements.txt
 
+# Copy the rest of the application
 COPY . .
 
-# Render free tier uses PORT env var (default 10000)
-ENV PORT=10000
+# Expose the port Render expects
 EXPOSE 10000
 
-# Use gunicorn for the flask part + polling in a worker
+# Explicitly run the python script so all threads (Bot + Scanner + Web) start
 CMD ["python", "main.py"]
