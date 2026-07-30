@@ -71,8 +71,14 @@ sent_signals  = {}
 _lock        = threading.RLock()
 _chart_lock  = threading.RLock()
 _price_cache = {}
-_price_ttl   = 120
+_price_ttl   = 300
 _last_scan_time = 0
+
+# Global Yahoo Finance rate limiter
+_yf_last_call = 0
+_yf_min_gap = 3.0
+_yf_rate_limited_until = 0
+_yf_backoff = 60
 
 IST = pytz.timezone("Asia/Kolkata")
 
@@ -274,6 +280,36 @@ def init_accounts():
 # ============================================================
 #  PRICE & DATA
 # ============================================================
+
+# ============================================================
+#  YAHOO FINANCE THROTTLED DOWNLOAD
+# ============================================================
+def _throttled_yf_download(ticker, **kwargs):
+    """Wrapper around yf.download with global rate limiting."""
+    global _yf_last_call, _yf_rate_limited_until, _yf_backoff
+    now = time.time()
+
+    # Circuit breaker: if rate-limited recently, bail immediately
+    if now < _yf_rate_limited_until:
+        print(f"[YF SKIP] {ticker} — cooling down for {int(_yf_rate_limited_until - now)}s")
+        return None
+
+    # Enforce minimum gap between ANY yf.download calls
+    elapsed = now - _yf_last_call
+    if elapsed < _yf_min_gap:
+        time.sleep(_yf_min_gap - elapsed)
+
+    try:
+        _yf_last_call = time.time()
+        return yf.download(ticker, **kwargs, session=_YF_SESSION)
+    except Exception as e:
+        err_str = str(e).lower()
+        if "rate" in err_str or "too many" in err_str or "429" in err_str:
+            _yf_rate_limited_until = time.time() + _yf_backoff
+            _yf_backoff = min(_yf_backoff * 2, 600)
+            print(f"[YF BAN] Rate limited on {ticker}. Backoff {_yf_backoff}s")
+        raise
+
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
@@ -281,11 +317,12 @@ def get_price(symbol):
         if now - ts < _price_ttl:
             return price
     try:
-        df = yf.download(
+        df = _throttled_yf_download(
             symbol, period="5d", interval="15m",
-            progress=False, auto_adjust=True,
-            session=_YF_SESSION
+            progress=False, auto_adjust=True
         )
+        if df is None:
+            return None
         df = normalise_cols(df)
         if df.empty:
             return None
@@ -339,11 +376,12 @@ def get_rsi(df, period=14):
 def check_sweep_engulfing(ticker):
     df_target = None
     try:
-        df = yf.download(
+        df = _throttled_yf_download(
             ticker, period="10d", interval="1h",
-            progress=False, auto_adjust=True,
-            session=_YF_SESSION
+            progress=False, auto_adjust=True
         )
+        if df is None:
+            return None
         df = normalise_cols(df)
         if df.empty or len(df) < 30:
             del df
@@ -399,16 +437,19 @@ def check_sweep_engulfing(ticker):
 # ============================================================
 def check_ut_bot(ticker, kv=2):
     try:
-        df_15 = yf.download(
+        df_15 = _throttled_yf_download(
             ticker, period="3d", interval="15m",
-            progress=False, auto_adjust=True,
-            session=_YF_SESSION
+            progress=False, auto_adjust=True
         )
-        df_5  = yf.download(
+        if df_15 is None:
+            return None
+        df_5  = _throttled_yf_download(
             ticker, period="1d", interval="5m",
-            progress=False, auto_adjust=True,
-            session=_YF_SESSION
+            progress=False, auto_adjust=True
         )
+        if df_5 is None:
+            del df_15; gc.collect()
+            return None
         df_15 = normalise_cols(df_15)
         df_5  = normalise_cols(df_5)
 
@@ -477,21 +518,28 @@ def check_ut_bot(ticker, kv=2):
 #  SCANNER & MONITOR
 # ============================================================
 def scanner_loop():
-    global _last_scan_time
+    global _last_scan_time, _yf_rate_limited_until, _yf_backoff
     while True:
         now = time.time()
-        if now - _last_scan_time < 90:
-            time.sleep(10)
+        if now - _last_scan_time < 300:
+            time.sleep(15)
+            continue
+        # If YF is in cooldown, skip this scan cycle entirely
+        if now < _yf_rate_limited_until:
+            print(f"[SCAN SKIP] YF rate limit active, retry in {int(_yf_rate_limited_until - now)}s")
+            time.sleep(30)
             continue
         _last_scan_time = now
+        # Reset backoff on successful scan start
+        _yf_backoff = 60
 
         for symbol, mtype in MONITORED:
             if not is_market_open(symbol):
                 continue
             try:
-                time.sleep(3)
+                time.sleep(8)
                 ut = check_ut_bot(symbol)
-                time.sleep(1)
+                time.sleep(3)
                 sweep = check_sweep_engulfing(symbol)
 
                 signals_found = []
@@ -556,11 +604,11 @@ def scanner_loop():
             except Exception as e:
                 print(f"[ERR] Scanner {symbol}: {e}")
 
-        time.sleep(60)
+        time.sleep(120)
 
 def monitor_trades():
     while True:
-        time.sleep(30)
+        time.sleep(60)
         with _lock:
             trades = list(active_trades)
         if not trades:
@@ -570,7 +618,7 @@ def monitor_trades():
             sym = t["symbol"]
             if sym not in prices:
                 prices[sym] = get_price(sym)
-                time.sleep(0.5)
+                time.sleep(2)
             live = prices[sym]
             if not live:
                 continue
@@ -812,7 +860,7 @@ def cmd_check(m):
                     signals.append("🟢 `" + symbol + "` ➔ 🔵 Sweep *" + sweep[0] + "* `$" + f"{sweep[1]:,.4f}" + "`")
                 if not ut and not sweep:
                     neutral.append("⚪ `" + symbol + "` — No Setup")
-                time.sleep(0.3)
+                time.sleep(2)
                 gc.collect()
             safe_send_message(chat_id, msg_scan_results(signals, neutral), parse_mode="Markdown")
         except Exception as e:
@@ -831,7 +879,7 @@ def cmd_summary(m):
                 lines.append(("🔴" if is_muted else "🟢") + " `" + symbol + "` · " + mtype + " · `$" + f"{price:,.4f}" + "` · " + status)
             else:
                 lines.append(("🔴" if is_muted else "🟢") + " `" + symbol + "` · " + mtype + " · " + status)
-            time.sleep(0.3)
+            time.sleep(2)
         safe_send_message(m.chat.id, msg_summary(lines), parse_mode="Markdown")
     except Exception as e:
         safe_send_message(m.chat.id, msg_error("Asset Summary", str(e)), parse_mode="Markdown")
@@ -870,7 +918,7 @@ def cmd_active(m):
             symbol = t["symbol"]
             if symbol not in prices:
                 prices[symbol] = get_price(symbol)
-                time.sleep(0.3)
+                time.sleep(2)
             live = prices[symbol]
             is_long = t["type"] == "LONG"
             if live:
@@ -989,7 +1037,7 @@ def cmd_balance(m):
             sym = t["symbol"]
             if sym not in prices:
                 prices[sym] = get_price(sym)
-                time.sleep(0.3)
+                time.sleep(2)
             live = prices[sym]
             if live:
                 if t["type"] == "LONG":
@@ -1052,7 +1100,7 @@ def cmd_indi1(m):
                     results.append(icon + " `" + symbol + "` → " + sig + " @ " + f"{price:.2f}")
                 else:
                     results.append("⚪ `" + symbol + "` → No Setup")
-                time.sleep(0.5)
+                time.sleep(3)
             has_signals = any("BULLISH" in r or "BEARISH" in r for r in results)
             if has_signals:
                 full_text = "\n".join(results)
@@ -1081,7 +1129,7 @@ def cmd_indi2(m):
                     results.append(icon + " `" + symbol + "` → " + sig + " @ " + f"{price:.2f}")
                 else:
                     results.append("⚪ `" + symbol + "` → No Setup")
-                time.sleep(0.5)
+                time.sleep(3)
             has_signals = any("BULLISH" in r or "BEARISH" in r for r in results)
             if has_signals:
                 full_text = "\n".join(results)
@@ -1150,9 +1198,10 @@ def handle_cb(c):
 def generate_chart(symbol, tf="1h"):
     with _chart_lock:
         try:
-            df = yf.download(symbol, period="3d", interval=tf,
-                             progress=False, auto_adjust=True,
-                             session=_YF_SESSION)
+            df = _throttled_yf_download(symbol, period="3d", interval=tf,
+                             progress=False, auto_adjust=True)
+            if df is None:
+                return None
             df = normalise_cols(df)
             if df.empty:
                 return None
