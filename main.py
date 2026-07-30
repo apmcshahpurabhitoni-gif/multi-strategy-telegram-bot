@@ -263,7 +263,8 @@ def msg_guide():
         f"│ `/check`        Scan markets now\n│ `/summary`      Live prices\n"
         f"│ `/active`       Open positions\n│ `/close SYM`    Close a trade\n"
         f"│ `/stats`        Performance\n│ `/balance`      Balances + U.PnL\n"
-        f"│ `/clear`        Reset all\n│ `/indi1` `/indi2` Diagnostics\n└─\n{BR2}"
+        f"│ `/export`       Download CSV\n│ `/clear`        Reset all\n"
+        f"│ `/indi1` `/indi2` Diagnostics\n└─\n{BR2}"
     )
 
 def msg_error(context, error):
@@ -462,7 +463,7 @@ def _finalize_trade_close(trade, live):
 # ============================================================
 def scanner_loop():
     global _last_scan_time
-    time.sleep(30) # Wait 30s on boot
+    time.sleep(30)
     while True:
         now = time.time()
         if now - _last_scan_time < 300: time.sleep(15); continue
@@ -543,7 +544,12 @@ def home(): return "Trading Bot OK"
 def api_balance():
     with _lock: return jsonify({k: accounts.get(k, {"balance":100000,"daily_trades":0}) for k in ["macro","nifty","ny_session","sweep_4h"]})
 @flask_app.route("/dashboard")
-def dashboard(): return "<h1>Trading Bot Active</h1><p>Check Telegram for alerts.</p>"
+def dashboard(): return """<!DOCTYPE html><html><head><meta charset="UTF-8"><meta name="viewport" content="width=device-width, initial-scale=1.0"><title>Trading Bot Dashboard</title>
+<style>*{box-sizing:border-box;margin:0;padding:0}body{background:#0d1117;color:#c9d1d9;font-family:system-ui,sans-serif;padding:20px;display:flex;justify-content:center}.container{max-width:800px;width:100%}.card{background:#161b22;border:1px solid #30363d;border-radius:8px;padding:20px;margin-bottom:15px}h1{color:#58a6ff;text-align:center;margin-bottom:20px}h2{color:#8b949e;font-size:14px;margin-bottom:15px}a{color:#58a6ff;text-decoration:none;display:block;padding:8px 0;border-bottom:1px solid #21262d}a:hover{color:#79c0ff}.status{display:inline-block;width:10px;height:10px;border-radius:50%;background:#3fb950;margin-right:8px}</style></head><body>
+<div class="container"><h1>🤖 Trading Bot Dashboard</h1>
+<div class="card"><h2>📊 LIVE API ENDPOINTS</h2><a href="/api/balance"><span class="status"></span>Account Balances & Limits</a><a href="/api/active"><span class="status"></span>Active Trades</a><a href="/api/history"><span class="status"></span>Trade History (Last 50)</a><a href="/api/export"><span class="status"></span>Download CSV Log</a></div>
+<div class="card"><h2>⚙️ SYSTEM ACTIONS</h2><a href="/ping"><span class="status"></span>Ping Server (Health Check)</a><button onclick="fetch('/api/clear', {method:'POST'}).then(()=>alert('Cleared!'))" style="background:#da3633;color:white;border:none;padding:10px 15px;border-radius:6px;cursor:pointer;width:100%;text-align:left;margin-bottom:5px;font-size:14px">🗑️ Reset All Accounts (POST /api/clear)</button></div>
+<p style="text-align:center;color:#484f58;margin-top:20px;font-size:12px">""" + now_short() + """</p></div></body></html>"""
 
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown")
 def menu_markup():
@@ -662,11 +668,97 @@ def cmd_indi(m):
         except Exception as e: safe_send_message(chat_id, msg_error(f"Indi{n}", str(e)))
     threading.Thread(target=run, daemon=True).start()
 
+# ============================================================
+#  FIX 4: THREAD-SAFE MANUAL CLOSE
+# ============================================================
+@bot.message_handler(commands=["close"])
+def cmd_close(m):
+    try:
+        parts = m.text.split()
+        if len(parts) < 2:
+            safe_send_message(m.chat.id, "Usage: `/close BTC-USD`")
+            return
+        target = parts[1].upper()
+        with _lock:
+            trade = next((t for t in active_trades if t["symbol"].upper() == target), None)
+            if not trade:
+                safe_send_message(m.chat.id, f"No active trade for {target}")
+                return
+        live = get_price(target)
+        if not live:
+            safe_send_message(m.chat.id, "Failed to fetch price")
+            return
+        
+        # Safe removal: check again inside the lock
+        with _lock:
+            if trade in active_trades:
+                active_trades.remove(trade)
+                _finalize_trade_close(trade, live)
+            else:
+                safe_send_message(m.chat.id, "Trade was already closed by monitor.")
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Close", str(e)))
+
+@bot.message_handler(commands=["export"])
+def cmd_export(m):
+    try:
+        if not os.path.exists(TRADE_LOG_CSV) or os.path.getsize(TRADE_LOG_CSV) == 0:
+            safe_send_message(m.chat.id, "No trades logged yet.")
+            return
+        with open(TRADE_LOG_CSV, "rb") as doc:
+            bot.send_document(m.chat.id, doc, caption=msg_export_ready(0))
+    except Exception as e:
+        safe_send_message(m.chat.id, msg_error("Export", str(e)))
+
+# ============================================================
+#  FIX 5: MEMORY LEAK PROOF CHART GENERATOR
+# ============================================================
+def generate_chart(symbol, tf="1h"):
+    buf = None
+    try:
+        df = _throttled_yf_download(symbol, period="3d", interval=tf, progress=False, auto_adjust=True)
+        if df is None or df.empty: return None
+        df = normalise_cols(df)
+        
+        fig, ax = plt.subplots(figsize=(10, 5), facecolor="#0d1117", dpi=50)
+        ax.set_facecolor("#0d1117")
+        x = np.arange(len(df))
+        colors = np.where(df["Close"] >= df["Open"], "#00ff88", "#ff4444")
+        ax.vlines(x, df["Low"], df["High"], color=colors, linewidth=1)
+        ax.bar(x, abs(df["Close"]-df["Open"])+1e-8, bottom=np.minimum(df["Open"], df["Close"]), width=0.6, color=colors, linewidth=0)
+        ax.set_title(f"{symbol} | {tf.upper()}", color="white", fontsize=12, fontweight="bold")
+        ax.tick_params(colors="gray", labelsize=6)
+        ax.grid(True, color="#21262d", linestyle="--", linewidth=0.5)
+        plt.tight_layout()
+        
+        buf = BytesIO()
+        plt.savefig(buf, format="png", facecolor="#0d1117")
+        buf.seek(0)
+        
+    except Exception as e:
+        print(f"[ERR] Chart {symbol}: {e}")
+    finally:
+        # CRITICAL: Always close the plot to free RAM, even if it crashes
+        plt.close('all')
+        try:
+            del df
+        except Exception:
+            pass
+    return buf
+
 @bot.callback_query_handler(func=lambda c: True)
 def handle_cb(c):
     try:
         if c.data == "cmd_check": cmd_check(c.message)
         elif c.data == "cmd_summary": cmd_summary(c.message)
+        elif c.data.startswith("chart_"):
+            sym = c.data.split("_",1)[1]
+            bot.answer_callback_query(c.id, text="Generating chart...")
+            buf = generate_chart(sym)
+            if buf:
+                bot.send_photo(c.message.chat.id, buf, caption=f"📈 `{sym}` | 1H Chart")
+            else:
+                safe_send_message(c.message.chat.id, msg_chart_failed())
         elif c.data.startswith("mute_"):
             sym = c.data.split("_",1)[1]
             with _lock: muted_assets.add(sym); save_json(MUTE_FILE, list(muted_assets))
@@ -706,6 +798,7 @@ if __name__ == "__main__":
     threading.Thread(target=lambda: flask_app.run(host="0.0.0.0", port=PORT, use_reloader=False), daemon=True).start()
 
     print("[BOT] Connecting to Telegram...")
+    bot.delete_webhook() # KILL 409 CONFLICTS
     while True:
         try: bot.polling(timeout=60, long_polling_timeout=10)
         except Exception as e:
