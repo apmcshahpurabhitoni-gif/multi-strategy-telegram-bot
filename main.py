@@ -25,7 +25,7 @@ plt.style.use("dark_background")
 # ============================================================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
-WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g. https://your-app.onrender.com/webhook
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
@@ -55,7 +55,6 @@ _chart_lock = threading.RLock()
 _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
 
-# Yahoo Finance session with headers to avoid cloud blocking
 _yf_session = requests.Session()
 _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -160,17 +159,15 @@ def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
 # ============================================================
-# WEB SERVER + WEBHOOK HANDLER (no polling = no 409 conflict)
+# WEB SERVER + WEBHOOK HANDLER
 # ============================================================
 def run_web():
     def app(environ, start_response):
         path = environ.get("PATH_INFO", "")
         method = environ.get("REQUEST_METHOD", "GET")
-
         if path == "/ping":
             start_response("200 OK", [("Content-Type", "text/plain")])
             return [b"pong"]
-
         if path == "/webhook" and method == "POST":
             try:
                 content_length = int(environ.get('CONTENT_LENGTH', 0))
@@ -183,10 +180,8 @@ def run_web():
                 print(f"[ERR] Webhook processing: {e}")
                 start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
                 return [b"Error"]
-
         start_response("200 OK", [("Content-Type", "text/plain")])
         return [b"Trading Bot OK"]
-
     PORT = int(os.environ.get("PORT", 10000))
     srv = make_server("0.0.0.0", PORT, app)
     srv.serve_forever()
@@ -266,7 +261,7 @@ def is_market_open(symbol):
     return False
 
 # ============================================================
-# YFINANCE HELPERS (cloud-safe)
+# YFINANCE HELPERS
 # ============================================================
 def yf_download(symbol, period, interval):
     try:
@@ -411,7 +406,6 @@ def calc_qty(account, entry, sl):
     return 0.0 if dist == 0 else float(risk / dist)
 
 def format_signal_time(ts_ms):
-    """Convert timestamp (ms) to bold IST (+5:30) string."""
     try:
         dt = datetime.fromtimestamp(ts_ms / 1000, tz=IST)
         return dt.strftime("%d-%b-%Y %H:%M IST (+5:30)")
@@ -861,3 +855,8 @@ if __name__ == "__main__":
         print("[WARN] WEBHOOK_URL not set. Using polling (may cause 409 if another instance is running).")
         print("[HINT] Set WEBHOOK_URL=https://your-app.onrender.com/webhook in Render env vars.")
         bot.polling(none_stop=True, interval=3, timeout=60)
+
+    # CRITICAL: Keep main thread alive so Render doesn't kill the process
+    print("[BOT] Main thread keeping process alive...")
+    while True:
+        time.sleep(3600)
