@@ -8,6 +8,7 @@ from io import BytesIO
 from wsgiref.simple_server import make_server
 
 import requests
+import dashboard_api
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -164,6 +165,10 @@ def run_web():
     def app(environ, start_response):
         path = environ.get("PATH_INFO", "")
         method = environ.get("REQUEST_METHOD", "GET")
+# Dashboard API routes (additive, does not touch trading logic)
+        _resp = dashboard_api.register_routes(path, start_response, environ)
+        if _resp is not None:
+            return _resp
         if path == "/ping":
             start_response("200 OK", [("Content-Type", "text/plain")])
             return [b"pong"]
