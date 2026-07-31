@@ -3,7 +3,7 @@ import json
 import time
 import threading
 import gc
-from datetime import datetime
+from datetime import datetime, timedelta
 from io import BytesIO
 from wsgiref.simple_server import make_server
 
@@ -20,9 +20,6 @@ from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 matplotlib.use("Agg")
 plt.style.use("dark_background")
 
-# ============================================================
-# CONFIG
-# ============================================================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
@@ -32,12 +29,12 @@ if not TOKEN:
 if not CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID not set!")
 
-# Files
 ACCOUNTS_FILE = "/workspace/accounts.json"
 ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
 HISTORY_FILE = "/workspace/trade_history.json"
 MUTE_FILE = "/workspace/muted_assets.json"
 SENT_SIGNALS_FILE = "/workspace/sent_signals.json"
+PENDING_SWEEPS_FILE = "/workspace/pending_sweeps.json"
 
 ACCOUNT_LIMITS = {
     "macro": 20,
@@ -50,6 +47,7 @@ accounts = {}
 active_trades = []
 muted_assets = set()
 sent_signals = {}
+pending_sweeps = []
 _lock = threading.RLock()
 _chart_lock = threading.RLock()
 _price_cache = {}
@@ -63,13 +61,13 @@ _yf_session.headers.update({
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
-# ============================================================
-# MESSAGES
-# ============================================================
-def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_time_str):
+def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_time_str, fvg_zone=None):
     arrow = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
     label = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
     dir_ = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
+    fvg_line = ""
+    if fvg_zone and "Sweep" in strat:
+        fvg_line = f"🎯 *FVG Zone:* `${fvg_zone[0]:,.4f} — ${fvg_zone[1]:,.4f}`\n"
     return (
         f"⚡ *ALERT — HIGH CONFLUENCE SIGNAL*\n"
         f"{BR}\n"
@@ -90,6 +88,7 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
         f"📍 *Entry:* `${price:,.4f}`\n"
         f"🛑 *Stop Loss:* `${actual_sl:,.4f}`\n"
         f"🎯 *Take Profit:* `${actual_tp:,.4f}`\n"
+        f"{fvg_line}"
         f"📦 *Quantity:* `{qty:.4f}`\n"
         f"💸 *Risk:* `₹{risk_amt:,.2f}`\n"
         f"{BR2}"
@@ -151,16 +150,16 @@ def msg_guide():
         f"├ `/balance` — Virtual account balances\n"
         f"├ `/clear` — Reset all to ₹1,00,000\n"
         f"├ `/indi1` — Diagnose Strategy 1 (Sweep)\n"
-        f"└ `/indi2` — Diagnose Strategy 2 (UT Bot)\n"
+        f"├ `/indi2` — Diagnose Strategy 2 (UT Bot)\n"
+        f"├ `/pending` — Show sweep setups waiting for FVG\n"
+        f"└ `/news` — Today's economic calendar & impact\n"
         f"{BR2}"
     )
 
 def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
-# ============================================================
-# WEB SERVER + WEBHOOK HANDLER
-# ============================================================
+# WEB SERVER + WEBHOOK
 def run_web():
     def app(environ, start_response):
         path = environ.get("PATH_INFO", "")
@@ -188,9 +187,6 @@ def run_web():
 
 threading.Thread(target=run_web, daemon=True).start()
 
-# ============================================================
-# BOT
-# ============================================================
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 
 def load_json(fp, default):
@@ -260,9 +256,6 @@ def is_market_open(symbol):
         return w < 5 and 555 <= tm <= 930
     return False
 
-# ============================================================
-# YFINANCE HELPERS
-# ============================================================
 def yf_download(symbol, period, interval):
     try:
         df = yf.download(
@@ -294,9 +287,6 @@ def get_price(symbol):
     _price_cache[symbol] = (p, now)
     return p
 
-# ============================================================
-# INDICATORS
-# ============================================================
 def calc_atr(df, period=10):
     hl = df["High"] - df["Low"]
     hc = np.abs(df["High"] - df["Close"].shift(1))
@@ -311,9 +301,6 @@ def get_rsi(df, period=14):
     rs = g / l.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
 
-# ============================================================
-# STRATEGY 1 — SWEEP + ENGULFING
-# ============================================================
 def check_sweep(ticker):
     try:
         is_nifty = "^NSE" in ticker
@@ -330,26 +317,216 @@ def check_sweep(ticker):
         c = df.iloc[-2]
         m = df.iloc[-3]
         ts = int(df.index[-2].timestamp() * 1000)
-        price = float(c["Close"])
         if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]:
-            sl = float(c["Low"])
-            risk = price - sl
-            if risk <= 0:
-                return None
-            return ("BULLISH", price, sl, price + risk * 2.0, ts)
+            return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
         if c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]:
-            sl = float(c["High"])
-            risk = sl - price
-            if risk <= 0:
-                return None
-            return ("BEARISH", price, sl, price - risk * 2.0, ts)
+            return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
     return None
 
-# ============================================================
-# STRATEGY 2 — UT BOT
-# ============================================================
+def find_fvg(df_1h, direction, sweep_open_ts_ms):
+    try:
+        if df_1h is None or len(df_1h) < 3:
+            return None
+        sweep_open = pd.to_datetime(int(sweep_open_ts_ms), unit="ms")
+        idx = df_1h.index
+        if getattr(idx, "tz", None) is not None:
+            if sweep_open.tz is None:
+                sweep_open = sweep_open.tz_localize("UTC")
+            else:
+                sweep_open = sweep_open.tz_convert(idx.tz)
+        mask = idx >= sweep_open
+        df = df_1h[mask].reset_index(drop=True)
+        if len(df) < 3:
+            return None
+        for i in range(2, len(df)):
+            c_prev2 = df.iloc[i - 2]
+            c_curr = df.iloc[i]
+            if direction == "BULLISH":
+                if float(c_curr["Low"]) > float(c_prev2["High"]):
+                    zone_low = float(c_prev2["High"])
+                    zone_high = float(c_curr["Low"])
+                    if zone_high <= zone_low:
+                        continue
+                    post = df.iloc[i + 1:]
+                    if len(post) > 0 and (post["Low"].astype(float) < zone_low).any():
+                        continue
+                    return (zone_low, zone_high)
+            else:
+                if float(c_curr["High"]) < float(c_prev2["Low"]):
+                    zone_low = float(c_curr["High"])
+                    zone_high = float(c_prev2["Low"])
+                    if zone_high <= zone_low:
+                        continue
+                    post = df.iloc[i + 1:]
+                    if len(post) > 0 and (post["High"].astype(float) > zone_high).any():
+                        continue
+                    return (zone_low, zone_high)
+    except Exception as e:
+        print(f"[ERR] find_fvg: {e}")
+    return None
+
+FVG_EXPIRY_HOURS = 24
+
+def register_pending_sweep(symbol, mtype, sweep):
+    global pending_sweeps
+    direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
+    with _lock:
+        for p in pending_sweeps:
+            if (p["symbol"] == symbol and p["direction"] == direction
+                    and p["sweep_close_ts"] == sweep_close_ts):
+                return
+        lim = ACCOUNT_LIMITS.get("sweep_4h", 3)
+        if accounts["sweep_4h"]["daily_trades"] >= lim:
+            return
+        if any(t["symbol"] == symbol and t["account"] == "sweep_4h" for t in active_trades):
+            return
+        if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill")
+               for p in pending_sweeps):
+            return
+        pending_sweeps.append({
+            "symbol": symbol,
+            "mtype": mtype,
+            "direction": direction,
+            "sweep_high": float(sweep_high),
+            "sweep_low": float(sweep_low),
+            "sweep_open_ts": int(sweep_open_ts),
+            "sweep_close_ts": int(sweep_close_ts),
+            "created_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
+            "fvg_zone": None,
+            "fvg_found_at": None,
+            "status": "waiting_fvg",
+        })
+        accounts["sweep_4h"]["daily_trades"] += 1
+        save_json(ACCOUNTS_FILE, accounts)
+        save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+    sl_extreme = sweep_low if direction == "BULLISH" else sweep_high
+    msg = (
+        f"🔵 *SWEEP DETECTED — WAITING FOR FVG*\n"
+        f"{BR}\n"
+        f"🪙 *Asset:* `{symbol}` ({mtype})\n"
+        f"📊 *Direction:* {'LONG 📈' if direction == 'BULLISH' else 'SHORT 📉'}\n"
+        f"📏 *Sweep Candle:* `${sweep_low:,.4f} — ${sweep_high:,.4f}`\n"
+        f"🛑 *SL Extreme:* `${sl_extreme:,.4f}`\n"
+        f"⏱ *Sweep closed at:* `{format_signal_time(sweep_close_ts)}`\n"
+        f"{BR}\n"
+        f"⏳ *Watching 1H for Fair Value Gap...*\n"
+        f"🕐 *Expiry:* {FVG_EXPIRY_HOURS}h\n"
+        f"{BR2}"
+    )
+    safe_send(CHAT_ID, msg, parse_mode="Markdown")
+    print(f"[PENDING] Sweep {direction} {symbol} @ sweep_close_ts={sweep_close_ts}")
+
+
+def _refund_sweep_slot():
+    with _lock:
+        accounts["sweep_4h"]["daily_trades"] = max(0, accounts["sweep_4h"]["daily_trades"] - 1)
+        save_json(ACCOUNTS_FILE, accounts)
+
+
+def manage_pending_sweeps():
+    global pending_sweeps
+    while True:
+        try:
+            with _lock:
+                copy = list(pending_sweeps)
+            to_remove = []
+            for p in copy:
+                sym = p["symbol"]
+                live_df = yf_download(sym, "1d", "1m")
+                if live_df is None or live_df.empty:
+                    continue
+                live = float(live_df["Close"].iloc[-1])
+                age_hours = (time.time() * 1000 - p["sweep_close_ts"]) / (3600 * 1000)
+                if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
+                    p["status"] = "expired"
+                    to_remove.append(p)
+                    _refund_sweep_slot()
+                    safe_send(CHAT_ID, (
+                        f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n"
+                        f"`{sym}` {p['direction']} — no FVG fill in {FVG_EXPIRY_HOURS}h\n"
+                        f"{BR2}"
+                    ), parse_mode="Markdown")
+                    print(f"[EXPIRED] Pending sweep {sym} {p['direction']}")
+                    continue
+                if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
+                    p["status"] = "invalidated"
+                    to_remove.append(p)
+                    _refund_sweep_slot()
+                    safe_send(CHAT_ID, (
+                        f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
+                        f"`{sym}` BULLISH — price broke sweep low `${p['sweep_low']:,.4f}`\n"
+                        f"{BR2}"
+                    ), parse_mode="Markdown")
+                    print(f"[INVALID] Pending sweep {sym} BULLISH")
+                    continue
+                if p["direction"] == "BEARISH" and live >= p["sweep_high"]:
+                    p["status"] = "invalidated"
+                    to_remove.append(p)
+                    _refund_sweep_slot()
+                    safe_send(CHAT_ID, (
+                        f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
+                        f"`{sym}` BEARISH — price broke sweep high `${p['sweep_high']:,.4f}`\n"
+                        f"{BR2}"
+                    ), parse_mode="Markdown")
+                    print(f"[INVALID] Pending sweep {sym} BEARISH")
+                    continue
+                if p["fvg_zone"] is None:
+                    df_1h = yf_download(sym, "5d", "1h")
+                    fvg = find_fvg(df_1h, p["direction"], p["sweep_open_ts"])
+                    if fvg:
+                        p["fvg_zone"] = [float(fvg[0]), float(fvg[1])]
+                        p["fvg_found_at"] = int(time.time() * 1000)
+                        p["status"] = "waiting_fill"
+                        zl, zh = fvg
+                        with _lock:
+                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+                        safe_send(CHAT_ID, (
+                            f"🎯 *FVG FORMED — WAITING FOR FILL*\n{BR}\n"
+                            f"🪙 `{sym}` {p['direction']}\n"
+                            f"📏 *FVG Zone:* `${zl:,.4f} — ${zh:,.4f}`\n"
+                            f"⏳ *Watching for price to enter zone...*\n"
+                            f"{BR2}"
+                        ), parse_mode="Markdown")
+                        print(f"[FVG] Found for {sym} {p['direction']}: {zl}-{zh}")
+                    continue
+                zl, zh = p["fvg_zone"]
+                filled = False
+                if p["direction"] == "BULLISH":
+                    if zl <= live <= zh:
+                        filled = True
+                else:
+                    if zl <= live <= zh:
+                        filled = True
+                if filled:
+                    fvg_entry = {
+                        "entry_price": live,
+                        "sl": p["sweep_low"] if p["direction"] == "BULLISH" else p["sweep_high"],
+                        "sweep_ts": p["sweep_close_ts"],
+                        "zone": p["fvg_zone"],
+                    }
+                    p["status"] = "entered"
+                    to_remove.append(p)
+                    with _lock:
+                        if sym in muted_assets:
+                            print(f"[MUTED] Skipping FVG fill for {sym} (muted)")
+                            pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
+                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+                            continue
+                    execute(sym, p["mtype"], "sweep_4h", "Sweep + Engulfing",
+                            p["direction"], live, fvg_entry["sl"], 0,
+                            p["sweep_close_ts"], fvg_entry=fvg_entry)
+                    print(f"[FVG FILL] {sym} {p['direction']} @ {live}")
+            if to_remove:
+                with _lock:
+                    pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
+                    save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+        except Exception as e:
+            print(f"[ERR] manage_pending_sweeps: {e}")
+        time.sleep(90)
+
+
 def check_ut(ticker, kv=2):
     try:
         df15 = yf_download(ticker, "3d", "15m")
@@ -390,9 +567,7 @@ def check_ut(ticker, kv=2):
         print(f"[ERR] UT {ticker}: {e}")
     return None
 
-# ============================================================
-# TRADE EXECUTION
-# ============================================================
+
 def calc_sl_tp(sig, entry, atr):
     if "BULLISH" in sig:
         return entry - atr * 2, entry + atr * 4
@@ -412,21 +587,35 @@ def format_signal_time(ts_ms):
     except Exception:
         return "Unknown"
 
-def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
+def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg_entry=None):
     global active_trades
-    if "Sweep" in strat:
+    if fvg_entry is not None:
+        sl = float(fvg_entry["sl"])
+        ts = fvg_entry["sweep_ts"]
+        risk = abs(price - sl)
+        if risk <= 0:
+            return
+        if "BULLISH" in sig_type:
+            tp = price + risk * 2.0
+        else:
+            tp = price - risk * 2.0
+    elif "Sweep" in strat:
         sl, tp, ts = float(a1), float(a2), a3
     else:
         atr, ts = float(a1), a2
         sl, tp = calc_sl_tp(sig_type, price, atr)
     with _lock:
         key = f"{symbol}_{ts}_{sig_type}_{account}"
-        if key in sent_signals:
+        if key in sent_signals and fvg_entry is None:
             return
+        if fvg_entry is not None:
+            key = f"{symbol}_{ts}_{sig_type}_{account}_fvg_{price:.6f}"
+            if key in sent_signals:
+                return
         sent_signals[key] = True
         save_json(SENT_SIGNALS_FILE, sent_signals)
         lim = ACCOUNT_LIMITS.get(account, 3)
-        if accounts[account]["daily_trades"] >= lim:
+        if fvg_entry is None and accounts[account]["daily_trades"] >= lim:
             return
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
@@ -444,21 +633,21 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
             "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
         }
         active_trades.append(trade)
-        accounts[account]["daily_trades"] += 1
+        if fvg_entry is None:
+            accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
     risk = abs(price - sl) * qty
     signal_time_str = format_signal_time(ts)
-    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account, signal_time_str)
+    fvg_zone = fvg_entry.get("zone") if fvg_entry else None
+    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account, signal_time_str, fvg_zone=fvg_zone)
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"),
                InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
     safe_send(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
     print(f"[TRADE] {trade['type']} {symbol} @ {price} | Signal: {signal_time_str}")
 
-# ============================================================
-# MONITOR TRADES
-# ============================================================
+
 def monitor():
     global active_trades
     while True:
@@ -516,9 +705,6 @@ def monitor():
                 save_json(ACTIVE_TRADES_FILE, active_trades)
         time.sleep(15)
 
-# ============================================================
-# SCANNER
-# ============================================================
 MONITORED = [
     ("BTC-USD", "Crypto"),
     ("GC=F", "Gold"),
@@ -549,7 +735,7 @@ def scanner():
                     execute(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
                 sweep = check_sweep(symbol)
                 if sweep:
-                    execute(symbol, mtype, "sweep_4h", "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
+                    register_pending_sweep(symbol, mtype, sweep)
                 time.sleep(2)
             gc.collect()
         except Exception as e:
@@ -557,9 +743,6 @@ def scanner():
             safe_send(CHAT_ID, msg_error("Scanner", str(e)), parse_mode="Markdown")
         time.sleep(300)
 
-# ============================================================
-# DAILY RESET
-# ============================================================
 def daily_reset():
     last = datetime.now(IST).strftime("%Y-%m-%d")
     while True:
@@ -589,6 +772,250 @@ def daily_reset():
                     save_json(HISTORY_FILE, hist[-500:])
             last = today
             gc.collect()
+        time.sleep(60)
+
+# ============================================================
+# NEWS MODULE
+# ============================================================
+NEWS_CACHE = {"data": [], "last_fetch": 0}
+
+def fetch_news():
+    try:
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        r = requests.get(url, timeout=15)
+        data = r.json()
+        if isinstance(data, list):
+            return data
+        return []
+    except Exception as e:
+        print(f"[ERR] fetch_news: {e}")
+        return []
+
+def get_cached_news():
+    now = time.time()
+    if now - NEWS_CACHE["last_fetch"] > 600:
+        NEWS_CACHE["data"] = fetch_news()
+        NEWS_CACHE["last_fetch"] = now
+    return NEWS_CACHE["data"]
+
+def impact_emoji(impact):
+    impact = str(impact).upper()
+    if impact in ("HIGH", "RED", "H"):
+        return "🔴"
+    if impact in ("MEDIUM", "ORANGE", "YELLOW", "M"):
+        return "🟡"
+    if impact in ("LOW", "GREEN", "L"):
+        return "🟢"
+    return "⚪"
+
+def news_impact_hint(title, currency):
+    t = str(title).upper()
+    c = str(currency).upper()
+    hints = []
+    affected = []
+    is_nfp = "NON-FARM" in t or "NFP" in t or "EMPLOYMENT CHANGE" in t or "PAYROLLS" in t
+    is_cpi = "CPI" in t or "INFLATION" in t or "CONSUMER PRICE" in t
+    is_fomc = "FOMC" in t or "FED RATE" in t or "INTEREST RATE" in t or "FEDERAL FUNDS" in t
+    is_gdp = "GDP" in t or "GROSS DOMESTIC" in t
+    is_pmi = "PMI" in t or "MANUFACTURING" in t or "SERVICES PMI" in t
+    is_claims = "CLAIMS" in t or "UNEMPLOYMENT CLAIMS" in t
+    is_retail = "RETAIL SALES" in t
+    is_ecb = "ECB" in t or "EUROPEAN CENTRAL" in t
+    is_boe = "BOE" in t or "BANK OF ENGLAND" in t
+    is_boj = "BOJ" in t or "BANK OF JAPAN" in t
+
+    if is_nfp:
+        hints.append("💥 NFP → Volatile USD | Better jobs = Strong USD")
+        affected = ["EUR/USD", "GBP/USD", "USD/JPY", "Gold", "BTC"]
+    elif is_cpi:
+        hints.append("💥 CPI → Inflation shock | High CPI = Rate hike fear")
+        affected = ["EUR/USD", "GBP/USD", "USD/JPY", "Gold ↑ (hedge)", "BTC mixed"]
+    elif is_fomc:
+        hints.append("💥 FOMC → Hawkish = USD rally | Dovish = USD dump")
+        affected = ["All USD pairs", "Gold", "BTC"]
+    elif is_gdp:
+        hints.append("📊 GDP → Strong growth = Strong currency")
+        affected = [f"{c} pairs", "Gold", "BTC"]
+    elif is_pmi:
+        hints.append("📊 PMI → >50 expansion, <50 contraction")
+        affected = [f"{c} pairs"]
+    elif is_claims:
+        hints.append("📊 Jobless Claims → Lower = Strong economy")
+        affected = ["USD pairs", "Gold"]
+    elif is_retail:
+        hints.append("📊 Retail Sales → Consumer strength signal")
+        affected = [f"{c} pairs"]
+    elif is_ecb:
+        hints.append("💥 ECB Rate → Hawkish = EUR up")
+        affected = ["EUR/USD", "GBP/USD"]
+    elif is_boe:
+        hints.append("💥 BoE Rate → Hawkish = GBP up")
+        affected = ["GBP/USD", "EUR/GBP"]
+    elif is_boj:
+        hints.append("💥 BoJ → Yen intervention = Safe haven flow")
+        affected = ["USD/JPY", "Gold ↑"]
+    else:
+        hints.append("📊 Monitor price action around release")
+        affected = [f"{c} pairs"]
+
+    if c == "USD" and not hints:
+        hints.append("🇺🇸 USD news → Moves all dollar pairs + Gold + BTC")
+        affected = ["EUR/USD", "GBP/USD", "USD/JPY", "Gold", "BTC"]
+    elif c == "EUR":
+        hints.append("🇪🇺 EUR news → Mainly EUR/USD, EUR/GBP")
+        affected = ["EUR/USD", "EUR/GBP"]
+    elif c == "GBP":
+        hints.append("🇬🇧 GBP news → Mainly GBP/USD, EUR/GBP")
+        affected = ["GBP/USD", "EUR/GBP"]
+    elif c == "JPY":
+        hints.append("🇯🇵 JPY news → Safe haven flows possible")
+        affected = ["USD/JPY", "Gold"]
+
+    return " | ".join(hints), affected
+
+def format_news_message(events, title, filter_today_only=True):
+    if not events:
+        return f"📰 *{title}*\n{BR}\n⚪ No events found.\n{BR2}"
+    lines = [f"📰 *{title}*\n{BR}"]
+    now = datetime.now(IST)
+    today_str = now.strftime("%Y-%m-%d")
+    for ev in events:
+        try:
+            date = ev.get("date", "")
+            time_str = ev.get("time", "")
+            currency = ev.get("country", ev.get("currency", "???"))
+            title_ev = ev.get("title", "Unknown")
+            impact = ev.get("impact", "")
+            forecast = ev.get("forecast", "")
+            previous = ev.get("previous", "")
+            if filter_today_only and date != today_str:
+                continue
+            ts_ist = ""
+            try:
+                if time_str and time_str != "All Day":
+                    t_parts = time_str.split(":")
+                    if len(t_parts) == 2:
+                        h = int(t_parts[0])
+                        m = int(t_parts[1])
+                        ist_h = (h + 9) % 24
+                        ist_m = m + 30
+                        if ist_m >= 60:
+                            ist_h = (ist_h + 1) % 24
+                            ist_m -= 60
+                        ts_ist = f" | `{ist_h:02d}:{ist_m:02d} IST`"
+            except Exception:
+                pass
+            emoji = impact_emoji(impact)
+            hint, affected = news_impact_hint(title_ev, currency)
+            affected_str = ", ".join(affected) if affected else ""
+            line = f"{emoji} *{currency}* — `{title_ev}`\n🕐 `{time_str} ET{ts_ist}`\n"
+            if forecast or previous:
+                line += f"📊 Forecast: `{forecast}` | Previous: `{previous}`\n"
+            line += f"💡 {hint}\n"
+            if affected_str:
+                line += f"🎯 Affected: {affected_str}\n"
+            line += f"{BR}"
+            lines.append(line)
+        except Exception as e:
+            print(f"[ERR] format_news: {e}")
+            continue
+    if len(lines) == 1:
+        lines.append("⚪ No high-impact events for today.\n")
+    lines.append(BR2)
+    return "\n".join(lines)
+
+def get_today_high_impact_news():
+    news = get_cached_news()
+    now = datetime.now(IST)
+    today_str = now.strftime("%Y-%m-%d")
+    filtered = []
+    for ev in news:
+        impact = str(ev.get("impact", "")).upper()
+        date = ev.get("date", "")
+        if date == today_str and impact in ("HIGH", "MEDIUM", "H", "M", "RED", "ORANGE", "YELLOW"):
+            filtered.append(ev)
+    return filtered
+
+def news_alert_loop():
+    alerted_events = set()
+    morning_sent_today = ""
+    while True:
+        try:
+            now = datetime.now(IST)
+            today_str = now.strftime("%Y-%m-%d")
+            # Morning digest at 9:00 AM IST
+            if now.hour == 9 and now.minute < 5 and morning_sent_today != today_str:
+                events = get_today_high_impact_news()
+                if events:
+                    msg = format_news_message(events, "🌅 MORNING NEWS DIGEST")
+                    safe_send(CHAT_ID, msg, parse_mode="Markdown")
+                else:
+                    safe_send(CHAT_ID, f"📰 *MORNING NEWS DIGEST*\n{BR}\n🟢 No high-impact news today. Relax.\n{BR2}", parse_mode="Markdown")
+                morning_sent_today = today_str
+            # Pre-news alerts (30 min before)
+            news = get_cached_news()
+            for ev in news:
+                try:
+                    impact = str(ev.get("impact", "")).upper()
+                    if impact not in ("HIGH", "H", "RED"):
+                        continue
+                    date = ev.get("date", "")
+                    time_str = ev.get("time", "")
+                    if date != today_str or not time_str or time_str == "All Day":
+                        continue
+                    ev_id = f"{date}_{time_str}_{ev.get('title','')}"
+                    if ev_id in alerted_events:
+                        continue
+                    t_parts = time_str.split(":")
+                    if len(t_parts) != 2:
+                        continue
+                    h = int(t_parts[0])
+                    m = int(t_parts[1])
+                    ist_h = (h + 9) % 24
+                    ist_m = m + 30
+                    if ist_m >= 60:
+                        ist_h = (ist_h + 1) % 24
+                        ist_m -= 60
+                    ev_dt = now.replace(hour=ist_h, minute=ist_m, second=0, microsecond=0)
+                    if ist_h < now.hour and h > 14:
+                        ev_dt = ev_dt + timedelta(days=1)
+                    mins_until = (ev_dt - now).total_seconds() / 60
+                    if 25 <= mins_until <= 35:
+                        currency = ev.get("country", ev.get("currency", "???"))
+                        title_ev = ev.get("title", "Unknown")
+                        forecast = ev.get("forecast", "")
+                        previous = ev.get("previous", "")
+                        hint, affected = news_impact_hint(title_ev, currency)
+                        affected_str = ", ".join(affected) if affected else ""
+                        msg = (
+                            f"⚠️ *HIGH IMPACT NEWS IN ~30 MIN*\n"
+                            f"{BR}\n"
+                            f"🔴 *{currency}* — `{title_ev}`\n"
+                            f"🕐 `{time_str} ET` → `{ist_h:02d}:{ist_m:02d} IST`\n"
+                        )
+                        if forecast or previous:
+                            msg += f"📊 Forecast: `{forecast}` | Previous: `{previous}`\n"
+                        msg += (
+                            f"{BR}\n"
+                            f"💡 *Bias:* {hint}\n"
+                            f"🎯 *Affected:* {affected_str}\n"
+                            f"{BR}\n"
+                            f"⚠️ *RECOMMENDATION:*\n"
+                            f"• Widen stops or reduce position size\n"
+                            f"• Avoid new entries 15 min before/after\n"
+                            f"• Watch for whipsaws and spread widening\n"
+                            f"{BR2}"
+                        )
+                        safe_send(CHAT_ID, msg, parse_mode="Markdown")
+                        alerted_events.add(ev_id)
+                        print(f"[NEWS ALERT] Sent for {currency} {title_ev}")
+                except Exception as e:
+                    print(f"[ERR] news_alert_loop event: {e}")
+                    continue
+            cutoff = (now - timedelta(days=3)).strftime("%Y-%m-%d")
+            alerted_events = {e for e in alerted_events if not e.startswith(cutoff)}
+        except Exception as e:
+            print(f"[ERR] news_alert_loop: {e}")
         time.sleep(60)
 
 # ============================================================
@@ -631,7 +1058,7 @@ def cmd_check(m):
             if ut:
                 signals.append(f"🟢 `{symbol}` ➔ UT Bot *{ut[0]}*")
             elif sw:
-                signals.append(f"🟢 `{symbol}` ➔ Sweep *{sw[0]}*")
+                signals.append(f"⏳ `{symbol}` ➔ Sweep detected (waiting for FVG)")
             else:
                 neutral.append(f"⚪ `{symbol}` — No Setup")
             time.sleep(1)
@@ -745,6 +1172,44 @@ def cmd_indi2(m):
         safe_send(chat_id, "🟣 *STRATEGY 2 RESULTS*\n" + "\n".join(out), parse_mode="Markdown")
     threading.Thread(target=run, daemon=True).start()
 
+@bot.message_handler(commands=["pending"])
+def cmd_pending(m):
+    with _lock:
+        copy = list(pending_sweeps)
+    if not copy:
+        safe_send(m.chat.id, f"📋 *PENDING SWEEPS*\n{BR}\n⚪ No pending setups.\n{BR2}", parse_mode="Markdown")
+        return
+    lines = [f"📋 *PENDING SWEEPS ({len(copy)})*\n{BR}"]
+    now_ts = time.time() * 1000
+    for p in copy:
+        sym = p["symbol"]
+        direction = p["direction"]
+        status = p["status"]
+        expiry = p["sweep_close_ts"] + FVG_EXPIRY_HOURS * 3600 * 1000
+        mins_left = int((expiry - now_ts) / 60000)
+        mins_left = max(0, mins_left)
+        status_emoji = "⏳" if status == "waiting_fvg" else "🎯" if status == "waiting_fill" else "❓"
+        fvg_info = ""
+        if p["fvg_zone"]:
+            zl, zh = p["fvg_zone"]
+            fvg_info = f" | FVG: `${zl:,.2f}-{zh:,.2f}`"
+        lines.append(
+            f"{status_emoji} `{sym}` {direction} — {status.replace('_',' ').title()}{fvg_info}\n"
+            f"   ⏰ Expires in `{mins_left}m`\n"
+        )
+    lines.append(BR2)
+    safe_send(m.chat.id, "\n".join(lines), parse_mode="Markdown")
+
+@bot.message_handler(commands=["news"])
+def cmd_news(m):
+    chat_id = m.chat.id
+    safe_send(chat_id, "📰 *Fetching economic calendar...*")
+    def run():
+        events = get_today_high_impact_news()
+        msg = format_news_message(events, "TODAY'S ECONOMIC CALENDAR")
+        safe_send(chat_id, msg, parse_mode="Markdown")
+    threading.Thread(target=run, daemon=True).start()
+
 @bot.message_handler(func=lambda m: True)
 def fallback(m):
     if m.text.startswith("/"):
@@ -824,6 +1289,7 @@ if __name__ == "__main__":
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
     sent_signals = load_json(SENT_SIGNALS_FILE, {})
+    pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
 
     print("=" * 50)
     print(" Trading Bot Starting...")
@@ -838,8 +1304,9 @@ if __name__ == "__main__":
     threading.Thread(target=scanner, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=daily_reset, daemon=True).start()
+    threading.Thread(target=manage_pending_sweeps, daemon=True).start()
+    threading.Thread(target=news_alert_loop, daemon=True).start()
 
-    # WEBHOOK MODE (no polling = no 409 conflict ever)
     if WEBHOOK_URL:
         print(f"[BOT] Setting webhook to: {WEBHOOK_URL}")
         try:
@@ -856,7 +1323,6 @@ if __name__ == "__main__":
         print("[HINT] Set WEBHOOK_URL=https://your-app.onrender.com/webhook in Render env vars.")
         bot.polling(none_stop=True, interval=3, timeout=60)
 
-    # CRITICAL: Keep main thread alive so Render doesn't kill the process
     print("[BOT] Main thread keeping process alive...")
     while True:
         time.sleep(3600)
