@@ -1,8 +1,28 @@
-pyTelegramBotAPI==4.14.0
-yfinance==0.2.40
-pandas==2.2.2
-numpy==1.26.4
-matplotlib==3.9.0
-requests==2.32.3
-pytz==2024.1
-flask==3.0.3
+# ============================================================
+# MULTI-STRATEGY TELEGRAM BOT — REQUIREMENTS
+# ============================================================
+# NOTE: yfinance has been REMOVED because Yahoo Finance blocks
+# cloud IPs (Render, AWS, GCP, etc.). We now use Twelve Data API
+# which works reliably from cloud servers.
+#
+# You MUST set the environment variable:
+#   TWELVE_DATA_API_KEY=your_key_here
+#
+# Get a free API key at: https://twelvedata.com
+# ============================================================
+
+# Telegram Bot API wrapper
+pyTelegramBotAPI>=4.12.0
+
+# Timezone handling
+pytz>=2023.3
+
+# Data manipulation & math
+numpy>=1.24.0
+pandas>=2.0.0
+
+# Chart generation
+matplotlib>=3.7.0
+
+# HTTP client for Twelve Data API (replaces yfinance)
+requests>=2.31.0
