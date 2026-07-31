@@ -1,5 +1,5 @@
 # Multi-Strategy Telegram Bot Requirements
-# yfinance is BACK — but with cloud-safe settings (threads=False + custom headers)
+# yfinance with cloud-safe settings (threads=False + custom headers)
 # No API keys needed for market data!
 
 pyTelegramBotAPI>=4.12.0
