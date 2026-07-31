@@ -65,7 +65,7 @@ BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━�
 # ============================================================
 # MESSAGES
 # ============================================================
-def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account):
+def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_time_str):
     arrow = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
     label = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
     dir_ = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
@@ -79,6 +79,9 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
         f"🎯 *Strategy:* {strat}\n"
         f"📊 *Direction:* {dir_}\n"
         f"⏱ *Timeframe:* {tf}\n"
+        f"{BR}\n"
+        f"⏰ *SIGNAL GENERATED AT:*\n"
+        f"🔔 `{signal_time_str}`\n"
         f"{BR}\n"
         f"💼 *PAPER TRADE EXECUTED*\n"
         f"{BR}\n"
@@ -167,9 +170,9 @@ def run_web():
 threading.Thread(target=run_web, daemon=True).start()
 
 # ============================================================
-# BOT
+# BOT — threaded=False to prevent 409 Conflict on Render
 # ============================================================
-bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=True)
+bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 
 def load_json(fp, default):
     try:
@@ -239,10 +242,9 @@ def is_market_open(symbol):
     return False
 
 # ============================================================
-# YFINANCE HELPERS (with cloud fixes)
+# YFINANCE HELPERS (cloud-safe)
 # ============================================================
 def yf_download(symbol, period, interval):
-    """Wrapper around yf.download with cloud-safe settings."""
     try:
         df = yf.download(
             symbol,
@@ -384,6 +386,14 @@ def calc_qty(account, entry, sl):
     dist = abs(entry - sl)
     return 0.0 if dist == 0 else float(risk / dist)
 
+def format_signal_time(ts_ms):
+    """Convert timestamp (ms) to bold IST string."""
+    try:
+        dt = datetime.fromtimestamp(ts_ms / 1000, tz=IST)
+        return dt.strftime("%d-%b-%Y %H:%M IST")
+    except Exception:
+        return "Unknown"
+
 def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
     global active_trades
     if "Sweep" in strat:
@@ -420,12 +430,13 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
     risk = abs(price - sl) * qty
-    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account)
+    signal_time_str = format_signal_time(ts)
+    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account, signal_time_str)
     markup = InlineKeyboardMarkup()
     markup.add(InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"),
                InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
     safe_send(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
-    print(f"[TRADE] {trade['type']} {symbol} @ {price}")
+    print(f"[TRADE] {trade['type']} {symbol} @ {price} | Signal: {signal_time_str}")
 
 # ============================================================
 # MONITOR TRADES
@@ -521,12 +532,12 @@ def scanner():
                 sweep = check_sweep(symbol)
                 if sweep:
                     execute(symbol, mtype, "sweep_4h", "Sweep + Engulfing", sweep[0], sweep[1], sweep[2], sweep[3], sweep[4])
-                time.sleep(2)  # slow down to avoid Yahoo rate limits
+                time.sleep(2)
             gc.collect()
         except Exception as e:
             print(f"[ERR] Scanner: {e}")
             safe_send(CHAT_ID, msg_error("Scanner", str(e)), parse_mode="Markdown")
-        time.sleep(300)  # scan every 5 minutes (was 60s — too aggressive for cloud)
+        time.sleep(300)
 
 # ============================================================
 # DAILY RESET
@@ -571,7 +582,6 @@ def cmd_start(m):
 
 @bot.message_handler(commands=["test"])
 def cmd_test(m):
-    """Test if yfinance works from Render."""
     chat_id = m.chat.id
     safe_send(chat_id, "🔍 *Testing data fetch...*\nThis may take 10 seconds.")
     def run():
@@ -805,7 +815,6 @@ if __name__ == "__main__":
     print(f" Web server: :{os.environ.get('PORT', 10000)}/ping")
     print("=" * 50)
 
-    # Send startup confirmation to Telegram
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
 
     threading.Thread(target=scanner, daemon=True).start()
@@ -813,12 +822,5 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset, daemon=True).start()
 
     print("[BOT] Polling Telegram...")
-    backoff = 5
-    while True:
-        try:
-            bot.polling(timeout=60, long_polling_timeout=10)
-            backoff = 5
-        except Exception as e:
-            print(f"[ERR] Poll crash: {e}")
-            time.sleep(backoff)
-            backoff = min(backoff * 2, 300)
+    # FIXED: threaded=False + none_stop=True prevents 409 Conflict
+    bot.polling(none_stop=True, interval=3, timeout=60)
