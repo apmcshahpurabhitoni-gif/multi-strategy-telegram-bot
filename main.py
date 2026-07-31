@@ -25,6 +25,8 @@ plt.style.use("dark_background")
 # ============================================================
 TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
+WEBHOOK_URL = os.environ.get("WEBHOOK_URL")  # e.g. https://your-app.onrender.com/webhook
+
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
 if not CHAT_ID:
@@ -80,7 +82,7 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
         f"📊 *Direction:* {dir_}\n"
         f"⏱ *Timeframe:* {tf}\n"
         f"{BR}\n"
-        f"⏰ *SIGNAL GENERATED AT:*\n"
+        f"⏰ *SIGNAL CANDLE CLOSED AT:*\n"
         f"🔔 `{signal_time_str}`\n"
         f"{BR}\n"
         f"💼 *PAPER TRADE EXECUTED*\n"
@@ -158,19 +160,41 @@ def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
 # ============================================================
-# WEB SERVER
+# WEB SERVER + WEBHOOK HANDLER (no polling = no 409 conflict)
 # ============================================================
 def run_web():
     def app(environ, start_response):
+        path = environ.get("PATH_INFO", "")
+        method = environ.get("REQUEST_METHOD", "GET")
+
+        if path == "/ping":
+            start_response("200 OK", [("Content-Type", "text/plain")])
+            return [b"pong"]
+
+        if path == "/webhook" and method == "POST":
+            try:
+                content_length = int(environ.get('CONTENT_LENGTH', 0))
+                body = environ['wsgi.input'].read(content_length)
+                update = telebot.types.Update.de_json(body.decode('utf-8'))
+                bot.process_new_updates([update])
+                start_response("200 OK", [("Content-Type", "text/plain")])
+                return [b"OK"]
+            except Exception as e:
+                print(f"[ERR] Webhook processing: {e}")
+                start_response("500 Internal Server Error", [("Content-Type", "text/plain")])
+                return [b"Error"]
+
         start_response("200 OK", [("Content-Type", "text/plain")])
         return [b"Trading Bot OK"]
+
     PORT = int(os.environ.get("PORT", 10000))
-    make_server("0.0.0.0", PORT, app).serve_forever()
+    srv = make_server("0.0.0.0", PORT, app)
+    srv.serve_forever()
 
 threading.Thread(target=run_web, daemon=True).start()
 
 # ============================================================
-# BOT — threaded=False to prevent 409 Conflict on Render
+# BOT
 # ============================================================
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 
@@ -387,10 +411,10 @@ def calc_qty(account, entry, sl):
     return 0.0 if dist == 0 else float(risk / dist)
 
 def format_signal_time(ts_ms):
-    """Convert timestamp (ms) to bold IST string."""
+    """Convert timestamp (ms) to bold IST (+5:30) string."""
     try:
         dt = datetime.fromtimestamp(ts_ms / 1000, tz=IST)
-        return dt.strftime("%d-%b-%Y %H:%M IST")
+        return dt.strftime("%d-%b-%Y %H:%M IST (+5:30)")
     except Exception:
         return "Unknown"
 
@@ -423,7 +447,7 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
             "entry": float(price), "sl": float(sl), "tp": float(tp),
             "qty": float(qty), "trail_sl": float(sl),
             "ts_trigger": ts,
-            "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
+            "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
         }
         active_trades.append(trade)
         accounts[account]["daily_trades"] += 1
@@ -476,7 +500,7 @@ def monitor():
                     t["exit_price"] = live
                     t["pnl"] = float(pnl)
                     t["result"] = "WIN" if hit_tp else "LOSS"
-                    t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M")
+                    t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
                     to_close.append(t)
                     save_json(ACCOUNTS_FILE, accounts)
                 hist = load_json(HISTORY_FILE, [])
@@ -633,7 +657,7 @@ def cmd_summary(m):
         else:
             lines.append(f"🔴 `{symbol}` · {mtype} · {muted}")
         time.sleep(0.5)
-    safe_send(m.chat.id, f"📊 *LIVE SUMMARY*\n{BR}\n{'\n'.join(lines)}\n{BR}\n🕐 `{datetime.now(IST).strftime('%H:%M:%S IST')}`\n{BR2}", parse_mode="Markdown")
+    safe_send(m.chat.id, f"📊 *LIVE SUMMARY*\n{BR}\n{'\n'.join(lines)}\n{BR}\n🕐 `{datetime.now(IST).strftime('%H:%M:%S IST (+5:30)')}`\n{BR2}", parse_mode="Markdown")
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
@@ -681,7 +705,7 @@ def cmd_balance(m):
         f"🇺🇸 *NY* — `₹{nyb:,.2f}` · Trades: `{nyd}/{ACCOUNT_LIMITS['ny_session']}`\n"
         f"🔵 *Sweep* — `₹{sb:,.2f}` · Trades: `{sd}/{ACCOUNT_LIMITS['sweep_4h']}`\n"
         f"{BR}\n{'🟢' if ny else '🔴'} *NY Session:* `{'ACTIVE' if ny else 'INACTIVE'}`\n"
-        f"🕐 `{datetime.now(IST).strftime('%H:%M:%S IST')}`\n{BR2}"
+        f"🕐 `{datetime.now(IST).strftime('%H:%M:%S IST (+5:30)')}`\n{BR2}"
     )
     safe_send(m.chat.id, text, parse_mode="Markdown")
 
@@ -821,6 +845,19 @@ if __name__ == "__main__":
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=daily_reset, daemon=True).start()
 
-    print("[BOT] Polling Telegram...")
-    # FIXED: threaded=False + none_stop=True prevents 409 Conflict
-    bot.polling(none_stop=True, interval=3, timeout=60)
+    # WEBHOOK MODE (no polling = no 409 conflict ever)
+    if WEBHOOK_URL:
+        print(f"[BOT] Setting webhook to: {WEBHOOK_URL}")
+        try:
+            bot.remove_webhook()
+            time.sleep(1)
+            bot.set_webhook(url=WEBHOOK_URL, timeout=20)
+            print("[BOT] Webhook active. Bot is listening via HTTP.")
+        except Exception as e:
+            print(f"[ERR] Webhook setup failed: {e}")
+            print("[BOT] Falling back to polling...")
+            bot.polling(none_stop=True, interval=3, timeout=60)
+    else:
+        print("[WARN] WEBHOOK_URL not set. Using polling (may cause 409 if another instance is running).")
+        print("[HINT] Set WEBHOOK_URL=https://your-app.onrender.com/webhook in Render env vars.")
+        bot.polling(none_stop=True, interval=3, timeout=60)
