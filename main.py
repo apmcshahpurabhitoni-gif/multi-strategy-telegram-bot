@@ -880,21 +880,20 @@ def news_impact_hint(title, currency):
 
 def format_news_message(events, title, filter_today_only=True):
     if not events:
-        return f"📰 *{title}*\n{BR}\n⚪ No events found.\n{BR2}"
-    lines = [f"📰 *{title}*\n{BR}"]
+        return f"📰 *{title}*\\n{BR}\\n⚪ No events found.\\n{BR2}"
+    lines = [f"📰 *{title}*\\n{BR}"]
     now = datetime.now(IST)
     today_str = now.strftime("%Y-%m-%d")
     for ev in events:
         try:
-            date = ev.get("date", "")
+            date = _extract_date(ev.get("date", ""))
             time_str = ev.get("time", "")
-            currency = ev.get("country", ev.get("currency", "???"))
-            title_ev = ev.get("title", "Unknown")
-            impact = ev.get("impact", "")
-            forecast = ev.get("forecast", "")
-            previous = ev.get("previous", "")
+            ...
             if filter_today_only and date != today_str:
                 continue
+
+
+
             ts_ist = ""
             try:
                 if time_str and time_str != "All Day":
@@ -929,6 +928,16 @@ def format_news_message(events, title, filter_today_only=True):
     lines.append(BR2)
     return "\n".join(lines)
 
+
+def _extract_date(date_str):
+    """Extract YYYY-MM-DD from ISO datetime string."""
+    if not date_str:
+        return ""
+    s = str(date_str)
+    if "T" in s:
+        return s.split("T")[0]
+    return s[:10] if len(s) >= 10 else s
+
 def get_today_high_impact_news():
     news = get_cached_news()
     now = datetime.now(IST)
@@ -936,10 +945,24 @@ def get_today_high_impact_news():
     filtered = []
     for ev in news:
         impact = str(ev.get("impact", "")).upper()
-        date = ev.get("date", "")
+        date = _extract_date(ev.get("date", ""))
         if date == today_str and impact in ("HIGH", "MEDIUM", "H", "M", "RED", "ORANGE", "YELLOW"):
             filtered.append(ev)
     return filtered
+
+def get_weekly_news():
+    """Return all upcoming events for the week, grouped by day."""
+    news = get_cached_news()
+    now = datetime.now(IST)
+    today_str = now.strftime("%Y-%m-%d")
+    # Filter: only today and future dates
+    filtered = []
+    for ev in news:
+        date = _extract_date(ev.get("date", ""))
+        if date >= today_str:
+            filtered.append(ev)
+    return filtered
+
 
 def news_alert_loop():
     alerted_events = set()
@@ -1210,8 +1233,8 @@ def cmd_news(m):
     chat_id = m.chat.id
     safe_send(chat_id, "📰 *Fetching economic calendar...*")
     def run():
-        events = get_today_high_impact_news()
-        msg = format_news_message(events, "TODAY'S ECONOMIC CALENDAR")
+        events = get_weekly_news()
+        msg = format_news_message(events, "📅 UPCOMING WEEK'S ECONOMIC CALENDAR", filter_today_only=False)
         safe_send(chat_id, msg, parse_mode="Markdown")
     threading.Thread(target=run, daemon=True).start()
 
@@ -1304,6 +1327,14 @@ if __name__ == "__main__":
     print(f" Web server: :{os.environ.get('PORT', 10000)}/ping")
     print("=" * 50)
 
+    # Force initial news fetch
+try:
+    NEWS_CACHE["data"] = fetch_news()
+    NEWS_CACHE["last_fetch"] = time.time()
+    print(f"[NEWS] Loaded {len(NEWS_CACHE['data'])} events on startup")
+except Exception as e:
+    print(f"[NEWS] Startup fetch failed: {e}")
+    
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
 
     threading.Thread(target=scanner, daemon=True).start()
