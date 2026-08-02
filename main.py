@@ -6,7 +6,7 @@ import gc
 from datetime import datetime, timedelta
 from io import BytesIO
 from wsgiref.simple_server import make_server
-import threading
+
 import requests
 import dashboard_api
 import numpy as np
@@ -924,7 +924,6 @@ def format_news_message(events, title, filter_today_only=True):
             currency = ev.get("country", ev.get("currency", "???"))
             forecast = ev.get("forecast", "")
             previous = ev.get("previous", "")
-            ...
             if filter_today_only and date != today_str:
                 continue
                 
