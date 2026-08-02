@@ -2,36 +2,18 @@
 Dashboard API for the multi-strategy Telegram bot.
 ==================================================
 
+Fixed: Now handles both 'main' and '__main__' module names.
+
 Drop this file at the REPO ROOT (next to main.py).
-
-It exposes:
-  - _batch_live_prices()  : batch yfinance fetch with 60s cache
-  - _build_snapshot()     : reads the same JSON files the bot already writes
-  - _route_dashboard()    : GET /api/dashboard
-  - _route_prices()       : GET /api/prices?symbols=...
-  - _route_dashboard_html(): GET /dashboard  (serves dashboard/index.html)
-  - register_routes(app_fn): helper to mount everything in your app()
-
-The bot's trading logic (execute, check_ut, check_sweep, news_alert_loop,
-manage_pending_sweeps, telegram handlers) is NOT touched.
 """
 
 import os
+import sys
 import json
 import time
 import threading
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs
-
-# Reuse the bot's modules at runtime. main.py does `import dashboard_api`
-# AFTER its own globals are set up, so these are looked up via the
-# dashboard_api.<name> path inside the functions below.
-import sys
-import builtins
-
-# We import lazily inside functions so circular-imports / undefined-globals
-# at module-load time don't bite. By the time the WSGI app handles a
-# request, main.py has fully executed and all globals exist.
 
 # Cache TTLs (seconds)
 PRICE_TTL = 60
@@ -41,21 +23,30 @@ NEWS_TTL = 600
 _snapshot_cache = {"data": None, "ts": 0}
 _snapshot_lock = threading.RLock()
 
-# Resolve the HTML path once, at import time. Works on Render because
-# main.py runs from the repo root.
+# Resolve the HTML path once, at import time.
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _HTML_PATH = os.path.join(_HERE, "dashboard", "index.html")
 
 
+def _get_main_module():
+    """Get the main module - handles both 'main' and '__main__' module names."""
+    # Try '__main__' first (when running with `python main.py`)
+    main = sys.modules.get("__main__")
+    if main is not None:
+        return main
+    # Fallback to 'main' (for direct imports)
+    return sys.modules.get("main")
+
+
 # ----------------------------------------------------------------
-# 1. Batch live prices  (the rate-limit-safe solution)
+# 1. Batch live prices
 # ----------------------------------------------------------------
 def _batch_live_prices(symbols):
     """ONE yf.download call for ALL uncached symbols. Returns {sym: price}."""
     if not symbols:
         return {}
 
-    main = sys.modules.get("main")
+    main = _get_main_module()
     if main is None:
         return {}
 
@@ -63,9 +54,9 @@ def _batch_live_prices(symbols):
     _price_cache = getattr(main, "_price_cache", None)
     _lock = getattr(main, "_lock", None)
     pd = getattr(main, "pd", None)
-    yf = getattr(main, "yf", None)
+    yf_lib = getattr(main, "yf", None)
 
-    if not (_yf_session and _price_cache is not None and _lock and pd and yf):
+    if not (_yf_session and _price_cache is not None and _lock and pd and yf_lib):
         return {}
 
     out = {}
@@ -85,7 +76,7 @@ def _batch_live_prices(symbols):
         return out
 
     try:
-        df = yf.download(
+        df = yf_lib.download(
             tickers=need,
             period="1d",
             interval="1m",
@@ -127,7 +118,7 @@ def _batch_live_prices(symbols):
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
 def _build_snapshot():
-    main = sys.modules.get("main")
+    main = _get_main_module()
     if main is None:
         return {"error": "main module not loaded"}
 
@@ -149,8 +140,6 @@ def _build_snapshot():
         return {"error": "missing bot globals"}
 
     try:
-        from zoneinfo import ZoneInfo
-        import pytz as _pytz
         now = datetime.now(IST)
     except Exception:
         now = datetime.now()
@@ -158,9 +147,9 @@ def _build_snapshot():
     today_str = now.strftime("%Y-%m-%d")
     week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
 
-    history = load_json(HISTORY_FILE, [])
-    sent = load_json(SENT_SIGNALS_FILE, {})
-    pending = list(pending_sweeps) if pending_sweeps else load_json(PENDING_SWEEPS_FILE, [])
+    history = load_json(HISTORY_FILE, []) if load_json else []
+    sent = load_json(SENT_SIGNALS_FILE, {}) if load_json else {}
+    pending = list(pending_sweeps) if pending_sweeps else (load_json(PENDING_SWEEPS_FILE, []) if load_json else [])
 
     # Per-account today/week P/L
     per_acc_today = {k: 0.0 for k in accounts}
@@ -184,6 +173,12 @@ def _build_snapshot():
     for key, acc in (accounts or {}).items():
         if not isinstance(acc, dict):
             continue
+        ny_active = False
+        if key == "ny_session" and is_ny_session:
+            try:
+                ny_active = is_ny_session()
+            except Exception:
+                ny_active = False
         accounts_view[key] = {
             "name": key.replace("_", " ").title(),
             "balance": float(acc.get("balance", 0)),
@@ -191,7 +186,7 @@ def _build_snapshot():
             "daily_limit": int(ACCOUNT_LIMITS.get(key, 0)),
             "today_pnl": round(per_acc_today.get(key, 0.0), 2),
             "week_pnl": round(per_acc_week.get(key, 0.0), 2),
-            "is_active": bool(is_ny_session()) if (key == "ny_session" and is_ny_session) else True,
+            "is_active": ny_active,
         }
 
     # Live trades
@@ -205,10 +200,9 @@ def _build_snapshot():
         sl = float(t.get("sl", 0))
         tp = float(t.get("tp", 0))
         qty = float(t.get("qty", 0))
-        direction = str(t.get("direction", "LONG")).upper()
+        direction = str(t.get("type", t.get("direction", "LONG"))).upper()
         is_long = "BULL" in direction or "LONG" in direction
         cur = live.get(sym, entry)
-        # P/L in the same units the bot uses (sign by direction)
         pnl = (cur - entry) * qty * (1 if is_long else -1)
         if is_long and tp != entry:
             progress = max(0.0, min(100.0, (cur - entry) / (tp - entry) * 100.0))
@@ -218,7 +212,7 @@ def _build_snapshot():
             progress = 0.0
         live_trades_view.append({
             "symbol": sym,
-            "market": t.get("mtype", "—"),
+            "market": t.get("market", t.get("mtype", "—")),
             "account": t.get("account", ""),
             "direction": "LONG" if is_long else "SHORT",
             "entry": entry, "current": cur, "sl": sl, "tp": tp,
@@ -275,7 +269,7 @@ def _build_snapshot():
             "expires_h": round(expires_h, 1),
         })
 
-    # News (capped so the response stays small)
+    # News
     news = []
     if get_cached_news:
         try:
@@ -372,13 +366,12 @@ def _route_dashboard_html(start_response):
 
 
 # ----------------------------------------------------------------
-# 5. Mount helper — call this from main.py's run_web() app()
+# 5. Mount helper
 # ----------------------------------------------------------------
 def register_routes(path, start_response, environ):
     """
-    Call this from inside your app() function BEFORE the default
-    200 OK fallback. Returns the response iterable, or None to
-    let the caller fall through to the default handler.
+    Call this from inside your app() function.
+    Returns the response iterable, or None to let the caller fall through.
     """
     method = environ.get("REQUEST_METHOD", "GET")
     qs = environ.get("QUERY_STRING", "")
