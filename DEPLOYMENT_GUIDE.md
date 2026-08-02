@@ -184,3 +184,111 @@ The MOCK fallback is intentional - it lets you see the dashboard layout even whe
 │       └── Returns JSON with accounts, trades, etc.         │
 └─────────────────────────────────────────────────────────────┘
 ```
+
+╔══════════════════════════════════════════════════════════════════════════════╗
+║                    COMPLETE FIX — ALL IN ONE GO                              ║
+╚══════════════════════════════════════════════════════════════════════════════╝
+
+You have 4 problems. Here are ALL the fixes:
+
+┌──────────────────────────────────────────────────────────────────────────────┐
+│ PROBLEM 1: Dashboard blank (--:--:--, all zeros)                             │
+│ PROBLEM 2: Live trade not showing (BTC-USD exists in API)                     │
+│ PROBLEM 3: News not showing (100+ events in API)                              │
+│ PROBLEM 4: Today's signals empty                                              │
+│ PROBLEM 5: Clock shows 24h instead of 12h AM/PM                              │
+└──────────────────────────────────────────────────────────────────────────────┘
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 1: REPLACE dashboard/index.html
+═══════════════════════════════════════════════════════════════════════════════
+
+Download this file:
+📎 dashboard_complete_fix.html
+
+Copy its contents and PASTE OVER your entire dashboard/index.html file.
+Do NOT make partial edits. Replace the WHOLE file.
+
+What this fixes:
+  ✅ 12-hour clock with AM/PM (01:30:45 PM instead of 13:30:45)
+  ✅ Clock shows immediately (no more --:--:--)
+  ✅ API timeout 30s instead of 12s (Render cold-start needs time)
+  ✅ renderAll() never bails — always renders even if API fails
+  ✅ Console logging so you can debug in browser
+  ✅ Global error handlers catch JS crashes
+  ✅ News parses ISO datetime correctly
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 2: REPLACE dashboard_api.py
+═══════════════════════════════════════════════════════════════════════════════
+
+Download this file:
+📎 dashboard_api_fixed.py
+
+Copy its contents and PASTE OVER your entire dashboard_api.py file.
+
+What this fixes:
+  ✅ today_signals now works with boolean sent_signals (old format)
+  ✅ Parses signal keys like "BTC-USD_1234567890123_BULLISH_macro"
+  ✅ Extracts symbol, timestamp, direction, account from key
+  ✅ Shows signals that triggered your trades
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 3: COMMIT & PUSH
+═══════════════════════════════════════════════════════════════════════════════
+
+git add dashboard/index.html dashboard_api.py
+git commit -m "Fix dashboard: 12h clock, render fallback, signal parsing, 30s timeout"
+git push origin main
+
+═══════════════════════════════════════════════════════════════════════════════
+STEP 4: WAIT & VERIFY
+═══════════════════════════════════════════════════════════════════════════════
+
+1. Go to Render dashboard → your service → wait for "Deploy in progress..." to finish
+2. Open: https://multi-strategy-telegram-bot-1.onrender.com/dashboard
+3. Hard refresh: Ctrl+Shift+R (or Cmd+Shift+R on Mac)
+4. Open DevTools (F12) → Console
+
+You should see:
+  [Dashboard] Starting bootstrap...
+  [Dashboard] API loaded, keys: ["accounts", "live_trades", "today_signals", ...]
+
+Then on the page you should see:
+  ✅ Clock: "01:25:45 PM IST · Updated just now · 02/08"
+  ✅ Total Equity: ₹4,00,000.00
+  ✅ Live Open Trades: 1 (BTC-USD LONG)
+  ✅ Today's Signals: your signal(s)
+  ✅ Weekly Economic Calendar: all 100+ events
+
+═══════════════════════════════════════════════════════════════════════════════
+WHY THESE FIXES WERE NEEDED
+═══════════════════════════════════════════════════════════════════════════════
+
+1. BLANK DASHBOARD
+   renderAll() had: if (!state.snapshot) return;
+   When API was slow, snapshot was null → renderAll bailed → nothing rendered
+   Fix: Remove guard, use MOCK fallback if API fails
+
+2. --:--:-- CLOCK
+   updateClock() only ran via setInterval(1000) — 1 second delay
+   renderAll() bailed before setting state.lastFullUpdate
+   Fix: Call updateClock() immediately before setInterval
+
+3. LIVE TRADE HIDDEN
+   Same as #1 — renderAll() bailed before renderLiveTrades()
+   Fix: Same as #1
+
+4. TODAY'S SIGNALS EMPTY
+   sent_signals.json stores: {"BTC-USD_1234567890123_BULLISH_macro": true}
+   dashboard_api.py expected: {"key": {"ts_ms": 123, "symbol": "BTC"...}}
+   isinstance(sig, dict) was always False → all signals skipped
+   Fix: Parse the key string when value is boolean
+
+5. NEWS HIDDEN
+   Same as #1 — renderAll() bailed before renderNews()
+   Fix: Same as #1
+
+6. 24-HOUR CLOCK
+   You wanted AM/PM format
+   Fix: Add h%12 logic with AM/PM suffix
