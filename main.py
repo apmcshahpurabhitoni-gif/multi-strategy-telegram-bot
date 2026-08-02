@@ -786,9 +786,35 @@ NEWS_CACHE = {"data": [], "last_fetch": 0}
 
 def fetch_news():
     try:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        r = requests.get(url, timeout=15)
-        data = r.json()
+        headers = {
+            "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36",
+            "Accept": "application/json",
+        }
+        response = requests.get(
+            "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+            headers=headers,
+            timeout=15,
+        )
+        if response.status_code != 200:
+            print(f"[NEWS] API returned {response.status_code}")
+            return []
+        if not response.text or not response.text.strip():
+            print("[NEWS] API returned empty response")
+            return []
+        data = response.json()
+        if not isinstance(data, list):
+            print(f"[NEWS] API returned unexpected format: {type(data)}")
+            return []
+        return data
+    except requests.exceptions.RequestException as e:
+        print(f"[NEWS] Network error: {e}")
+        return []
+    except json.JSONDecodeError as e:
+        print(f"[NEWS] JSON parse error: {e}")
+        return []
+    except Exception as e:
+        print(f"[NEWS] Unexpected error: {e}")
+        return []
         if isinstance(data, list):
             return data
         return []
@@ -799,9 +825,14 @@ def fetch_news():
 def get_cached_news():
     now = time.time()
     if now - NEWS_CACHE["last_fetch"] > 600:
-        NEWS_CACHE["data"] = fetch_news()
-        NEWS_CACHE["last_fetch"] = now
-    return NEWS_CACHE["data"]
+        try:
+            fresh = fetch_news()
+            if fresh:
+                NEWS_CACHE["data"] = fresh
+                NEWS_CACHE["last_fetch"] = now
+        except Exception as e:
+            print(f"[NEWS] Refresh failed: {e}")
+    return NEWS_CACHE["data"] or []
 
 def impact_emoji(impact):
     impact = str(impact).upper()
@@ -1328,12 +1359,18 @@ if __name__ == "__main__":
     print("=" * 50)
 
     # Force initial news fetch
+# Force initial news fetch on startup (wrapped safely)
 try:
-    NEWS_CACHE["data"] = fetch_news()
-    NEWS_CACHE["last_fetch"] = time.time()
-    print(f"[NEWS] Loaded {len(NEWS_CACHE['data'])} events on startup")
+    initial_news = fetch_news()
+    if initial_news:
+        NEWS_CACHE["data"] = initial_news
+        NEWS_CACHE["last_fetch"] = time.time()
+        print(f"[NEWS] Loaded {len(initial_news)} events on startup")
+    else:
+        print("[NEWS] No events loaded on startup, will retry later")
 except Exception as e:
     print(f"[NEWS] Startup fetch failed: {e}")
+    # Continue anyway — bot should not crash
     
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
 
