@@ -304,7 +304,12 @@ def _build_snapshot():
     news = []
     if get_cached_news:
         try:
-            news = get_cached_news()[:120]
+            raw = get_cached_news()[:120]
+            news = []
+            for ev in raw:
+                ev_copy = dict(ev)
+                ev_copy["impact"] = str(ev.get("impact", "")).upper()
+                news.append(ev_copy)
         except Exception:
             news = []
 
