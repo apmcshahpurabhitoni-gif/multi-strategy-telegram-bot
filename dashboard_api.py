@@ -3,6 +3,7 @@ Dashboard API for the multi-strategy Telegram bot.
 ==================================================
 
 Fixed: Now handles both 'main' and '__main__' module names.
+Fixed: Handles boolean sent_signals values (old format) and dict values (new format).
 
 Drop this file at the REPO ROOT (next to main.py).
 """
@@ -225,19 +226,49 @@ def _build_snapshot():
     today_signals = []
     cutoff = time.time() * 1000 - 24 * 3600 * 1000
     for key, sig in (sent or {}).items():
-        if not isinstance(sig, dict):
+        ts_ms = 0
+        sym = ""
+        sig_type = ""
+        strat = ""
+        status = "open"
+        pnl = 0
+        hint = ""
+        time_str = ""
+
+        if isinstance(sig, dict):
+            # New format: {key: {ts_ms, symbol, ...}}
+            ts_ms = sig.get("ts_ms", 0)
+            sym = sig.get("symbol", "")
+            sig_type = sig.get("sig_type", "")
+            strat = sig.get("strat", "")
+            status = sig.get("status", "open")
+            pnl = sig.get("pnl", 0)
+            hint = sig.get("hint", "")
+            time_str = sig.get("time_str", "")
+        else:
+            # Old format: {key: True} — parse key like "BTC-USD_1234567890123_BULLISH_macro"
+            parts = str(key).split("_")
+            if len(parts) >= 3:
+                sym = parts[0]
+                try:
+                    ts_ms = int(parts[1])
+                except ValueError:
+                    ts_ms = 0
+                sig_type = parts[2]
+                strat = parts[3] if len(parts) > 3 else ""
+            time_str = datetime.fromtimestamp(ts_ms / 1000).strftime("%H:%M") if ts_ms else ""
+
+        if ts_ms < cutoff:
             continue
-        ts = sig.get("ts_ms", 0)
-        if ts < cutoff:
-            continue
+
         today_signals.append({
-            "time": sig.get("time_str", "")[-5:],
-            "sym": sig.get("symbol", ""),
-            "dir": "LONG" if "BULL" in str(sig.get("sig_type", "")).upper() else "SHORT",
-            "strategy": sig.get("strat", ""),
-            "status": sig.get("status", "open"),
-            "pnl": sig.get("pnl", 0),
-            "hint": sig.get("hint", ""),
+            "time": time_str[-5:] if len(time_str) >= 5 else time_str,
+            "sym": sym,
+            "dir": "LONG" if "BULL" in str(sig_type).upper() else "SHORT",
+            "strategy": strat,
+            "status": status,
+            "pnl": pnl,
+            "hint": hint,
         })
     today_signals.sort(key=lambda x: x.get("time", ""), reverse=True)
 
