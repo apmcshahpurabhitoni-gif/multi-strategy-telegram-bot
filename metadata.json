@@ -1,6 +1,0 @@
-{
-  "name": "Multi-Strategy Telegram Bot Dashboard",
-  "description": "Real-time trading signal visualizer, strategy performance analytics, and Telegram bot control center optimized for Render 512MB RAM free tier.",
-  "requestFramePermissions": [],
-  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
-}
