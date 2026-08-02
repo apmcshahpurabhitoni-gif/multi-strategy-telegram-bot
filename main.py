@@ -6,7 +6,7 @@ import gc
 from datetime import datetime, timedelta
 from io import BytesIO
 from wsgiref.simple_server import make_server
-
+import threading
 import requests
 import dashboard_api
 import numpy as np
@@ -48,6 +48,7 @@ accounts = {}
 active_trades = []
 muted_assets = set()
 sent_signals = {}
+history = []
 pending_sweeps = []
 _lock = threading.RLock()
 _chart_lock = threading.RLock()
@@ -694,9 +695,9 @@ def monitor():
                     t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
                     to_close.append(t)
                     save_json(ACCOUNTS_FILE, accounts)
-                hist = load_json(HISTORY_FILE, [])
-                hist.append(t)
-                save_json(HISTORY_FILE, hist)
+                    global history
+                    history.append(t)
+                    save_json(HISTORY_FILE, history)
                 with _lock:
                     bal = accounts[t["account"]]["balance"]
                 safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, hit_tp), parse_mode="Markdown")
@@ -766,8 +767,9 @@ def daily_reset():
                 if len(sent_signals) > 500:
                     sent_signals = {k: sent_signals[k] for k in list(sent_signals.keys())[-500:]}
                 save_json(SENT_SIGNALS_FILE, sent_signals)
-                hist = load_json(HISTORY_FILE, [])
-                day_trades = [t for t in hist if t.get("close_time", "").startswith(last)]
+                global history
+                history = load_json(HISTORY_FILE, [])
+                day_trades = [t for t in history if t.get("close_time", "").startswith(last)]
                 day_pnl = sum(float(t["pnl"]) for t in day_trades)
                 safe_send(CHAT_ID, msg_midnight_reset(
                     day_pnl,
@@ -776,8 +778,9 @@ def daily_reset():
                     accounts["ny_session"]["balance"],
                     accounts["sweep_4h"]["balance"]
                 ), parse_mode="Markdown")
-                if len(hist) > 500:
-                    save_json(HISTORY_FILE, hist[-500:])
+                if len(history) > 500:
+                    history = history[-500:]
+                    save_json(HISTORY_FILE, history)
             last = today
             gc.collect()
         time.sleep(60)
@@ -817,11 +820,11 @@ def fetch_news():
         return []
     except Exception as e:
         print(f"[NEWS] Unexpected error: {e}")
-        return data
+        return []
 
 def get_cached_news():
     now = time.time()
-    if now - NEWS_CACHE["last_fetch"] > 600:
+    if now - NEWS_CACHE["last_fetch"] > 60:
         try:
             fresh = fetch_news()
             if fresh:
@@ -916,12 +919,15 @@ def format_news_message(events, title, filter_today_only=True):
         try:
             date = _extract_date(ev.get("date", ""))
             time_str = ev.get("time", "")
+            impact = str(ev.get("impact", "")).upper()
+            title_ev = ev.get("title", "Unknown")
+            currency = ev.get("country", ev.get("currency", "???"))
+            forecast = ev.get("forecast", "")
+            previous = ev.get("previous", "")
             ...
             if filter_today_only and date != today_str:
                 continue
-
-
-
+                
             ts_ist = ""
             try:
                 if time_str and time_str != "All Day":
@@ -1339,9 +1345,23 @@ def gen_chart(symbol, tf="1h"):
 
 
 # ============================================================
-# AUTO-SAVE: Persist all data every 30 seconds
+
+
 # ============================================================
-import threading
+# BOOT
+# ============================================================
+
+
+if __name__ == "__main__":
+    init_accounts()
+    muted_assets.update(load_json(MUTE_FILE, []))
+    active_trades = load_json(ACTIVE_TRADES_FILE, [])
+    sent_signals = load_json(SENT_SIGNALS_FILE, {})
+    pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
+    history = load_json(HISTORY_FILE, [])    # ← MUST come before auto-save
+
+    # AUTO-SAVE: Persist all data every 30 seconds
+# ============================================================
 
 def auto_save_loop():
     """Save all in-memory data to JSON files every 30 seconds."""
@@ -1358,18 +1378,6 @@ def auto_save_loop():
 
 # Start auto-save thread
 threading.Thread(target=auto_save_loop, daemon=True).start()  
-
-# ============================================================
-# BOOT
-# ============================================================
-
-
-if __name__ == "__main__":
-    init_accounts()
-    muted_assets.update(load_json(MUTE_FILE, []))
-    active_trades = load_json(ACTIVE_TRADES_FILE, [])
-    sent_signals = load_json(SENT_SIGNALS_FILE, {})
-    pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
 
     print("=" * 50)
     print(" Trading Bot Starting...")
