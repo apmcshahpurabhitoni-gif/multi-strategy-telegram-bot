@@ -272,6 +272,9 @@ def yf_download(symbol, period, interval):
             threads=False,
             session=_yf_session,
         )
+        if df is None or df.empty:
+            print(f"[WARN] No data for {symbol} ({interval}), possibly delisted")
+            return None
         if isinstance(df.columns, pd.MultiIndex):
             df.columns = df.columns.get_level_values(0)
         return df
@@ -814,13 +817,7 @@ def fetch_news():
         return []
     except Exception as e:
         print(f"[NEWS] Unexpected error: {e}")
-        return []
-        if isinstance(data, list):
-            return data
-        return []
-    except Exception as e:
-        print(f"[ERR] fetch_news: {e}")
-        return []
+        return data
 
 def get_cached_news():
     now = time.time()
@@ -1358,18 +1355,19 @@ if __name__ == "__main__":
     print(f" Web server: :{os.environ.get('PORT', 10000)}/ping")
     print("=" * 50)
 
-    # Force initial news fetch
+# Force initial news fetch
 # Force initial news fetch on startup (wrapped safely)
-try:
-    initial_news = fetch_news()
-    if initial_news:
-        NEWS_CACHE["data"] = initial_news
-        NEWS_CACHE["last_fetch"] = time.time()
-        print(f"[NEWS] Loaded {len(initial_news)} events on startup")
-    else:
-        print("[NEWS] No events loaded on startup, will retry later")
-except Exception as e:
-    print(f"[NEWS] Startup fetch failed: {e}")
+    # Force initial news fetch on startup
+    try:
+        initial_news = fetch_news()
+        if initial_news:
+            NEWS_CACHE["data"] = initial_news
+            NEWS_CACHE["last_fetch"] = time.time()
+            print(f"[NEWS] Loaded {len(initial_news)} events on startup")
+        else:
+            print("[NEWS] No events loaded on startup, will retry later")
+    except Exception as e:
+        print(f"[NEWS] Startup fetch failed: {e}")
     # Continue anyway — bot should not crash
     
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
