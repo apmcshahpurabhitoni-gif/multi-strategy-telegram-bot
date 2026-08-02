@@ -827,7 +827,7 @@ def get_cached_news():
     if now - NEWS_CACHE["last_fetch"] > 60:
         try:
             fresh = fetch_news()
-            if fresh:
+            if isinstance(fresh, list):
                 NEWS_CACHE["data"] = fresh
                 NEWS_CACHE["last_fetch"] = now
         except Exception as e:
@@ -1194,9 +1194,10 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
-    global active_trades
+    global active_trades, history          # ← ADD history here
     with _lock:
         active_trades = []
+        history = []                        # ← ADD this line
         for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
             accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
         save_json(ACCOUNTS_FILE, accounts)
