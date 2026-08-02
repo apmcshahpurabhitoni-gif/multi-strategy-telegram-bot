@@ -526,6 +526,57 @@
   .news-title { font-weight: 500; color: var(--text-1); }
   .news-meta { font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); margin-top: 2px; }
 
+  /* ===================== SECTION TOGGLES ===================== */
+  .section-toggle-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text-2);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    font-family: 'Outfit', sans-serif;
+    margin-left: auto;
+    flex-shrink: 0;
+  }
+  .section-toggle-btn:hover { background: var(--surface-3); color: var(--text-1); }
+  .section-toggle-btn .chevron { transition: transform 0.2s; font-size: 10px; }
+  .section-toggle-btn.expanded .chevron { transform: rotate(180deg); }
+  .section-content { display: block; }
+  .section-content.collapsed { display: none; }
+  .section-header-flex { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
+
+  /* News specific toggle */
+  .news-toggle-btn {
+    background: var(--surface-2);
+    border: 1px solid var(--line);
+    color: var(--text-2);
+    font-size: 11px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    transition: all 0.2s;
+    font-family: 'Outfit', sans-serif;
+  }
+  .news-toggle-btn:hover { background: var(--surface-3); color: var(--text-1); }
+  .news-toggle-btn .chevron { transition: transform 0.2s; font-size: 10px; }
+  .news-toggle-btn.expanded .chevron { transform: rotate(180deg); }
+  .news-events-all { display: none; }
+  .news-events-all.expanded { display: block; }
+  .news-events-high { display: block; }
+  .news-events-high.collapsed { display: none; }
+  .news-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
+  .news-day-head-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .news-high-summary { font-size: 11px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
+  .news-high-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); display: inline-block; }
+
   /* ===================== EMPTY + SKELETON ===================== */
   .empty { padding: 40px 20px; text-align: center; color: var(--text-3); font-size: 12.5px; }
   .empty svg { color: var(--text-4); margin-bottom: 8px; }
@@ -592,15 +643,19 @@
   <section class="grid-2">
     <div class="card">
       <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          Live Open Trades
-          <span class="card-sub" id="liveTradesCount">0</span>
+        <div class="section-header-flex">
+          <div class="card-title">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Live Open Trades
+            <span class="card-sub" id="liveTradesCount">0</span>
+          </div>
+          <button class="section-toggle-btn expanded" id="live-toggle" onclick="toggleSection('live')">Hide <span class="chevron">▲</span></button>
         </div>
         <span class="card-sub" id="liveTradesAge">—</span>
       </div>
+      <div class="section-content" id="live-content">
       <div class="trades-list" id="liveTradesMobile"></div>
       <table class="trades-table" id="liveTradesTable" style="width:100%; border-collapse:collapse;">
         <thead>
@@ -613,19 +668,25 @@
         </thead>
         <tbody id="liveTradesTableBody"></tbody>
       </table>
+      </div><!-- /live-content -->
     </div>
 
     <div class="card">
       <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-          </svg>
-          Today's Signals
-          <span class="card-sub" id="signalCount">0</span>
+        <div class="section-header-flex">
+          <div class="card-title">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
+            </svg>
+            Today's Signals
+            <span class="card-sub" id="signalCount">0</span>
+          </div>
+          <button class="section-toggle-btn expanded" id="signals-toggle" onclick="toggleSection('signals')">Hide <span class="chevron">▲</span></button>
         </div>
       </div>
+      <div class="section-content" id="signals-content">
       <div class="signals-list" id="signalsList"></div>
+      </div><!-- /signals-content -->
     </div>
   </section>
 
@@ -671,43 +732,58 @@
   <section class="grid-2">
     <div class="card">
       <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/>
-          </svg>
-          Last Closed Trades
+        <div class="section-header-flex">
+          <div class="card-title">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/>
+            </svg>
+            Last Closed Trades
+          </div>
+          <button class="section-toggle-btn expanded" id="history-toggle" onclick="toggleSection('history')">Hide <span class="chevron">▲</span></button>
         </div>
         <span class="card-sub" id="historySummary">—</span>
       </div>
+      <div class="section-content" id="history-content">
       <div class="history-list" id="historyList"></div>
+      </div><!-- /history-content -->
     </div>
 
     <div class="card">
       <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-          </svg>
-          Pending Setups
-          <span class="card-sub" id="pendingCount">0</span>
+        <div class="section-header-flex">
+          <div class="card-title">
+            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
+            </svg>
+            Pending Setups
+            <span class="card-sub" id="pendingCount">0</span>
+          </div>
+          <button class="section-toggle-btn expanded" id="pending-toggle" onclick="toggleSection('pending')">Hide <span class="chevron">▲</span></button>
         </div>
       </div>
+      <div class="section-content" id="pending-content">
       <div class="pending-list" id="pendingList"></div>
+      </div><!-- /pending-content -->
     </div>
   </section>
 
   <!-- NEWS -->
   <section class="card" style="margin-top: 16px;">
     <div class="card-head">
-      <div class="card-title">
-        <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-          <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-        </svg>
-        Weekly Economic Calendar
+      <div class="section-header-flex">
+        <div class="card-title">
+          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
+          </svg>
+          Weekly Economic Calendar
+        </div>
+        <button class="section-toggle-btn expanded" id="news-toggle" onclick="toggleSection('news')">Hide <span class="chevron">▲</span></button>
       </div>
-      <span class="card-sub">ET + IST · impact-coded</span>
+      <span class="card-sub">ET + IST · impact-coded · HIGH shown by default</span>
     </div>
+    <div class="section-content" id="news-content">
     <div id="newsGrid"></div>
+    </div><!-- /news-content -->
   </section>
 
 </div>
@@ -1361,6 +1437,42 @@ function renderPending() {
   }).join("");
 }
 
+function toggleSection(sectionId) {
+  const content = document.getElementById(sectionId + '-content');
+  const btn = document.getElementById(sectionId + '-toggle');
+  if (!content || !btn) return;
+  const isCollapsed = content.classList.contains('collapsed');
+  if (isCollapsed) {
+    content.classList.remove('collapsed');
+    btn.classList.add('expanded');
+    btn.innerHTML = 'Hide <span class="chevron">▲</span>';
+  } else {
+    content.classList.add('collapsed');
+    btn.classList.remove('expanded');
+    btn.innerHTML = 'Show <span class="chevron">▼</span>';
+  }
+}
+
+function toggleNewsDay(dayId) {
+  const highDiv = document.getElementById('high-' + dayId);
+  const allDiv = document.getElementById('all-' + dayId);
+  const btn = document.getElementById('btn-' + dayId);
+  if (!highDiv || !allDiv || !btn) return;
+
+  const isExpanded = allDiv.classList.contains('expanded');
+  if (isExpanded) {
+    allDiv.classList.remove('expanded');
+    highDiv.classList.remove('collapsed');
+    btn.classList.remove('expanded');
+    btn.innerHTML = 'Show all <span class="chevron">▼</span>';
+  } else {
+    allDiv.classList.add('expanded');
+    highDiv.classList.add('collapsed');
+    btn.classList.add('expanded');
+    btn.innerHTML = 'Show less <span class="chevron">▲</span>';
+  }
+}
+
 function renderNews() {
   const newsRaw = state.snapshot.news_raw || [];
   const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
@@ -1370,23 +1482,15 @@ function renderNews() {
   newsRaw.forEach(e => {
     const isoStr = e.date || "";
     if (!isoStr) return;
-
-    // Parse ISO datetime with timezone (e.g. "2026-08-02T17:00:00-04:00")
     const dt = new Date(isoStr);
     if (isNaN(dt)) return;
-
-    // Get calendar date in IST for grouping
     const dateKey = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-
-    // Format times
     const etTime = dt.toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
     const istTime = dt.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-
     if (!byDate[dateKey]) byDate[dateKey] = [];
     byDate[dateKey].push({ ...e, _etTime: etTime, _istTime: istTime });
   });
 
-  // Also include MOCK news if present (for demo)
   if (state.snapshot.news && typeof state.snapshot.news === 'object') {
     Object.entries(state.snapshot.news).forEach(([d, evs]) => {
       if (!byDate[d]) byDate[d] = evs;
@@ -1406,10 +1510,22 @@ function renderNews() {
     const d = new Date(date + "T00:00:00+05:30");
     const dn = dayNames[d.getDay()];
     const isToday = date === today;
-    const high = events.filter(e => (e.impact || '').toLowerCase() === 'high' || (e.impact || '').toUpperCase() === 'RED').length;
-    const highBadge = high > 0 ? `<span class="high-tag">${high} HIGH</span>` : "";
 
-    const eventsHtml = events.map(e => {
+    // Split into high impact and others
+    const highEvents = events.filter(e => {
+      const imp = (e.impact || '').toLowerCase();
+      return imp === 'high' || imp === 'red' || imp === 'holiday';
+    });
+    const otherEvents = events.filter(e => {
+      const imp = (e.impact || '').toLowerCase();
+      return imp !== 'high' && imp !== 'red' && imp !== 'holiday';
+    });
+
+    const hasOthers = otherEvents.length > 0;
+    const highCount = highEvents.length;
+    const totalCount = events.length;
+
+    const buildEventHtml = (e) => {
       const impact = (e.impact || '').toLowerCase();
       const impactClass = impact === 'high' || impact === 'red' ? 'i-high' : impact === 'med' || impact === 'yellow' || impact === 'orange' ? 'i-med' : 'i-low';
       const et = e._etTime || e.time || "—";
@@ -1423,14 +1539,29 @@ function renderNews() {
           <div class="news-meta">${e.forecast ? 'fcst ' + e.forecast : '—'} ${e.previous ? '· prev ' + e.previous : ''}</div>
         </div>
       </div>`;
-    }).join("");
+    };
+
+    const highHtml = highEvents.map(buildEventHtml).join("");
+    const allHtml = events.map(buildEventHtml).join("");
+    const dayId = 'news-day-' + date.replace(/-/g, '');
 
     return `<div class="news-day">
       <div class="news-day-head">
-        <div class="news-day-name ${isToday ? 'today' : ''}">${dn} <span class="date">${date}</span></div>
-        <div class="news-count">${events.length}${highBadge}</div>
+        <div class="news-day-head-left">
+          <div class="news-day-name ${isToday ? 'today' : ''}">${dn} <span class="date">${date}</span></div>
+          <div class="news-high-summary">
+            ${highCount > 0 ? `<span class="news-high-dot"></span>${highCount} HIGH` : '<span style="color:var(--text-3)">No high impact</span>'}
+            <span style="color:var(--text-3)">· ${totalCount} total</span>
+          </div>
+        </div>
+        ${hasOthers ? `<button class="news-toggle-btn" onclick="toggleNewsDay('${dayId}')" id="btn-${dayId}">
+          Show all <span class="chevron">▼</span>
+        </button>` : ''}
       </div>
-      ${eventsHtml}
+      <div class="news-events-high" id="high-${dayId}">
+        ${highHtml || '<div class="news-event" style="padding:12px 0;color:var(--text-3);font-size:12px;">No high impact events</div>'}
+      </div>
+      ${hasOthers ? `<div class="news-events-all" id="all-${dayId}">${allHtml}</div>` : ''}
     </div>`;
   }).join("");
 }
