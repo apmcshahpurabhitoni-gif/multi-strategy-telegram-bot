@@ -714,6 +714,16 @@
 
 <script>
 // ===========================
+// GLOBAL ERROR HANDLING
+// ===========================
+window.onerror = function(msg, url, line) {
+  console.error("[Dashboard] JS Error:", msg, "at line", line);
+};
+window.onunhandledrejection = function(e) {
+  console.error("[Dashboard] Promise Rejection:", e.reason);
+};
+
+// ===========================
 // CONFIG
 // ===========================
 const CONFIG = {
@@ -845,7 +855,7 @@ const relativeTime = (ts) => {
 async function apiFetch(path, opts = {}) {
   const url = CONFIG.API_BASE + path;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12000);
+  const t = setTimeout(() => ctrl.abort(), 30000);
   try {
     const r = await fetch(url, { cache: "no-store", signal: ctrl.signal, ...opts });
     if (!r.ok) throw new Error("HTTP " + r.status);
@@ -885,9 +895,10 @@ async function loadPrices() {
 // STATE MANAGEMENT
 // ===========================
 async function bootstrap() {
-  // Try API first
+  console.log("[Dashboard] Starting bootstrap...");
   try {
     const snap = await loadSnapshot();
+    console.log("[Dashboard] API loaded, keys:", snap ? Object.keys(snap) : "null");
     state.snapshot = snap;
     state.isMock = false;
     state.isOnline = true;
@@ -1028,12 +1039,16 @@ function updateStatusUI() {
 function updateClock() {
   const now = new Date();
   const ist = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60 * 1000);
-  const hh = String(ist.getHours()).padStart(2,"0");
+  let h = ist.getHours();
+  const ampm = h >= 12 ? 'PM' : 'AM';
+  h = h % 12;
+  h = h ? h : 12; // 0 becomes 12
+  const hh = String(h).padStart(2,"0");
   const mm = String(ist.getMinutes()).padStart(2,"0");
   const ss = String(ist.getSeconds()).padStart(2,"0");
   const dd = String(ist.getDate()).padStart(2,"0");
   const mo = String(ist.getMonth() + 1).padStart(2,"0");
-  document.getElementById("clock").innerHTML = `<b>${hh}:${mm}:${ss}</b> IST <span class="updated" id="updatedText">· ${relativeTime(state.lastFullUpdate)}</span> · ${dd}/${mo}`;
+  document.getElementById("clock").innerHTML = `<b>${hh}:${mm}:${ss} ${ampm}</b> IST <span class="updated" id="updatedText">· ${relativeTime(state.lastFullUpdate)}</span> · ${dd}/${mo}`;
   updateStatusUI();
 }
 
@@ -1571,7 +1586,10 @@ function switchDailyChart(key, btn) {
 }
 
 function renderAll() {
-  if (!state.snapshot) return;
+  if (!state.snapshot) {
+    console.warn("[Dashboard] snapshot null, using MOCK fallback");
+    state.snapshot = MOCK;
+  }
   renderKpis();
   renderAccounts();
   renderLiveTrades();
@@ -1589,6 +1607,7 @@ function renderAll() {
 document.querySelectorAll("[data-cum]").forEach(b => b.addEventListener("click", () => switchCumChart(b.dataset.cum, b)));
 document.querySelectorAll("[data-daily]").forEach(b => b.addEventListener("click", () => switchDailyChart(b.dataset.daily, b)));
 
+updateClock(); // run immediately
 setInterval(updateClock, 1000);
 
 bootstrap();
