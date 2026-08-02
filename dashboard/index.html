@@ -1,1747 +1,860 @@
 <!DOCTYPE html>
 <html lang="en">
 <head>
-<meta charset="UTF-8" />
-<meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<meta name="theme-color" content="#0a0e1a" />
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Mavis · Trade Command Center</title>
-<link rel="preconnect" href="https://fonts.googleapis.com">
-<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
-<link href="https://fonts.googleapis.com/css2?family=Outfit:wght@300;400;500;600;700&family=JetBrains+Mono:wght@400;500;600;700&display=swap" rel="stylesheet">
-<script src="https://cdn.jsdelivr.net/npm/chart.js@4.4.0/dist/chart.umd.min.js"></script>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg-0:        #07090f;
-    --bg-1:        #0a0e1a;
-    --bg-2:        #0f1424;
-    --surface:     #131a2c;
-    --surface-2:   #18203a;
-    --surface-3:   #1f2840;
-    --line:        rgba(255, 255, 255, 0.06);
-    --line-2:      rgba(255, 255, 255, 0.10);
-    --line-3:      rgba(255, 255, 255, 0.16);
-    --text-1:      #e8ecf5;
-    --text-2:      #9aa3b8;
-    --text-3:      #5d6477;
-    --text-4:      #3f4554;
-    --green:       #00d68f;
-    --green-soft:  rgba(0, 214, 143, 0.12);
-    --green-line:  rgba(0, 214, 143, 0.28);
-    --red:         #ff4d6a;
-    --red-soft:    rgba(255, 77, 106, 0.12);
-    --red-line:    rgba(255, 77, 106, 0.28);
-    --blue:        #4d9eff;
-    --blue-soft:   rgba(77, 158, 255, 0.12);
-    --blue-line:   rgba(77, 158, 255, 0.28);
-    --amber:       #ffb547;
-    --amber-soft:  rgba(255, 181, 71, 0.12);
-    --amber-line:  rgba(255, 181, 71, 0.28);
-    --violet:      #a78bfa;
-    --violet-soft: rgba(167, 139, 250, 0.12);
-    --violet-line: rgba(167, 139, 250, 0.28);
-    --font-sans: 'Outfit', sans-serif;
-    --font-mono: 'JetBrains Mono', monospace;
-    --tnum:      tabular-nums;
-    --r-sm:  8px;
-    --r-md:  12px;
-    --r-lg:  16px;
-    --r-xl:  20px;
-    --r-2xl: 24px;
+    --bg: #0a0e17;
+    --bg-elevated: #111827;
+    --bg-card: #1a2233;
+    --bg-card-hover: #1f2937;
+    --border: #1e293b;
+    --border-light: #334155;
+    --text: #e2e8f0;
+    --text-muted: #64748b;
+    --text-dim: #475569;
+    --accent: #10b981;
+    --accent-dim: #059669;
+    --accent-glow: rgba(16, 185, 129, 0.15);
+    --danger: #ef4444;
+    --danger-dim: #dc2626;
+    --warning: #f59e0b;
+    --warning-dim: #d97706;
+    --info: #3b82f6;
+    --info-dim: #2563eb;
+    --long: #10b981;
+    --short: #ef4444;
+    --tab-bg: #0f172a;
+    --tab-active: #1e293b;
+    --tab-icon: #475569;
+    --tab-icon-active: #10b981;
   }
-  * { box-sizing: border-box; }
-  html, body { margin: 0; padding: 0; }
-  body {
-    font-family: var(--font-sans);
-    background:
-      radial-gradient(ellipse 80% 50% at 50% -10%, rgba(77, 158, 255, 0.05), transparent 60%),
-      var(--bg-1);
-    color: var(--text-1);
-    font-size: 14px;
-    line-height: 1.5;
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body {
+    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+    background: var(--bg);
+    color: var(--text);
+    height: 100%;
+    overflow: hidden;
     -webkit-font-smoothing: antialiased;
-    letter-spacing: -0.003em;
-    min-height: 100vh;
   }
-  ::selection { background: rgba(77, 158, 255, 0.35); }
-  .mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; letter-spacing: -0.02em; }
-  .app { max-width: 1480px; margin: 0 auto; padding: 16px 16px 64px; }
-  @media (min-width: 768px) { .app { padding: 20px 24px 64px; } }
-  @media (min-width: 1280px) { .app { padding: 24px 32px 80px; } }
+  #app {
+    height: 100vh;
+    display: flex;
+    flex-direction: column;
+  }
 
-  /* ===================== TOPBAR ===================== */
-  .topbar {
-    display: flex; align-items: center; justify-content: space-between;
-    gap: 12px; padding: 12px 14px;
-    background: linear-gradient(180deg, rgba(19, 26, 44, 0.7) 0%, rgba(19, 26, 44, 0.4) 100%);
-    backdrop-filter: blur(20px) saturate(180%);
-    -webkit-backdrop-filter: blur(20px) saturate(180%);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    margin-bottom: 16px;
-    position: sticky; top: 8px; z-index: 50;
-  }
-  @media (min-width: 768px) { .topbar { padding: 14px 20px; } }
-  .brand { display: flex; align-items: center; gap: 10px; min-width: 0; flex: 1; }
-  .brand-mark {
-    width: 34px; height: 34px; border-radius: var(--r-md);
-    background: linear-gradient(135deg, #4d9eff 0%, #00d68f 100%);
-    display: flex; align-items: center; justify-content: center;
+  /* ── Header ── */
+  .header {
+    background: var(--bg-elevated);
+    border-bottom: 1px solid var(--border);
+    padding: 12px 16px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
     flex-shrink: 0;
-    box-shadow: 0 4px 16px rgba(77, 158, 255, 0.25), inset 0 1px 0 rgba(255,255,255,0.2);
+    z-index: 10;
   }
-  .brand-mark svg { color: #0a0e1a; }
-  .brand-text { min-width: 0; }
-  .brand-text h1 {
-    font-size: 14px; font-weight: 600; margin: 0; letter-spacing: -0.01em;
-    color: var(--text-1);
-    white-space: nowrap; overflow: hidden; text-overflow: ellipsis;
+  .header-left { display: flex; align-items: center; gap: 10px; }
+  .logo-dot {
+    width: 10px; height: 10px; border-radius: 50%;
+    background: var(--accent);
+    box-shadow: 0 0 8px var(--accent-glow);
+    animation: pulse 2s infinite;
   }
-  .brand-text .sub {
-    font-size: 10px; color: var(--text-3); font-weight: 500;
-    text-transform: uppercase; letter-spacing: 0.12em; margin-top: 1px;
-  }
-  @media (max-width: 640px) { .brand-text .sub { display: none; } }
-
-  .topbar-right { display: flex; align-items: center; gap: 8px; flex-shrink: 0; }
-
-  .status-pill {
-    display: inline-flex; align-items: center; gap: 6px;
-    padding: 5px 10px; border-radius: 999px;
-    font-size: 11px; font-weight: 600; letter-spacing: 0.02em;
-    border: 1px solid;
-  }
-  .status-pill.s-live   { background: var(--green-soft); border-color: var(--green-line); color: var(--green); }
-  .status-pill.s-stale  { background: var(--amber-soft); border-color: var(--amber-line); color: var(--amber); }
-  .status-pill.s-demo   { background: var(--blue-soft);  border-color: var(--blue-line);  color: var(--blue); }
-  .status-pill.s-error  { background: var(--red-soft);   border-color: var(--red-line);   color: var(--red); }
-  .status-dot {
-    width: 6px; height: 6px; border-radius: 50%;
-    box-shadow: 0 0 6px currentColor;
-  }
-  .status-pill.s-live .status-dot  { background: var(--green); animation: pulse 1.6s infinite; }
-  .status-pill.s-stale .status-dot { background: var(--amber); }
-  .status-pill.s-demo .status-dot  { background: var(--blue);  animation: pulse 1.6s infinite; }
-  .status-pill.s-error .status-dot { background: var(--red);   animation: pulse 1.0s infinite; }
   @keyframes pulse {
-    0%, 100% { opacity: 1; transform: scale(1); }
-    50% { opacity: 0.4; transform: scale(0.85); }
+    0%, 100% { opacity: 1; }
+    50% { opacity: 0.4; }
+  }
+  .header h1 {
+    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
+    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
+    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
+  }
+  .header .badge {
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-muted);
+    background: var(--bg-card); padding: 3px 8px;
+    border-radius: 4px; border: 1px solid var(--border);
+  }
+  .clock {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 600; color: var(--accent);
+    background: var(--bg-card); padding: 4px 10px;
+    border-radius: 6px; border: 1px solid var(--border);
+    letter-spacing: 0.5px;
   }
 
-  .clock { font-size: 11px; color: var(--text-2); font-weight: 500;
-    font-family: var(--font-mono); letter-spacing: 0; white-space: nowrap; }
-  .clock b { color: var(--text-1); font-weight: 600; }
-  .clock .updated { color: var(--text-3); margin-left: 4px; }
-  @media (max-width: 480px) { .clock { display: none; } }
+  /* ── Main Content Area ── */
+  .main-content {
+    flex: 1;
+    overflow-y: auto;
+    overflow-x: hidden;
+    padding: 12px 16px 100px 16px;
+    scroll-behavior: smooth;
+    -webkit-overflow-scrolling: touch;
+  }
+  .main-content::-webkit-scrollbar { width: 4px; }
+  .main-content::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
 
-  .icon-btn {
-    width: 34px; height: 34px; border-radius: var(--r-md);
-    background: var(--surface); border: 1px solid var(--line);
-    color: var(--text-2); cursor: pointer;
-    display: inline-flex; align-items: center; justify-content: center;
-    transition: all 0.18s;
+  /* ── Tab Pages ── */
+  .tab-page {
+    display: none;
+    animation: fadeIn 0.25s ease;
   }
-  .icon-btn:hover { background: var(--surface-2); color: var(--text-1); border-color: var(--line-2); }
-  .icon-btn.spinning svg { animation: spin 0.6s linear; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  .tab-page.active { display: block; }
+  @keyframes fadeIn {
+    from { opacity: 0; transform: translateY(6px); }
+    to { opacity: 1; transform: translateY(0); }
+  }
 
-  /* ===================== ERROR BANNER ===================== */
-  .error-banner {
-    background: var(--red-soft);
-    border: 1px solid var(--red-line);
-    color: var(--red);
-    padding: 10px 14px;
-    border-radius: var(--r-md);
-    margin-bottom: 16px;
-    font-size: 12.5px;
-    display: flex; align-items: center; gap: 10px;
-  }
-  .error-banner .retry-btn {
-    margin-left: auto;
-    background: transparent;
-    border: 1px solid var(--red-line);
-    color: var(--red);
-    padding: 4px 10px;
-    border-radius: 6px;
-    font-size: 11px;
-    font-weight: 600;
-    cursor: pointer;
-    text-transform: uppercase;
-    letter-spacing: 0.04em;
-  }
-  .error-banner .retry-btn:hover { background: var(--red-soft); }
-
-  /* ===================== KPI ===================== */
-  .kpi-row {
-    display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px; margin-bottom: 16px;
-  }
-  @media (min-width: 640px) { .kpi-row { grid-template-columns: repeat(3, 1fr); gap: 12px; } }
-  @media (min-width: 1024px) { .kpi-row { grid-template-columns: repeat(5, 1fr); } }
-
-  .kpi {
-    position: relative;
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: 16px 16px 14px;
-    transition: all 0.2s;
-    overflow: hidden;
-  }
-  .kpi:hover { border-color: var(--line-2); background: var(--surface-2); }
-  .kpi::before {
-    content: ""; position: absolute; top: 0; left: 0; right: 0; height: 1px;
-    background: linear-gradient(90deg, transparent, var(--accent-color, var(--blue)), transparent);
-    opacity: 0.5;
-  }
-  .kpi.accent-green  { --accent-color: var(--green); }
-  .kpi.accent-red    { --accent-color: var(--red); }
-  .kpi.accent-blue   { --accent-color: var(--blue); }
-  .kpi.accent-amber  { --accent-color: var(--amber); }
-  .kpi.accent-violet { --accent-color: var(--violet); }
-
-  .kpi-label {
-    font-size: 10px; font-weight: 600; color: var(--text-3);
-    text-transform: uppercase; letter-spacing: 0.1em;
-    margin-bottom: 8px;
-    display: flex; align-items: center; gap: 6px;
-  }
-  .kpi-label .ic { color: var(--accent-color, var(--text-2)); }
-  .kpi-value {
-    font-size: 22px; font-weight: 600; letter-spacing: -0.025em;
-    line-height: 1.1; color: var(--text-1);
-  }
-  @media (min-width: 1024px) { .kpi-value { font-size: 24px; } }
-  .kpi-value.t-green { color: var(--green); }
-  .kpi-value.t-red   { color: var(--red); }
-  .kpi-delta {
-    font-size: 11px; color: var(--text-2); margin-top: 6px;
-    display: flex; align-items: center; gap: 4px; font-weight: 500;
-  }
-  .kpi-delta.pos { color: var(--green); }
-  .kpi-delta.neg { color: var(--red); }
-
-  /* ===================== CARDS ===================== */
+  /* ── Cards ── */
   .card {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 12px;
     overflow: hidden;
+    transition: border-color 0.2s;
   }
-  .card-head {
+  .card:hover { border-color: var(--border-light); }
+  .card-header {
     padding: 14px 16px;
     display: flex; align-items: center; justify-content: space-between;
-    gap: 12px;
-    border-bottom: 1px solid var(--line);
-    background: linear-gradient(180deg, rgba(255,255,255,0.015), transparent);
+    border-bottom: 1px solid var(--border);
   }
-  @media (min-width: 768px) { .card-head { padding: 16px 20px; } }
   .card-title {
-    font-size: 12px; font-weight: 600; letter-spacing: 0.02em;
-    text-transform: uppercase; color: var(--text-1);
+    font-size: 13px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.5px;
     display: flex; align-items: center; gap: 8px;
   }
-  .card-title .ic { color: var(--text-2); }
-  .card-sub { font-size: 11px; color: var(--text-3); font-weight: 500; font-family: var(--font-mono); }
-
-  .grid-2 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px; }
-  .grid-3 { display: grid; grid-template-columns: 1fr; gap: 16px; margin-bottom: 16px; }
-  @media (min-width: 1024px) {
-    .grid-2 { grid-template-columns: 1.4fr 1fr; }
-    .grid-3 { grid-template-columns: 1fr 1fr 1fr; }
+  .card-title .icon { font-size: 15px; }
+  .card-badge {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 4px;
+    background: var(--bg-elevated); color: var(--text-dim);
   }
+  .card-body { padding: 12px 16px; }
+  .card-empty {
+    text-align: center; padding: 32px 16px;
+    color: var(--text-dim); font-size: 13px;
+  }
+  .card-empty .emoji { font-size: 28px; display: block; margin-bottom: 8px; opacity: 0.5; }
 
-  /* ===================== ACCOUNTS ===================== */
-  .accounts-row {
+  /* ── Account Cards (Overview Tab) ── */
+  .accounts-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px; margin-bottom: 16px;
+    gap: 10px;
+    margin-bottom: 12px;
   }
-  @media (min-width: 768px) { .accounts-row { grid-template-columns: repeat(2, 1fr); gap: 12px; } }
-  @media (min-width: 1024px) { .accounts-row { grid-template-columns: repeat(4, 1fr); } }
-
-  .account {
-    background: var(--surface);
-    border: 1px solid var(--line);
-    border-radius: var(--r-lg);
-    padding: 14px 14px 12px;
-    position: relative; overflow: hidden;
-    transition: all 0.2s;
+  .account-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
   }
-  .account:hover { border-color: var(--line-2); background: var(--surface-2); transform: translateY(-1px); }
-  .account::after {
-    content: ""; position: absolute; top: 0; left: 0; width: 3px; bottom: 0;
+  .account-card::before {
+    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
+  }
+  .account-card.macro::before { background: linear-gradient(90deg, #10b981, #059669); }
+  .account-card.nifty::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
+  .account-card.ny::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
+  .account-card.sweep::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+  .account-name {
+    font-size: 11px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px;
+  }
+  .account-balance {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px; font-weight: 700; color: var(--text);
+    margin-bottom: 8px;
+  }
+  .account-meta {
+    display: flex; align-items: center; justify-content: space-between;
+    font-size: 11px; color: var(--text-dim);
+  }
+  .account-pnl {
+    font-family: 'JetBrains Mono', monospace;
+    font-weight: 600; font-size: 11px;
+  }
+  .account-pnl.pos { color: var(--accent); }
+  .account-pnl.neg { color: var(--danger); }
+  .account-status {
+    width: 6px; height: 6px; border-radius: 50%;
+    background: var(--text-dim);
+  }
+  .account-status.active {
     background: var(--accent);
+    box-shadow: 0 0 6px var(--accent-glow);
   }
-  .account.macro      { --accent: linear-gradient(180deg, #4d9eff, #2563eb); }
-  .account.nifty      { --accent: linear-gradient(180deg, #ffb547, #d97706); }
-  .account.ny_session { --accent: linear-gradient(180deg, #a78bfa, #7c3aed); }
-  .account.sweep_4h   { --accent: linear-gradient(180deg, #00d68f, #059669); }
-  .acct-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .acct-name { display: flex; align-items: center; gap: 8px; }
-  .acct-icon {
-    width: 28px; height: 28px; border-radius: var(--r-sm);
+
+  /* ── Stats Row ── */
+  .stats-row {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
+    margin-bottom: 12px;
+  }
+  .stat-box {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 14px 10px; text-align: center;
+  }
+  .stat-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 20px; font-weight: 700; margin-bottom: 4px;
+  }
+  .stat-value.pos { color: var(--accent); }
+  .stat-value.neg { color: var(--danger); }
+  .stat-label {
+    font-size: 10px; font-weight: 500; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--text-dim);
+  }
+
+  /* ── Tables ── */
+  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
+  .data-table th {
+    text-align: left; padding: 8px 6px;
+    font-size: 10px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.5px; color: var(--text-dim);
+    border-bottom: 1px solid var(--border);
+    white-space: nowrap;
+  }
+  .data-table td {
+    padding: 10px 6px; border-bottom: 1px solid var(--border);
+    color: var(--text); font-family: 'JetBrains Mono', monospace;
+    font-size: 11px; white-space: nowrap;
+  }
+  .data-table tr:last-child td { border-bottom: none; }
+  .data-table .dir-long { color: var(--long); font-weight: 600; }
+  .data-table .dir-short { color: var(--short); font-weight: 600; }
+  .data-table .pnl-pos { color: var(--accent); }
+  .data-table .pnl-neg { color: var(--danger); }
+  .data-table .sym { font-weight: 600; color: var(--text); }
+  .data-table .dim { color: var(--text-dim); }
+
+  /* ── Progress Bar ── */
+  .progress-wrap {
+    width: 60px; height: 4px; background: var(--bg-elevated);
+    border-radius: 2px; overflow: hidden;
+  }
+  .progress-fill {
+    height: 100%; border-radius: 2px;
+    background: linear-gradient(90deg, var(--accent), var(--accent-dim));
+    transition: width 0.5s ease;
+  }
+
+  /* ── News ── */
+  .news-day-header {
+    font-size: 11px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.8px; color: var(--text-muted);
+    padding: 16px 0 8px 0;
+    display: flex; align-items: center; gap: 8px;
+  }
+  .news-day-header:first-child { padding-top: 0; }
+  .news-item {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
+    display: flex; align-items: flex-start; gap: 10px;
+    transition: all 0.2s;
+  }
+  .news-item:hover { border-color: var(--border-light); }
+  .news-impact {
+    width: 4px; height: 40px; border-radius: 2px; flex-shrink: 0;
+    margin-top: 2px;
+  }
+  .news-impact.high { background: var(--danger); box-shadow: 0 0 8px rgba(239,68,68,0.2); }
+  .news-impact.medium { background: var(--warning); }
+  .news-impact.low { background: var(--accent); }
+  .news-impact.holiday { background: var(--text-dim); }
+  .news-content { flex: 1; min-width: 0; }
+  .news-title {
+    font-size: 13px; font-weight: 600; color: var(--text);
+    margin-bottom: 3px; line-height: 1.3;
+  }
+  .news-meta {
+    font-size: 11px; color: var(--text-dim);
+    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
+  }
+  .news-meta .flag { font-size: 13px; }
+  .news-tag {
+    font-size: 9px; font-weight: 700; text-transform: uppercase;
+    letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px;
+  }
+  .news-tag.high { background: rgba(239,68,68,0.15); color: var(--danger); }
+  .news-tag.medium { background: rgba(245,158,11,0.15); color: var(--warning); }
+  .news-tag.low { background: rgba(16,185,129,0.15); color: var(--accent); }
+  .news-tag.holiday { background: rgba(100,116,139,0.15); color: var(--text-muted); }
+  .news-forecast {
+    font-size: 11px; color: var(--text-dim); margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .news-forecast span { color: var(--text-muted); }
+
+  /* ── Bottom Tab Bar ── */
+  .tab-bar {
+    position: fixed; bottom: 0; left: 0; right: 0;
+    background: var(--tab-bg);
+    border-top: 1px solid var(--border);
+    display: flex; justify-content: space-around;
+    align-items: center;
+    height: 64px;
+    padding-bottom: env(safe-area-inset-bottom, 0);
+    z-index: 100;
+    backdrop-filter: blur(20px);
+    -webkit-backdrop-filter: blur(20px);
+  }
+  .tab-btn {
+    flex: 1; display: flex; flex-direction: column;
+    align-items: center; justify-content: center;
+    gap: 3px; height: 100%; cursor: pointer;
+    background: none; border: none; color: var(--tab-icon);
+    transition: all 0.2s; position: relative;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .tab-btn:active { transform: scale(0.92); }
+  .tab-btn.active { color: var(--tab-icon-active); }
+  .tab-btn.active::before {
+    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
+    width: 24px; height: 3px; background: var(--accent);
+    border-radius: 0 0 3px 3px;
+  }
+  .tab-icon {
+    font-size: 20px; line-height: 1;
+    transition: transform 0.2s;
+  }
+  .tab-btn.active .tab-icon { transform: translateY(-1px); }
+  .tab-label {
+    font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
+  }
+  .tab-badge {
+    position: absolute; top: 6px; right: calc(50% - 16px);
+    min-width: 16px; height: 16px; border-radius: 8px;
+    background: var(--danger); color: white;
+    font-size: 9px; font-weight: 700;
     display: flex; align-items: center; justify-content: center;
-    font-size: 12px; font-weight: 700;
-    background: var(--surface-3); color: var(--text-1);
-    border: 1px solid var(--line);
-  }
-  .acct-name-text { font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: 0.01em; }
-  .acct-name-sub { font-size: 9.5px; color: var(--text-3); text-transform: uppercase; letter-spacing: 0.08em; font-weight: 500; }
-  .acct-status {
-    font-size: 9.5px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.08em;
-    padding: 3px 7px; border-radius: 999px;
-  }
-  .acct-status.active { background: var(--green-soft); color: var(--green); }
-  .acct-status.inactive { background: rgba(255,255,255,0.04); color: var(--text-3); }
-  .acct-balance {
-    font-size: 20px; font-weight: 600; letter-spacing: -0.02em; margin-bottom: 4px;
-    color: var(--text-1);
-  }
-  .acct-pnl { font-size: 11.5px; font-weight: 600; display: flex; align-items: center; gap: 4px; }
-  .acct-pnl.pos { color: var(--green); }
-  .acct-pnl.neg { color: var(--red); }
-  .acct-pnl .wk { color: var(--text-3); font-weight: 500; }
-  .acct-usage { margin-top: 10px; }
-  .acct-usage-row {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 10.5px; color: var(--text-3); margin-bottom: 5px;
-    font-weight: 500;
-  }
-  .acct-usage-row b { color: var(--text-1); font-weight: 600; font-family: var(--font-mono); }
-  .bar-bg { height: 4px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
-  .bar-fill { height: 100%; border-radius: 999px; transition: width 0.5s ease; }
-  .bar-fill.b-green { background: linear-gradient(90deg, #00d68f, #00b377); }
-  .bar-fill.b-amber { background: linear-gradient(90deg, #ffb547, #f59e0b); }
-  .bar-fill.b-red   { background: linear-gradient(90deg, #ff4d6a, #ef4444); }
-
-  /* ===================== LIVE TRADES ===================== */
-  .trades-list { padding: 0; }
-  .trade-row { display: none; }
-  .trades-table { display: none; }
-  .trade-card {
-    display: block;
-    padding: 14px 16px;
-    border-bottom: 1px solid var(--line);
-    transition: background 0.15s;
-  }
-  .trade-card:last-child { border-bottom: none; }
-  .trade-card:hover { background: rgba(255,255,255,0.015); }
-  .tc-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 10px; }
-  .tc-sym { display: flex; align-items: center; gap: 8px; font-weight: 600; font-size: 14px; }
-  .tc-sym .pulse {
-    width: 7px; height: 7px; border-radius: 50%; background: var(--green);
-    box-shadow: 0 0 6px var(--green);
-    animation: pulse 1.6s infinite;
-  }
-  .tc-acct {
-    font-size: 9.5px; padding: 3px 7px; border-radius: 4px;
-    background: var(--surface-3); color: var(--text-2);
-    font-weight: 600; text-transform: uppercase; letter-spacing: 0.06em;
-  }
-  .tc-pl { margin: 8px 0 10px; }
-  .tc-pl .num { font-size: 18px; font-weight: 600; font-family: var(--font-mono); letter-spacing: -0.02em; }
-  .tc-pl .pct { font-size: 11px; color: var(--text-3); font-family: var(--font-mono); margin-left: 6px; }
-  .tc-num.pos { color: var(--green); }
-  .tc-num.neg { color: var(--red); }
-  .tc-grid { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; margin-bottom: 10px; }
-  .tc-cell { font-size: 10.5px; }
-  .tc-cell .lbl { color: var(--text-3); font-size: 9.5px; text-transform: uppercase; letter-spacing: 0.06em; font-weight: 600; margin-bottom: 2px; }
-  .tc-cell .val { font-family: var(--font-mono); font-size: 12px; color: var(--text-1); }
-  .tc-cell.sl .val { color: var(--red); }
-  .tc-cell.tp .val { color: var(--green); }
-  .tc-progress { margin-top: 8px; }
-  .tc-progress .row {
-    display: flex; justify-content: space-between; align-items: center;
-    font-size: 10.5px; color: var(--text-3); margin-bottom: 5px;
-    font-family: var(--font-mono);
-  }
-  .tc-progress .row b { color: var(--text-1); font-weight: 600; }
-
-  .dir-badge {
-    font-size: 9.5px; font-weight: 700; padding: 3px 7px; border-radius: 4px;
-    text-transform: uppercase; letter-spacing: 0.06em; line-height: 1;
-  }
-  .dir-badge.long  { background: var(--green-soft); color: var(--green); }
-  .dir-badge.short { background: var(--red-soft);   color: var(--red); }
-
-  @media (min-width: 1100px) {
-    .trade-card { display: none; }
-    .trades-table { display: block; }
-    .trades-table thead th {
-      font-size: 10px; text-transform: uppercase; letter-spacing: 0.08em;
-      color: var(--text-3); font-weight: 600; padding: 12px 16px;
-      background: var(--bg-2); border-bottom: 1px solid var(--line);
-      text-align: left; white-space: nowrap;
-    }
-    .trades-table thead th.r { text-align: right; }
-    .trades-table tbody tr {
-      border-bottom: 1px solid var(--line);
-      transition: background 0.15s;
-    }
-    .trades-table tbody tr:hover { background: rgba(255,255,255,0.015); }
-    .trades-table tbody tr:last-child { border-bottom: none; }
-    .trades-table td { padding: 14px 16px; font-size: 13px; vertical-align: middle; }
+    padding: 0 4px; border: 2px solid var(--tab-bg);
   }
 
-  /* Flash animation on price change */
-  @keyframes flashUp {
-    0% { background: var(--green-soft); }
-    100% { background: transparent; }
-  }
-  @keyframes flashDown {
-    0% { background: var(--red-soft); }
-    100% { background: transparent; }
-  }
-  .flash-up   { animation: flashUp 0.8s ease-out; border-radius: 4px; }
-  .flash-down { animation: flashDown 0.8s ease-out; border-radius: 4px; }
-
-  /* ===================== SIGNALS ===================== */
-  .signals-list { padding: 0; }
-  .sig-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 12px 16px; border-bottom: 1px solid var(--line);
-    font-size: 12.5px; transition: background 0.15s;
-  }
-  .sig-item:hover { background: rgba(255,255,255,0.015); }
-  .sig-item:last-child { border-bottom: none; }
-  @media (min-width: 768px) { .sig-item { padding: 12px 20px; gap: 12px; } }
-  .sig-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-3); width: 44px; flex-shrink: 0; }
-  .sig-mid { flex: 1; min-width: 0; }
-  .sig-row1 { display: flex; align-items: center; gap: 6px; margin-bottom: 3px; }
-  .sig-sym { font-weight: 600; color: var(--text-1); font-size: 13px; }
-  .sig-strat { font-size: 11px; color: var(--text-3); }
-  .sig-hint { font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
-  .sig-right { text-align: right; flex-shrink: 0; }
-  .sig-pnl { font-family: var(--font-mono); font-size: 12.5px; font-weight: 600; }
-  .sig-status {
-    display: inline-block; font-size: 9.5px; font-weight: 700;
-    padding: 2px 7px; border-radius: 4px; margin-top: 3px;
-    text-transform: uppercase; letter-spacing: 0.06em;
-  }
-  .sig-status.s-open    { background: var(--blue-soft);  color: var(--blue); }
-  .sig-status.s-win     { background: var(--green-soft); color: var(--green); }
-  .sig-status.s-loss    { background: var(--red-soft);   color: var(--red); }
-  .sig-status.s-pending { background: var(--amber-soft); color: var(--amber); }
-
-  /* ===================== CHARTS ===================== */
-  .chart-toggle {
-    display: inline-flex; background: var(--surface-3); border-radius: var(--r-sm);
-    padding: 2px; gap: 1px;
-  }
-  .chart-toggle button {
-    border: none; background: transparent; padding: 4px 8px;
-    font-size: 10.5px; font-weight: 600; color: var(--text-3);
-    cursor: pointer; border-radius: 6px; transition: all 0.15s;
-    text-transform: uppercase; letter-spacing: 0.04em;
-  }
-  .chart-toggle button.active { background: var(--surface); color: var(--text-1); }
-  .chart-toggle button:hover:not(.active) { color: var(--text-1); }
-  .chart-wrap { padding: 16px 16px 18px; height: 220px; position: relative; }
-  @media (min-width: 768px) { .chart-wrap { padding: 16px 20px 20px; height: 240px; } }
-
-  /* ===================== HISTORY ===================== */
-  .history-list { padding: 0; }
-  .hist-item {
-    display: flex; align-items: center; gap: 10px;
-    padding: 11px 16px; border-bottom: 1px solid var(--line);
-    font-size: 12.5px;
-  }
-  .hist-item:last-child { border-bottom: none; }
-  @media (min-width: 768px) { .hist-item { padding: 12px 20px; } }
-  .hist-time { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); width: 44px; flex-shrink: 0; }
-  .hist-mid { flex: 1; min-width: 0; }
-  .hist-sym { font-weight: 600; color: var(--text-1); font-size: 12.5px; }
-  .hist-prices { font-family: var(--font-mono); font-size: 10.5px; color: var(--text-3); margin-top: 2px; }
-  .hist-right { text-align: right; flex-shrink: 0; }
-  .result-pill {
-    font-size: 9.5px; font-weight: 700; padding: 2px 7px; border-radius: 4px;
-    text-transform: uppercase; letter-spacing: 0.06em; display: inline-block;
-  }
-  .result-pill.r-win  { background: var(--green-soft); color: var(--green); }
-  .result-pill.r-loss { background: var(--red-soft);   color: var(--red); }
-
-  /* ===================== PENDING ===================== */
-  .pending-list { padding: 0; }
-  .pending-item { padding: 14px 16px; border-bottom: 1px solid var(--line); }
-  .pending-item:last-child { border-bottom: none; }
-  @media (min-width: 768px) { .pending-item { padding: 14px 20px; } }
-  .pending-head { display: flex; align-items: center; justify-content: space-between; margin-bottom: 8px; gap: 8px; }
-  .pending-sym { font-weight: 600; font-size: 13px; display: flex; align-items: center; gap: 8px; }
-  .pending-status {
-    font-size: 9.5px; padding: 3px 8px; border-radius: 4px; font-weight: 700;
-    text-transform: uppercase; letter-spacing: 0.06em; white-space: nowrap;
-  }
-  .pending-status.ps-fill { background: var(--amber-soft); color: var(--amber); }
-  .pending-status.ps-fvg  { background: var(--blue-soft);  color: var(--blue); }
-  .pending-zone {
-    font-family: var(--font-mono); font-size: 12px; color: var(--text-1);
-    background: var(--bg-2); padding: 6px 10px; border-radius: var(--r-sm);
-    margin-bottom: 8px; border: 1px solid var(--line);
-  }
-  .pending-zone.empty { color: var(--text-3); font-style: italic; }
-  .pending-expiry {
-    font-size: 11px; color: var(--text-3); display: flex; align-items: center; gap: 5px;
-    margin-bottom: 6px; font-family: var(--font-mono);
-  }
-  .expiry-bar { width: 100%; height: 3px; background: rgba(255,255,255,0.06); border-radius: 999px; overflow: hidden; }
-  .expiry-fill { height: 100%; background: linear-gradient(90deg, var(--green), var(--amber), var(--red)); border-radius: 999px; }
-
-  /* ===================== NEWS ===================== */
-  .news-day { padding: 12px 16px; border-bottom: 1px solid var(--line); }
-  .news-day:last-child { border-bottom: none; }
-  @media (min-width: 768px) { .news-day { padding: 14px 20px; } }
-  .news-day-head {
-    display: flex; align-items: center; justify-content: space-between; gap: 10px; margin-bottom: 10px;
-  }
-  .news-day-name { font-size: 12px; font-weight: 600; color: var(--text-1); letter-spacing: 0.01em; }
-  .news-day-name .date { color: var(--text-3); font-weight: 500; margin-left: 6px; font-size: 11px; }
-  .news-day-name.today { color: var(--green); }
-  .news-day-name.today::before {
-    content: ""; display: inline-block; width: 6px; height: 6px; border-radius: 50%;
-    background: var(--green); margin-right: 8px; box-shadow: 0 0 6px var(--green);
-  }
-  .news-count { font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); }
-  .news-count .high-tag {
-    background: var(--red-soft); color: var(--red); padding: 2px 6px; border-radius: 3px;
-    font-weight: 700; margin-left: 4px; font-size: 9.5px;
-  }
-  .news-event {
-    display: flex; align-items: center; gap: 10px; padding: 8px 0;
-    font-size: 12px; border-top: 1px solid rgba(255,255,255,0.03);
-  }
-  .news-event:first-child { border-top: none; }
-  .news-impact { width: 3px; align-self: stretch; border-radius: 2px; flex-shrink: 0; }
-  .news-impact.i-high { background: var(--red); }
-  .news-impact.i-med  { background: var(--amber); }
-  .news-impact.i-low  { background: var(--green); }
-  .news-time { font-family: var(--font-mono); font-size: 11px; color: var(--text-2); width: 90px; flex-shrink: 0; line-height: 1.3; }
-  .news-time .ist { color: var(--text-3); font-size: 10px; display: block; }
-  .news-curr {
-    font-size: 9.5px; font-weight: 700; padding: 3px 6px; border-radius: 3px;
-    background: var(--surface-3); color: var(--text-1); width: 36px; text-align: center;
-    flex-shrink: 0; letter-spacing: 0.05em;
-  }
-  .news-title-block { flex: 1; min-width: 0; }
-  .news-title { font-weight: 500; color: var(--text-1); }
-  .news-meta { font-size: 10.5px; color: var(--text-3); font-family: var(--font-mono); margin-top: 2px; }
-
-  /* ===================== SECTION TOGGLES ===================== */
-  .section-toggle-btn {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    color: var(--text-2);
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    transition: all 0.2s;
-    font-family: 'Outfit', sans-serif;
-    margin-left: auto;
-    flex-shrink: 0;
-  }
-  .section-toggle-btn:hover { background: var(--surface-3); color: var(--text-1); }
-  .section-toggle-btn .chevron { transition: transform 0.2s; font-size: 10px; }
-  .section-toggle-btn.expanded .chevron { transform: rotate(180deg); }
-  .section-content { display: block; }
-  .section-content.collapsed { display: none; }
-  .section-header-flex { display: flex; align-items: center; justify-content: space-between; width: 100%; gap: 8px; }
-
-  /* News specific toggle */
-  .news-toggle-btn {
-    background: var(--surface-2);
-    border: 1px solid var(--line);
-    color: var(--text-2);
-    font-size: 11px;
-    padding: 4px 10px;
-    border-radius: 6px;
-    cursor: pointer;
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    transition: all 0.2s;
-    font-family: 'Outfit', sans-serif;
-  }
-  .news-toggle-btn:hover { background: var(--surface-3); color: var(--text-1); }
-  .news-toggle-btn .chevron { transition: transform 0.2s; font-size: 10px; }
-  .news-toggle-btn.expanded .chevron { transform: rotate(180deg); }
-  .news-events-all { display: none; }
-  .news-events-all.expanded { display: block; }
-  .news-events-high { display: block; }
-  .news-events-high.collapsed { display: none; }
-  .news-day-head { display: flex; align-items: center; justify-content: space-between; gap: 8px; flex-wrap: wrap; }
-  .news-day-head-left { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
-  .news-high-summary { font-size: 11px; color: var(--text-2); display: flex; align-items: center; gap: 6px; }
-  .news-high-dot { width: 6px; height: 6px; border-radius: 50%; background: var(--red); display: inline-block; }
-
-  /* ===================== EMPTY + SKELETON ===================== */
-  .empty { padding: 40px 20px; text-align: center; color: var(--text-3); font-size: 12.5px; }
-  .empty svg { color: var(--text-4); margin-bottom: 8px; }
-  @keyframes shimmer {
-    0% { background-position: -200% 0; }
-    100% { background-position: 200% 0; }
-  }
+  /* ── Skeleton Loading ── */
   .skeleton {
-    background: linear-gradient(90deg, var(--surface) 0%, var(--surface-2) 50%, var(--surface) 100%);
+    background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--border) 50%, var(--bg-elevated) 75%);
     background-size: 200% 100%;
-    animation: shimmer 1.6s infinite;
+    animation: shimmer 1.5s infinite;
     border-radius: 4px;
   }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+
+  /* ── Toast ── */
+  .toast {
+    position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px);
+    background: var(--bg-card); border: 1px solid var(--border-light);
+    color: var(--text); padding: 10px 18px; border-radius: 8px;
+    font-size: 13px; font-weight: 500; z-index: 200;
+    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    pointer-events: none;
+  }
+  .toast.show { transform: translateX(-50%) translateY(0); }
+
+  /* ── Responsive ── */
+  @media (min-width: 768px) {
+    .accounts-grid { grid-template-columns: repeat(4, 1fr); }
+    .main-content { padding: 20px 24px 100px 24px; max-width: 900px; margin: 0 auto; }
+    .tab-bar { max-width: 900px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  }
 </style>
+<base target="_blank">
 </head>
 <body>
-<div class="app">
-
-  <!-- TOPBAR -->
-  <header class="topbar">
-    <div class="brand">
-      <div class="brand-mark">
-        <svg width="18" height="18" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.6" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
-        </svg>
-      </div>
-      <div class="brand-text">
-        <h1>Trade Command Center</h1>
-        <div class="sub">Paper · Multi-Account</div>
-      </div>
+<div id="app">
+  <!-- Header -->
+  <div class="header">
+    <div class="header-left">
+      <div class="logo-dot"></div>
+      <h1>Mavis</h1>
+      <span class="badge">Paper · Multi-Account</span>
     </div>
-    <div class="topbar-right">
-      <div class="status-pill s-live" id="statusPill">
-        <span class="status-dot"></span>
-        <span id="statusText">LIVE</span>
-      </div>
-      <div class="clock" id="clock">
-        <b>--:--:--</b> IST
-        <span class="updated" id="updatedText">—</span>
-      </div>
-      <button class="icon-btn" id="refreshBtn" onclick="manualRefresh()" title="Refresh now">
-        <svg width="15" height="15" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4" stroke-linecap="round" stroke-linejoin="round">
-          <polyline points="23 4 23 10 17 10"/><polyline points="1 20 1 14 7 14"/>
-          <path d="M3.51 9a9 9 0 0 1 14.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0 0 20.49 15"/>
-        </svg>
-      </button>
-    </div>
-  </header>
-
-  <!-- ERROR BANNER (hidden by default) -->
-  <div class="error-banner" id="errorBanner" style="display:none;">
-    <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-    <span id="errorText">Connection error</span>
-    <button class="retry-btn" onclick="manualRefresh()">Retry</button>
+    <div class="clock" id="clock">--:--:--</div>
   </div>
 
-  <!-- KPI ROW -->
-  <section class="kpi-row" id="kpiRow"></section>
+  <!-- Main Content -->
+  <div class="main-content" id="mainContent">
 
-  <!-- ACCOUNTS -->
-  <section class="accounts-row" id="accountsRow"></section>
-
-  <!-- LIVE TRADES + SIGNALS -->
-  <section class="grid-2">
-    <div class="card">
-      <div class="card-head">
-        <div class="section-header-flex">
-          <div class="card-title">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            Live Open Trades
-            <span class="card-sub" id="liveTradesCount">0</span>
-          </div>
-          <button class="section-toggle-btn expanded" id="live-toggle" onclick="toggleSection('live')">Hide <span class="chevron">▲</span></button>
+    <!-- TAB: OVERVIEW -->
+    <div class="tab-page active" id="tab-overview">
+      <div class="accounts-grid" id="accountsGrid"></div>
+      <div class="stats-row">
+        <div class="stat-box">
+          <div class="stat-value" id="statEquity">₹0</div>
+          <div class="stat-label">Total Equity</div>
         </div>
-        <span class="card-sub" id="liveTradesAge">—</span>
-      </div>
-      <div class="section-content" id="live-content">
-      <div class="trades-list" id="liveTradesMobile"></div>
-      <table class="trades-table" id="liveTradesTable" style="width:100%; border-collapse:collapse;">
-        <thead>
-          <tr>
-            <th>Symbol</th><th>Dir</th>
-            <th class="r">Entry</th><th class="r">Current</th>
-            <th class="r">SL</th><th class="r">TP</th>
-            <th class="r">P/L</th><th>Progress</th><th>Acct</th>
-          </tr>
-        </thead>
-        <tbody id="liveTradesTableBody"></tbody>
-      </table>
-      </div><!-- /live-content -->
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="section-header-flex">
-          <div class="card-title">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M6 8a6 6 0 0 1 12 0c0 7 3 9 3 9H3s3-2 3-9"/><path d="M10.3 21a1.94 1.94 0 0 0 3.4 0"/>
-            </svg>
-            Today's Signals
-            <span class="card-sub" id="signalCount">0</span>
-          </div>
-          <button class="section-toggle-btn expanded" id="signals-toggle" onclick="toggleSection('signals')">Hide <span class="chevron">▲</span></button>
+        <div class="stat-box">
+          <div class="stat-value pos" id="statToday">+₹0</div>
+          <div class="stat-label">Today P/L</div>
+        </div>
+        <div class="stat-box">
+          <div class="stat-value" id="statWeek">+₹0</div>
+          <div class="stat-label">Week P/L</div>
         </div>
       </div>
-      <div class="section-content" id="signals-content">
-      <div class="signals-list" id="signalsList"></div>
-      </div><!-- /signals-content -->
-    </div>
-  </section>
-
-  <!-- CHARTS -->
-  <section class="grid-2">
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/>
-          </svg>
-          Cumulative P/L
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">📊</span> Quick Status</div>
         </div>
-        <div class="chart-toggle">
-          <button class="active" data-cum="all">All</button>
-          <button data-cum="macro">Macro</button>
-          <button data-cum="nifty">Nifty</button>
-          <button data-cum="ny_session">NY</button>
-          <button data-cum="sweep_4h">Sweep</button>
+        <div class="card-body" id="quickStatus">
+          <div class="card-empty"><span class="emoji">⏳</span>Loading market data...</div>
         </div>
       </div>
-      <div class="chart-wrap"><canvas id="cumPLChart"></canvas></div>
     </div>
 
-    <div class="card">
-      <div class="card-head">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <line x1="12" y1="20" x2="12" y2="10"/><line x1="18" y1="20" x2="18" y2="4"/><line x1="6" y1="20" x2="6" y2="16"/>
-          </svg>
-          Daily P/L
+    <!-- TAB: TRADES -->
+    <div class="tab-page" id="tab-trades">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">🔥</span> Live Open Trades</div>
+          <div class="card-badge" id="liveCount">0</div>
         </div>
-        <div class="chart-toggle">
-          <button class="active" data-daily="week">Week</button>
-          <button data-daily="month">30d</button>
+        <div class="card-body" id="liveTradesBody">
+          <div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>
         </div>
       </div>
-      <div class="chart-wrap"><canvas id="dailyPLChart"></canvas></div>
-    </div>
-  </section>
-
-  <!-- HISTORY + PENDING -->
-  <section class="grid-2">
-    <div class="card">
-      <div class="card-head">
-        <div class="section-header-flex">
-          <div class="card-title">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <path d="M12 8v4l3 3"/><circle cx="12" cy="12" r="10"/>
-            </svg>
-            Last Closed Trades
-          </div>
-          <button class="section-toggle-btn expanded" id="history-toggle" onclick="toggleSection('history')">Hide <span class="chevron">▲</span></button>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">⏳</span> Pending Setups</div>
+          <div class="card-badge" id="pendingCount">0</div>
         </div>
-        <span class="card-sub" id="historySummary">—</span>
-      </div>
-      <div class="section-content" id="history-content">
-      <div class="history-list" id="historyList"></div>
-      </div><!-- /history-content -->
-    </div>
-
-    <div class="card">
-      <div class="card-head">
-        <div class="section-header-flex">
-          <div class="card-title">
-            <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-              <circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/>
-            </svg>
-            Pending Setups
-            <span class="card-sub" id="pendingCount">0</span>
-          </div>
-          <button class="section-toggle-btn expanded" id="pending-toggle" onclick="toggleSection('pending')">Hide <span class="chevron">▲</span></button>
+        <div class="card-body" id="pendingBody">
+          <div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>
         </div>
       </div>
-      <div class="section-content" id="pending-content">
-      <div class="pending-list" id="pendingList"></div>
-      </div><!-- /pending-content -->
     </div>
-  </section>
 
-  <!-- NEWS -->
-  <section class="card" style="margin-top: 16px;">
-    <div class="card-head">
-      <div class="section-header-flex">
-        <div class="card-title">
-          <svg class="ic" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
-            <path d="M2 3h6a4 4 0 0 1 4 4v14a3 3 0 0 0-3-3H2z"/><path d="M22 3h-6a4 4 0 0 0-4 4v14a3 3 0 0 1 3-3h7z"/>
-          </svg>
-          Weekly Economic Calendar
+    <!-- TAB: SIGNALS -->
+    <div class="tab-page" id="tab-signals">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">📡</span> Today's Signals</div>
+          <div class="card-badge" id="signalCount">0</div>
         </div>
-        <button class="section-toggle-btn expanded" id="news-toggle" onclick="toggleSection('news')">Hide <span class="chevron">▲</span></button>
+        <div class="card-body" id="signalsBody">
+          <div class="card-empty"><span class="emoji">📡</span>No signals fired in the last 24h</div>
+        </div>
       </div>
-      <span class="card-sub">ET + IST · impact-coded · HIGH shown by default</span>
     </div>
-    <div class="section-content" id="news-content">
-    <div id="newsGrid"></div>
-    </div><!-- /news-content -->
-  </section>
 
+    <!-- TAB: HISTORY -->
+    <div class="tab-page" id="tab-history">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">📜</span> Last Closed Trades</div>
+          <div class="card-badge" id="historyCount">0</div>
+        </div>
+        <div class="card-body" id="historyBody">
+          <div class="card-empty"><span class="emoji">📜</span>No closed trades yet</div>
+        </div>
+      </div>
+    </div>
+
+    <!-- TAB: NEWS -->
+    <div class="tab-page" id="tab-news">
+      <div id="newsContainer">
+        <div class="card-empty"><span class="emoji">📰</span>Loading economic calendar...</div>
+      </div>
+    </div>
+
+  </div>
+
+  <!-- Bottom Tab Bar -->
+  <div class="tab-bar">
+    <button class="tab-btn active" data-tab="overview">
+      <span class="tab-icon">🏠</span>
+      <span class="tab-label">Overview</span>
+    </button>
+    <button class="tab-btn" data-tab="trades">
+      <span class="tab-icon">🔥</span>
+      <span class="tab-label">Trades</span>
+      <span class="tab-badge" id="badgeTrades" style="display:none">0</span>
+    </button>
+    <button class="tab-btn" data-tab="signals">
+      <span class="tab-icon">📡</span>
+      <span class="tab-label">Signals</span>
+      <span class="tab-badge" id="badgeSignals" style="display:none">0</span>
+    </button>
+    <button class="tab-btn" data-tab="history">
+      <span class="tab-icon">📜</span>
+      <span class="tab-label">History</span>
+      <span class="tab-badge" id="badgeHistory" style="display:none">0</span>
+    </button>
+    <button class="tab-btn" data-tab="news">
+      <span class="tab-icon">📰</span>
+      <span class="tab-label">News</span>
+      <span class="tab-badge" id="badgeNews" style="display:none">0</span>
+    </button>
+  </div>
+
+  <!-- Toast -->
+  <div class="toast" id="toast"></div>
 </div>
 
 <script>
-// ===========================
-// GLOBAL ERROR HANDLING
-// ===========================
-window.onerror = function(msg, url, line) {
-  console.error("[Dashboard] JS Error:", msg, "at line", line);
-};
-window.onunhandledrejection = function(e) {
-  console.error("[Dashboard] Promise Rejection:", e.reason);
-};
+// ── State ──
+let state = { accounts: {}, live_trades: [], today_signals: [], history: [], pending: [], news_raw: [] };
+let currentTab = 'overview';
+const IST_OFFSET = 330; // minutes
 
-// ===========================
-// CONFIG
-// ===========================
-const CONFIG = {
-  REFRESH_FULL_MS:  30000,   // full snapshot every 30s
-  REFRESH_PRICE_MS: 10000,   // live prices every 10s
-  REFRESH_BACKOFF:  5000,    // on error, retry in 5s
-  API_BASE:         "",      // "" = same origin; set to "https://your-app.onrender.com" for cross-origin
-};
-
-// ===========================
-// MOCK FALLBACK (for local preview without API)
-// ===========================
-const MOCK = {
-  generated_at: new Date().toISOString(),
-  accounts: {
-    macro:      { name: "Macro",      sub: "FX · Crypto · Gold", balance: 112450.30, daily_trades: 12, daily_limit: 20, today_pnl: 3240.50, week_pnl: 8960.20, is_active: true  },
-    nifty:      { name: "Nifty",      sub: "Indian Indices",     balance:  98234.75, daily_trades: 2,  daily_limit: 3,  today_pnl: -540.25, week_pnl: 1245.00, is_active: true  },
-    ny_session: { name: "NY Session", sub: "US Session Overlap", balance: 105890.00, daily_trades: 1,  daily_limit: 3,  today_pnl: 1860.00, week_pnl: 4220.75, is_active: false },
-    sweep_4h:   { name: "Sweep 4H",   sub: "Sweep + FVG",        balance: 108720.50, daily_trades: 2,  daily_limit: 3,  today_pnl: 920.30,  week_pnl: 2810.40, is_active: true  },
-  },
-  live_trades: [
-    { symbol: "EURUSD=X", market: "FX",     account: "macro",      direction: "LONG",  entry: 1.0842,  current: 1.0876, sl: 1.0820,  tp: 1.0920,  qty: 10000, opened: "09:42", pnl_inr: 1240.50,  progress: 48 },
-    { symbol: "GC=F",     market: "Metals", account: "ny_session", direction: "LONG",  entry: 2365.4,  current: 2372.1, sl: 2355.0,  tp: 2385.0,  qty: 0.4,   opened: "13:15", pnl_inr: 2180.00,  progress: 32 },
-    { symbol: "BTC-USD",  market: "Crypto", account: "macro",      direction: "LONG",  entry: 62450,   current: 61890,  sl: 61000,   tp: 65000,   qty: 0.05,  opened: "11:28", pnl_inr: -1420.00, progress: 25 },
-    { symbol: "^NSEI",    market: "Index",  account: "nifty",      direction: "SHORT", entry: 24580,   current: 24495,  sl: 24700,   tp: 24300,   qty: 1,     opened: "09:18", pnl_inr: 850.00,   progress: 52 },
-    { symbol: "GBPUSD=X", market: "FX",     account: "sweep_4h",   direction: "SHORT", entry: 1.2715,  current: 1.2698, sl: 1.2745,  tp: 1.2640,  qty: 8000,  opened: "14:05", pnl_inr: 680.40,   progress: 38 },
-  ],
-  today_signals: [
-    { time: "14:32", sym: "BTC-USD",  dir: "LONG",  strategy: "Sweep 4H", status: "pending", pnl: 0,    hint: "FVG found, waiting fill" },
-    { time: "14:05", sym: "GBPUSD=X", dir: "SHORT", strategy: "UT Bot",   status: "open",    pnl: 680 },
-    { time: "13:15", sym: "GC=F",     dir: "LONG",  strategy: "UT Bot",   status: "open",    pnl: 2180 },
-    { time: "11:28", sym: "BTC-USD",  dir: "LONG",  strategy: "Sweep 4H", status: "open",    pnl: -1420 },
-    { time: "10:18", sym: "^NSEI",    dir: "SHORT", strategy: "UT Bot",   status: "win",     pnl: 1450 },
-    { time: "09:42", sym: "EURUSD=X", dir: "LONG",  strategy: "UT Bot",   status: "open",    pnl: 1240 },
-    { time: "09:18", sym: "EURUSD=X", dir: "LONG",  strategy: "Sweep 4H", status: "loss",    pnl: -480 },
-  ],
-  history: [
-    { time: "13:45", closed_at: "2025-07-31T13:45:00", sym: "USDJPY=X", dir: "SHORT", account: "macro",      entry: 156.20,  exit: 155.85, pnl: 1180.00, result: "WIN"  },
-    { time: "12:30", closed_at: "2025-07-31T12:30:00", sym: "^NSEBANK", dir: "LONG",  account: "nifty",      entry: 52140,   exit: 52050,  pnl: -540.25, result: "LOSS" },
-    { time: "11:55", closed_at: "2025-07-31T11:55:00", sym: "GC=F",     dir: "LONG",  account: "ny_session", entry: 2358.00, exit: 2365.40, pnl: 740.00,  result: "WIN"  },
-    { time: "10:18", closed_at: "2025-07-31T10:18:00", sym: "^NSEI",    dir: "SHORT", account: "nifty",      entry: 24595,   exit: 24495,  pnl: 1450.00, result: "WIN"  },
-    { time: "09:18", closed_at: "2025-07-31T09:18:00", sym: "EURUSD=X", dir: "LONG",  account: "sweep_4h",   entry: 1.0850,  exit: 1.0838, pnl: -480.00, result: "LOSS" },
-    { time: "08:42", closed_at: "2025-07-31T08:42:00", sym: "BTC-USD",  dir: "LONG",  account: "macro",      entry: 61900,   exit: 62450,  pnl: 1820.00, result: "WIN"  },
-    { time: "15:20", closed_at: "2025-07-30T15:20:00", sym: "GBPUSD=X", dir: "LONG",  account: "macro",      entry: 1.2680,  exit: 1.2715, pnl: 1380.00, result: "WIN"  },
-    { time: "14:00", closed_at: "2025-07-30T14:00:00", sym: "GC=F",     dir: "SHORT", account: "ny_session", entry: 2372.00, exit: 2368.00, pnl: 1600.00, result: "WIN"  },
-    { time: "11:30", closed_at: "2025-07-30T11:30:00", sym: "^NSEI",    dir: "LONG",  account: "nifty",      entry: 24420,   exit: 24505,  pnl: 1785.00, result: "WIN"  },
-    { time: "10:00", closed_at: "2025-07-30T10:00:00", sym: "BTC-USD",  dir: "SHORT", account: "sweep_4h",   entry: 62500,   exit: 62800,  pnl: -980.00, result: "LOSS" },
-    { time: "13:45", closed_at: "2025-07-29T13:45:00", sym: "EURUSD=X", dir: "SHORT", account: "macro",      entry: 1.0900,  exit: 1.0860, pnl: 1560.00, result: "WIN"  },
-    { time: "11:00", closed_at: "2025-07-29T11:00:00", sym: "^NSEI",    dir: "LONG",  account: "nifty",      entry: 24300,   exit: 24380,  pnl: 1280.00, result: "WIN"  },
-    { time: "14:30", closed_at: "2025-07-28T14:30:00", sym: "GC=F",     dir: "LONG",  account: "ny_session", entry: 2340.00, exit: 2355.00, pnl: 1200.00, result: "WIN"  },
-    { time: "10:15", closed_at: "2025-07-28T10:15:00", sym: "BTC-USD",  dir: "LONG",  account: "macro",      entry: 60800,   exit: 61200,  pnl: 1320.00, result: "WIN"  },
-    { time: "12:00", closed_at: "2025-07-28T12:00:00", sym: "USDJPY=X", dir: "LONG",  account: "sweep_4h",   entry: 156.80,  exit: 156.20,  pnl: -480.00, result: "LOSS" },
-  ],
-  pending: [
-    { sym: "BTC-USD",  dir: "BULLISH", status: "waiting-fill", zone: [61800, 62100], expires_h: 6.2  },
-    { sym: "EURUSD=X", dir: "BEARISH", status: "waiting-fvg",  zone: null,           expires_h: 18.4 },
-    { sym: "^NSEI",    dir: "BULLISH", status: "waiting-fvg",  zone: null,           expires_h: 21.0 },
-  ],
-  news_raw: [
-    { date: "2025-07-28", time: "08:30", country: "USD", title: "Core PCE Price Index",     impact: "high", forecast: "0.2%",  previous: "0.3%" },
-    { date: "2025-07-28", time: "09:00", country: "EUR", title: "ECB Lagarde Speaks",       impact: "med",  forecast: "",      previous: "" },
-    { date: "2025-07-29", time: "07:00", country: "GBP", title: "BoE Bailey Speaks",        impact: "med",  forecast: "",      previous: "" },
-    { date: "2025-07-29", time: "10:00", country: "USD", title: "Consumer Confidence",      impact: "med",  forecast: "100.8", previous: "102.0" },
-    { date: "2025-07-30", time: "06:45", country: "EUR", title: "Spanish Flash CPI",        impact: "low",  forecast: "0.3%",  previous: "0.4%" },
-    { date: "2025-07-30", time: "08:30", country: "USD", title: "ADP Non-Farm",             impact: "high", forecast: "148K",  previous: "150K" },
-    { date: "2025-07-30", time: "10:00", country: "USD", title: "ISM PMI",                  impact: "high", forecast: "48.5",  previous: "48.7" },
-    { date: "2025-07-31", time: "06:00", country: "EUR", title: "German Retail Sales",      impact: "med",  forecast: "0.2%",  previous: "-0.2%" },
-    { date: "2025-07-31", time: "08:30", country: "USD", title: "Jobless Claims",           impact: "high", forecast: "224K",  previous: "217K" },
-    { date: "2025-07-31", time: "11:00", country: "USD", title: "FOMC Statement",           impact: "high", forecast: "",      previous: "" },
-    { date: "2025-07-31", time: "11:30", country: "USD", title: "Powell Press Conf",        impact: "high", forecast: "",      previous: "" },
-    { date: "2025-08-01", time: "06:30", country: "EUR", title: "CPI Flash Estimate",       impact: "high", forecast: "2.4%",  previous: "2.5%" },
-    { date: "2025-08-01", time: "07:30", country: "GBP", title: "BoE Rate Decision",        impact: "high", forecast: "4.75%", previous: "5.00%" },
-    { date: "2025-08-01", time: "08:30", country: "USD", title: "Non-Farm Payrolls",        impact: "high", forecast: "175K",  previous: "206K" },
-  ],
-};
-
-// ===========================
-// STATE
-// ===========================
-const state = {
-  snapshot: null,        // last full snapshot from API
-  prevPrices: {},        // for flash detection
-  isMock: false,
-  isOnline: false,
-  lastFullUpdate: 0,
-  lastPriceUpdate: 0,
-  lastError: null,
-  intervals: [],
-};
-
-// ===========================
-// FORMATTERS
-// ===========================
-const fmtINR = n => {
-  if (n == null || isNaN(n)) return "—";
-  const sign = n < 0 ? "-" : "";
-  const abs = Math.abs(n);
-  return sign + "₹" + abs.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-};
-const fmtINRshort = n => {
-  if (n == null || isNaN(n)) return "—";
-  const abs = Math.abs(n), sign = n < 0 ? "-" : "";
-  if (abs >= 100000) return sign + "₹" + (abs/100000).toFixed(2) + "L";
-  if (abs >= 1000)   return sign + "₹" + (abs/1000).toFixed(1) + "K";
-  return sign + "₹" + abs.toFixed(0);
-};
-const fmtPrice = (p, sym) => {
-  if (p == null) return "—";
-  if (sym === "BTC-USD" || sym === "^NSEI" || sym === "^NSEBANK" || sym === "USDJPY=X") {
-    return p.toLocaleString("en-IN", { maximumFractionDigits: 0 });
-  }
-  if (sym === "GC=F") return p.toLocaleString("en-IN", { maximumFractionDigits: 2 });
-  return p.toFixed(4);
-};
-const escapeHTML = s => String(s ?? "").replace(/[&<>"']/g, c => ({ "&":"&amp;","<":"&lt;",">":"&gt;","\"":"&quot;","'":"&#39;" }[c]));
-
-const relativeTime = (ts) => {
-  if (!ts) return "—";
-  const sec = Math.floor((Date.now() - ts) / 1000);
-  if (sec < 5)   return "just now";
-  if (sec < 60)  return sec + "s ago";
-  if (sec < 3600) return Math.floor(sec/60) + "m ago";
-  return Math.floor(sec/3600) + "h ago";
-};
-
-// ===========================
-// API CALLS
-// ===========================
-async function apiFetch(path, opts = {}) {
-  const url = CONFIG.API_BASE + path;
-  const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 30000);
-  try {
-    const r = await fetch(url, { cache: "no-store", signal: ctrl.signal, ...opts });
-    if (!r.ok) throw new Error("HTTP " + r.status);
-    return await r.json();
-  } finally {
-    clearTimeout(t);
-  }
-}
-
-async function loadSnapshot() {
-  if (state.isMock) {
-    // MOCK: simulate realistic price drift
-    if (state.snapshot) {
-      state.snapshot.live_trades.forEach(t => {
-        const drift = (Math.random() - 0.5) * 0.001;
-        t.current = +(t.current * (1 + drift)).toFixed(t.current > 100 ? 2 : 4);
-      });
-    }
-    return state.snapshot || MOCK;
-  }
-  return await apiFetch("/api/dashboard");
-}
-
-async function loadPrices() {
-  if (state.isMock) return null;  // snapshot already has prices
-  if (!state.snapshot?.live_trades?.length) return {};
-  const symbols = state.snapshot.live_trades.map(t => t.symbol).join(",");
-  try {
-    const r = await apiFetch("/api/prices?symbols=" + encodeURIComponent(symbols));
-    return r.prices || {};
-  } catch (e) {
-    return null;  // signal error
-  }
-}
-
-// ===========================
-// STATE MANAGEMENT
-// ===========================
-async function bootstrap() {
-  console.log("[Dashboard] Starting bootstrap...");
-  try {
-    const snap = await loadSnapshot();
-    console.log("[Dashboard] API loaded, keys:", snap ? Object.keys(snap) : "null");
-    state.snapshot = snap;
-    state.isMock = false;
-    state.isOnline = true;
-    state.lastError = null;
-  } catch (e) {
-    // API down or file:// — fall back to MOCK
-    state.isMock = true;
-    state.isOnline = false;
-    state.snapshot = JSON.parse(JSON.stringify(MOCK));
-    state.lastError = e.message;
-  }
-  state.lastFullUpdate = Date.now();
-  state.lastPriceUpdate = Date.now();
-  renderAll();
-  startAutoRefresh();
-  updateStatusUI();
-}
-
-async function refreshFull() {
-  try {
-    const snap = await loadSnapshot();
-    state.snapshot = snap;
-    state.isOnline = !state.isMock;
-    state.lastFullUpdate = Date.now();
-    state.lastError = null;
-    renderAll();
-    updateStatusUI();
-  } catch (e) {
-    state.lastError = e.message;
-    updateStatusUI();
-  }
-}
-
-async function refreshPrices() {
-  if (state.isMock) {
-    // For MOCK, simulate live drift
-    if (state.snapshot?.live_trades) {
-      state.prevPrices = {};
-      state.snapshot.live_trades.forEach(t => {
-        state.prevPrices[t.symbol] = t.current;
-        const drift = (Math.random() - 0.5) * 0.0015;
-        t.current = +(t.current * (1 + drift)).toFixed(t.current > 100 ? 2 : 4);
-        if (t.direction === "LONG") {
-          t.pnl_inr = (t.current - t.entry) * t.qty;
-          t.progress = Math.max(0, Math.min(100, ((t.current - t.entry) / (t.tp - t.entry)) * 100));
-        } else {
-          t.pnl_inr = (t.entry - t.current) * t.qty;
-          t.progress = Math.max(0, Math.min(100, ((t.entry - t.current) / (t.entry - t.tp)) * 100));
-        }
-      });
-      state.lastPriceUpdate = Date.now();
-      updateLiveTradesOnly();
-      updateStatusUI();
-    }
-    return;
-  }
-  const prices = await loadPrices();
-  if (!prices) {
-    // API error on price refresh
-    state.lastError = "Price refresh failed";
-    updateStatusUI();
-    return;
-  }
-  state.prevPrices = {};
-  if (state.snapshot?.live_trades) {
-    state.snapshot.live_trades.forEach(t => {
-      state.prevPrices[t.symbol] = t.current;
-      if (prices[t.symbol] != null) {
-        t.current = prices[t.symbol];
-        if (t.direction === "LONG") {
-          t.pnl_inr = (t.current - t.entry) * t.qty;
-          t.progress = Math.max(0, Math.min(100, ((t.current - t.entry) / (t.tp - t.entry)) * 100));
-        } else {
-          t.pnl_inr = (t.entry - t.current) * t.qty;
-          t.progress = Math.max(0, Math.min(100, ((t.entry - t.current) / (t.entry - t.tp)) * 100));
-        }
-      }
-    });
-  }
-  state.lastPriceUpdate = Date.now();
-  updateLiveTradesOnly();
-  updateStatusUI();
-}
-
-function startAutoRefresh() {
-  state.intervals.forEach(clearInterval);
-  state.intervals = [
-    setInterval(refreshFull,   CONFIG.REFRESH_FULL_MS),
-    setInterval(refreshPrices, CONFIG.REFRESH_PRICE_MS),
-  ];
-}
-
-function manualRefresh() {
-  const btn = document.getElementById("refreshBtn");
-  btn.classList.add("spinning");
-  setTimeout(() => btn.classList.remove("spinning"), 600);
-  refreshFull();
-  refreshPrices();
-}
-
-// ===========================
-// UI: STATUS + CLOCK
-// ===========================
-function updateStatusUI() {
-  const pill = document.getElementById("statusPill");
-  const text = document.getElementById("statusText");
-  const errBanner = document.getElementById("errorBanner");
-  const errText = document.getElementById("errorText");
-
-  pill.className = "status-pill";
-  if (state.isMock) {
-    pill.classList.add("s-demo");
-    text.textContent = "DEMO";
-    errBanner.style.display = "none";
-  } else if (!state.isOnline) {
-    pill.classList.add("s-error");
-    text.textContent = "OFFLINE";
-    if (state.lastError) {
-      errText.textContent = `Couldn't reach /api/dashboard: ${state.lastError}. Showing cached data.`;
-      errBanner.style.display = "flex";
-    }
-  } else {
-    const age = state.lastPriceUpdate ? (Date.now() - state.lastPriceUpdate) / 1000 : 999;
-    if (age > 60) {
-      pill.classList.add("s-stale");
-      text.textContent = "STALE";
-    } else {
-      pill.classList.add("s-live");
-      text.textContent = "LIVE";
-    }
-    errBanner.style.display = "none";
-  }
-
-  document.getElementById("updatedText").textContent = "· " + relativeTime(state.lastFullUpdate);
-  document.getElementById("liveTradesAge").textContent = state.lastPriceUpdate ? relativeTime(state.lastPriceUpdate) : "—";
-}
-
+// ── Clock ──
 function updateClock() {
   const now = new Date();
-  const ist = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60 * 1000);
-  let h = ist.getHours();
+  const offset = now.getTimezoneOffset();
+  const istTime = new Date(now.getTime() + (offset + IST_OFFSET) * 60000);
+  const h = istTime.getHours();
+  const m = istTime.getMinutes();
+  const s = istTime.getSeconds();
   const ampm = h >= 12 ? 'PM' : 'AM';
-  h = h % 12;
-  h = h ? h : 12; // 0 becomes 12
-  const hh = String(h).padStart(2,"0");
-  const mm = String(ist.getMinutes()).padStart(2,"0");
-  const ss = String(ist.getSeconds()).padStart(2,"0");
-  const dd = String(ist.getDate()).padStart(2,"0");
-  const mo = String(ist.getMonth() + 1).padStart(2,"0");
-  document.getElementById("clock").innerHTML = `<b>${hh}:${mm}:${ss} ${ampm}</b> IST <span class="updated" id="updatedText">· ${relativeTime(state.lastFullUpdate)}</span> · ${dd}/${mo}`;
-  updateStatusUI();
+  const h12 = h % 12 || 12;
+  document.getElementById('clock').textContent =
+    `${String(h12).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ${ampm}`;
 }
+updateClock();
+setInterval(updateClock, 1000);
 
-// ===========================
-// RENDERERS
-// ===========================
-function renderKpis() {
-  const a = state.snapshot.accounts || {};
-  const accs = ["macro","nifty","ny_session","sweep_4h"];
-  const total = accs.reduce((s, k) => s + (a[k]?.balance || 0), 0);
-  const today = accs.reduce((s, k) => s + (a[k]?.today_pnl || 0), 0);
-  const week  = accs.reduce((s, k) => s + (a[k]?.week_pnl || 0), 0);
-  const active = state.snapshot.live_trades?.length || 0;
-  const history = state.snapshot.history || [];
-  const closed = history.length;
-  const wins = history.filter(t => t.result === "WIN").length;
-  const wr = closed > 0 ? Math.round((wins / closed) * 100) : 0;
-  const wrClass = wr >= 60 ? "accent-green" : wr >= 40 ? "accent-amber" : "accent-red";
-  const todayClass = today >= 0 ? "accent-green" : "accent-red";
-  const weekClass = week >= 0 ? "accent-green" : "accent-red";
-
-  document.getElementById("kpiRow").innerHTML = `
-    <div class="kpi accent-blue">
-      <div class="kpi-label"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="2" y="6" width="20" height="12" rx="2"/><circle cx="12" cy="12" r="2.5"/></svg>Total Equity</div>
-      <div class="kpi-value mono">₹${total.toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-      <div class="kpi-delta">4 accounts</div>
-    </div>
-    <div class="kpi ${todayClass}">
-      <div class="kpi-label"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="22 7 13.5 15.5 8.5 10.5 2 17"/><polyline points="16 7 22 7 22 13"/></svg>Today P/L</div>
-      <div class="kpi-value mono ${today >= 0 ? 't-green' : 't-red'}">${today >= 0 ? '+' : ''}${fmtINR(today)}</div>
-      <div class="kpi-delta ${today >= 0 ? 'pos' : 'neg'}">${today >= 0 ? '▲' : '▼'} ${Math.abs((today/Math.max(total,1))*100).toFixed(2)}%</div>
-    </div>
-    <div class="kpi ${weekClass}">
-      <div class="kpi-label"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><rect x="3" y="4" width="18" height="18" rx="2"/><line x1="16" y1="2" x2="16" y2="6"/><line x1="8" y1="2" x2="8" y2="6"/><line x1="3" y1="10" x2="21" y2="10"/></svg>This Week</div>
-      <div class="kpi-value mono ${week >= 0 ? 't-green' : 't-red'}">${week >= 0 ? '+' : ''}${fmtINR(week)}</div>
-      <div class="kpi-delta">5 trading days</div>
-    </div>
-    <div class="kpi accent-violet">
-      <div class="kpi-label"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><polyline points="22 12 18 12 15 21 9 3 6 12 2 12"/></svg>Open Trades</div>
-      <div class="kpi-value mono">${active}</div>
-      <div class="kpi-delta">Live tracking</div>
-    </div>
-    <div class="kpi ${wrClass}">
-      <div class="kpi-label"><svg class="ic" width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.4"><path d="M22 11.08V12a10 10 0 1 1-5.93-9.14"/><polyline points="22 4 12 14.01 9 11.01"/></svg>Win Rate</div>
-      <div class="kpi-value mono">${wr}%</div>
-      <div class="kpi-delta">${wins}W / ${closed-wins}L today</div>
-    </div>
-  `;
-}
-
-function renderAccounts() {
-  const a = state.snapshot.accounts || {};
-  const accs = ["macro", "nifty", "ny_session", "sweep_4h"];
-  document.getElementById("accountsRow").innerHTML = accs.map(key => {
-    const acct = a[key] || { name: key, sub: "", balance: 0, daily_trades: 0, daily_limit: 0, today_pnl: 0, week_pnl: 0, is_active: false };
-    const usagePct = (acct.daily_trades / Math.max(acct.daily_limit, 1)) * 100;
-    const barClass = usagePct >= 100 ? "b-red" : usagePct >= 70 ? "b-amber" : "b-green";
-    const sessionLabel = key === "ny_session" ? (acct.is_active ? "ACTIVE" : "CLOSED") : "PAPER";
-    return `
-      <div class="account ${key}">
-        <div class="acct-head">
-          <div class="acct-name">
-            <div class="acct-icon">${escapeHTML(acct.name.charAt(0))}</div>
-            <div>
-              <div class="acct-name-text">${escapeHTML(acct.name)}</div>
-              <div class="acct-name-sub">${escapeHTML(acct.sub || "")}</div>
-            </div>
-          </div>
-          <div class="acct-status ${acct.is_active ? 'active' : 'inactive'}">${sessionLabel}</div>
-        </div>
-        <div class="acct-balance mono" data-acct="${key}" data-field="balance">₹${(acct.balance||0).toLocaleString("en-IN", { minimumFractionDigits: 2, maximumFractionDigits: 2 })}</div>
-        <div class="acct-pnl ${acct.today_pnl >= 0 ? 'pos' : 'neg'}" data-acct="${key}" data-field="today_pnl">
-          ${acct.today_pnl >= 0 ? '▲' : '▼'} ${fmtINR(acct.today_pnl)} <span class="wk">· Wk ${fmtINRshort(acct.week_pnl)}</span>
-        </div>
-        <div class="acct-usage">
-          <div class="acct-usage-row">
-            <span>Daily trades</span>
-            <b>${acct.daily_trades} / ${acct.daily_limit}</b>
-          </div>
-          <div class="bar-bg"><div class="bar-fill ${barClass}" style="width: ${Math.min(usagePct, 100)}%"></div></div>
-        </div>
-      </div>
-    `;
-  }).join("");
-}
-
-function renderLiveTrades() {
-  const trades = state.snapshot.live_trades || [];
-  document.getElementById("liveTradesCount").textContent = trades.length;
-  if (trades.length === 0) {
-    const empty = `<div class="empty">
-      <svg width="28" height="28" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.6"><circle cx="12" cy="12" r="10"/><line x1="12" y1="8" x2="12" y2="12"/><line x1="12" y1="16" x2="12.01" y2="16"/></svg>
-      <div>No open trades right now.</div>
-    </div>`;
-    document.getElementById("liveTradesMobile").innerHTML = empty;
-    document.getElementById("liveTradesTableBody").innerHTML = `<tr><td colspan="9" style="padding: 40px; text-align:center; color: var(--text-3);">No open trades</td></tr>`;
-    return;
-  }
-
-  // Mobile cards
-  document.getElementById("liveTradesMobile").innerHTML = trades.map(t => {
-    const isLong = t.direction === "LONG";
-    const plClass = t.pnl_inr >= 0 ? "pos" : "neg";
-    return `
-      <div class="trade-card" data-trade-card="${escapeHTML(t.symbol)}">
-        <div class="tc-head">
-          <div class="tc-sym">
-            <span class="pulse"></span>
-            ${escapeHTML(t.symbol)}
-            <span class="dir-badge ${isLong ? 'long' : 'short'}">${t.direction}</span>
-          </div>
-          <div class="tc-acct">${escapeHTML(t.account.replace("_", " "))}</div>
-        </div>
-        <div class="tc-pl">
-          <span class="num mono ${plClass}" data-trade="${escapeHTML(t.symbol)}" data-field="pnl">${t.pnl_inr >= 0 ? '+' : ''}${fmtINR(t.pnl_inr)}</span>
-          <span class="pct ${plClass}" data-trade="${escapeHTML(t.symbol)}" data-field="pct">${((t.current - t.entry) / t.entry * 100 * (isLong ? 1 : -1)).toFixed(2)}%</span>
-        </div>
-        <div class="tc-grid">
-          <div class="tc-cell"><div class="lbl">Entry</div><div class="val">${fmtPrice(t.entry, t.symbol)}</div></div>
-          <div class="tc-cell"><div class="lbl">Current</div><div class="val" data-trade="${escapeHTML(t.symbol)}" data-field="current-mobile">${fmtPrice(t.current, t.symbol)}</div></div>
-          <div class="tc-cell sl"><div class="lbl">Stop</div><div class="val">${fmtPrice(t.sl, t.symbol)}</div></div>
-          <div class="tc-cell tp"><div class="lbl">Target</div><div class="val">${fmtPrice(t.tp, t.symbol)}</div></div>
-        </div>
-        <div class="tc-progress">
-          <div class="row">
-            <span>Progress to TP</span>
-            <b data-trade="${escapeHTML(t.symbol)}" data-field="progress-mobile">${t.progress.toFixed(0)}%</b>
-          </div>
-          <div class="bar-bg">
-            <div class="bar-fill ${plClass === 'pos' ? 'b-green' : 'b-red'}" data-trade="${escapeHTML(t.symbol)}" data-field="progress-bar-mobile" style="width: ${t.progress}%"></div>
-          </div>
-        </div>
-      </div>
-    `;
-  }).join("");
-
-  // Desktop table
-  document.getElementById("liveTradesTableBody").innerHTML = trades.map(t => {
-    const isLong = t.direction === "LONG";
-    const plClass = t.pnl_inr >= 0 ? "pos" : "neg";
-    const plPct = ((t.current - t.entry) / t.entry * 100 * (isLong ? 1 : -1));
-    return `
-      <tr data-trade-row="${escapeHTML(t.symbol)}">
-        <td>
-          <div style="display:flex; align-items:center; gap:8px;">
-            <span class="pulse" style="width:6px;height:6px;border-radius:50%;background:var(--green);box-shadow:0 0 6px var(--green);animation:pulse 1.6s infinite;"></span>
-            <span style="font-weight:600;">${escapeHTML(t.symbol)}</span>
-            <span class="dir-badge ${isLong ? 'long' : 'short'}">${t.direction}</span>
-          </div>
-        </td>
-        <td><span style="color:var(--text-3); font-size:11px;">${escapeHTML(t.market || '')}</span></td>
-        <td class="r mono">${fmtPrice(t.entry, t.symbol)}</td>
-        <td class="r mono" data-trade="${escapeHTML(t.symbol)}" data-field="current" style="color:var(--text-1); font-weight:600;">${fmtPrice(t.current, t.symbol)}</td>
-        <td class="r mono" style="color:var(--red);">${fmtPrice(t.sl, t.symbol)}</td>
-        <td class="r mono" style="color:var(--green);">${fmtPrice(t.tp, t.symbol)}</td>
-        <td class="r">
-          <div class="mono ${plClass === 'pos' ? 't-green' : 't-red'}" data-trade="${escapeHTML(t.symbol)}" data-field="pnl" style="font-weight:600;">${t.pnl_inr >= 0 ? '+' : ''}${fmtINR(t.pnl_inr)}</div>
-          <div class="mono" data-trade="${escapeHTML(t.symbol)}" data-field="pct" style="color:var(--text-3); font-size:10.5px;">${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}%</div>
-        </td>
-        <td>
-          <div class="bar-bg" style="width: 90px;">
-            <div class="bar-fill ${plClass === 'pos' ? 'b-green' : 'b-red'}" data-trade="${escapeHTML(t.symbol)}" data-field="progress-bar" style="width: ${t.progress}%"></div>
-          </div>
-        </td>
-        <td><span class="tc-acct">${escapeHTML(t.account.replace("_", " "))}</span></td>
-      </tr>
-    `;
-  }).join("");
-}
-
-// SMART PARTIAL UPDATE — only touch the live trade cells, not rebuild
-function updateLiveTradesOnly() {
-  const trades = state.snapshot?.live_trades || [];
-  trades.forEach(t => {
-    const isLong = t.direction === "LONG";
-    const plClass = t.pnl_inr >= 0 ? "pos" : "neg";
-    const plPct = ((t.current - t.entry) / t.entry * 100 * (isLong ? 1 : -1));
-    const prev = state.prevPrices[t.symbol];
-
-    const flash = (prev != null && prev !== t.current)
-      ? (t.current > prev ? "flash-up" : "flash-down")
-      : null;
-
-    // Helper to update + flash
-    const upd = (selector, html) => {
-      const els = document.querySelectorAll(selector);
-      els.forEach(el => {
-        el.innerHTML = html;
-        if (flash) {
-          el.classList.remove("flash-up", "flash-down");
-          void el.offsetWidth;  // force reflow to restart animation
-          el.classList.add(flash);
-          setTimeout(() => el.classList.remove(flash), 800);
-        }
-      });
-    };
-
-    upd(`[data-trade="${CSS.escape(t.symbol)}"][data-field="pnl"]`,
-        `${t.pnl_inr >= 0 ? '+' : ''}${fmtINR(t.pnl_inr)}`);
-    upd(`[data-trade="${CSS.escape(t.symbol)}"][data-field="pct"]`,
-        `${plPct >= 0 ? '+' : ''}${plPct.toFixed(2)}%`);
-    upd(`[data-trade="${CSS.escape(t.symbol)}"][data-field="current"]`,
-        fmtPrice(t.current, t.symbol));
-    upd(`[data-trade="${CSS.escape(t.symbol)}"][data-field="current-mobile"]`,
-        fmtPrice(t.current, t.symbol));
-    upd(`[data-trade="${CSS.escape(t.symbol)}"][data-field="progress-mobile"]`,
-        `${t.progress.toFixed(0)}%`);
-
-    // Progress bars (width)
-    document.querySelectorAll(`[data-trade="${CSS.escape(t.symbol)}"][data-field="progress-bar"], [data-trade="${CSS.escape(t.symbol)}"][data-field="progress-bar-mobile"]`).forEach(el => {
-      el.style.width = t.progress + "%";
-    });
-
-    // Update PNL class (color)
-    document.querySelectorAll(`[data-trade="${CSS.escape(t.symbol)}"][data-field="pnl"]`).forEach(el => {
-      el.classList.remove("t-green", "t-red", "pos", "neg");
-      el.classList.add(t.pnl_inr >= 0 ? (el.classList.contains("mono") ? "t-green" : "pos") : (el.classList.contains("mono") ? "t-red" : "neg"));
-    });
+// ── Tab Switching ──
+document.querySelectorAll('.tab-btn').forEach(btn => {
+  btn.addEventListener('click', () => {
+    const tab = btn.dataset.tab;
+    if (tab === currentTab) return;
+    // Update buttons
+    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+    btn.classList.add('active');
+    // Update pages
+    document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+    document.getElementById('tab-' + tab).classList.add('active');
+    currentTab = tab;
+    // Scroll to top
+    document.getElementById('mainContent').scrollTop = 0;
   });
+});
+
+// ── Formatters ──
+function fmtMoney(n) {
+  const v = parseFloat(n) || 0;
+  return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPnl(n) {
+  const v = parseFloat(n) || 0;
+  const sign = v >= 0 ? '+' : '';
+  return sign + fmtMoney(v);
+}
+function fmtTime(ts) {
+  if (!ts) return '—';
+  try {
+    const d = new Date(ts);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
+  } catch { return ts; }
+}
+function extractDate(iso) {
+  if (!iso) return '';
+  const s = String(iso);
+  return s.includes('T') ? s.split('T')[0] : s.slice(0, 10);
+}
+function extractTimeET(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' });
+  } catch { return ''; }
+}
+function extractTimeIST(iso) {
+  if (!iso) return '';
+  try {
+    const d = new Date(iso);
+    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
+  } catch { return ''; }
 }
 
-function renderSignals() {
-  const sigs = state.snapshot.today_signals || [];
-  document.getElementById("signalCount").textContent = sigs.length;
-  if (sigs.length === 0) {
-    document.getElementById("signalsList").innerHTML = `<div class="empty">No signals today yet.</div>`;
-    return;
-  }
-  document.getElementById("signalsList").innerHTML = sigs.map(s => {
-    const isLong = s.dir === "LONG";
-    let statusHtml, pnlHtml;
-    if (s.status === "open") {
-      statusHtml = `<span class="sig-status s-open">OPEN</span>`;
-      pnlHtml = `<div class="sig-pnl ${s.pnl >= 0 ? 't-green' : 't-red'}">${s.pnl >= 0 ? '+' : ''}${fmtINR(s.pnl)}</div>`;
-    } else if (s.status === "win") {
-      statusHtml = `<span class="sig-status s-win">WIN</span>`;
-      pnlHtml = `<div class="sig-pnl t-green">+${fmtINR(s.pnl)}</div>`;
-    } else if (s.status === "loss") {
-      statusHtml = `<span class="sig-status s-loss">LOSS</span>`;
-      pnlHtml = `<div class="sig-pnl t-red">-${fmtINR(Math.abs(s.pnl))}</div>`;
-    } else {
-      statusHtml = `<span class="sig-status s-pending">PEND</span>`;
-      pnlHtml = `<div class="sig-pnl" style="color:var(--text-3);">—</div>`;
-    }
-    return `<div class="sig-item">
-      <div class="sig-time">${escapeHTML(s.time || "")}</div>
-      <div class="sig-mid">
-        <div class="sig-row1">
-          <span class="sig-sym">${escapeHTML(s.sym)}</span>
-          <span class="dir-badge ${isLong ? 'long' : 'short'}">${s.dir}</span>
-        </div>
-        <div class="sig-strat">${escapeHTML(s.strategy || "")}${s.hint ? ' · <span style="color:var(--text-3)">' + escapeHTML(s.hint) + '</span>' : ''}</div>
-      </div>
-      <div class="sig-right">${pnlHtml}${statusHtml}</div>
-    </div>`;
-  }).join("");
-}
-
-function renderHistory() {
-  const history = state.snapshot.history || [];
-  const closed = history.length;
-  const wins = history.filter(t => t.result === "WIN").length;
-  const wr = closed > 0 ? Math.round(wins / closed * 100) : 0;
-  const totalPnl = history.reduce((s, t) => s + (t.pnl || 0), 0);
-  document.getElementById("historySummary").textContent = `${wins}W/${closed-wins}L · ${wr}% · ${fmtINRshort(totalPnl)}`;
-  document.getElementById("historyList").innerHTML = history.slice(0, 15).map(t => {
-    const isLong = t.dir === "LONG";
-    const res = t.result === "WIN"
-      ? `<span class="result-pill r-win">WIN</span>`
-      : `<span class="result-pill r-loss">LOSS</span>`;
-    return `<div class="hist-item">
-      <div class="hist-time">${escapeHTML(t.time || "")}</div>
-      <div class="hist-mid">
-        <div class="hist-sym">${escapeHTML(t.sym)} <span class="dir-badge ${isLong ? 'long' : 'short'}">${t.dir}</span></div>
-        <div class="hist-prices">${fmtPrice(t.entry, t.sym)} → ${fmtPrice(t.exit, t.sym)} · ${escapeHTML(t.account)}</div>
-      </div>
-      <div class="hist-right">${res}<div class="mono t-${t.pnl >= 0 ? 'green' : 'red'}" style="font-size:12px; font-weight:600; margin-top:3px;">${t.pnl >= 0 ? '+' : ''}${fmtINR(t.pnl)}</div></div>
-    </div>`;
-  }).join("");
-}
-
-function renderPending() {
-  const pending = state.snapshot.pending || [];
-  document.getElementById("pendingCount").textContent = pending.length;
-  if (pending.length === 0) {
-    document.getElementById("pendingList").innerHTML = `<div class="empty">No pending setups.</div>`;
-    return;
-  }
-  document.getElementById("pendingList").innerHTML = pending.map(p => {
-    const isBull = p.dir === "BULLISH";
-    const expPct = Math.max(0, Math.min(100, ((p.expires_h || 0) / 24) * 100));
-    const zoneClass = p.zone ? "" : "empty";
-    const zoneTxt = p.zone
-      ? `$${p.zone[0].toLocaleString()} — $${p.zone[1].toLocaleString()}`
-      : "FVG not yet formed";
-    const statusClass = p.status === "waiting-fill" ? "ps-fill" : "ps-fvg";
-    const statusText = p.status === "waiting-fill" ? "WAITING FILL" : "WAITING FVG";
-    return `<div class="pending-item">
-      <div class="pending-head">
-        <div class="pending-sym">${escapeHTML(p.sym)}<span class="dir-badge ${isBull ? 'long' : 'short'}">${p.dir}</span></div>
-        <span class="pending-status ${statusClass}">${statusText}</span>
-      </div>
-      <div class="pending-zone ${zoneClass}">${zoneTxt}</div>
-      <div class="pending-expiry">
-        <svg width="11" height="11" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.2"><circle cx="12" cy="12" r="10"/><polyline points="12 6 12 12 16 14"/></svg>
-        Expires in ${(p.expires_h || 0).toFixed(1)}h
-      </div>
-      <div class="expiry-bar"><div class="expiry-fill" style="width: ${expPct}%"></div></div>
-    </div>`;
-  }).join("");
-}
-
-function toggleSection(sectionId) {
-  const content = document.getElementById(sectionId + '-content');
-  const btn = document.getElementById(sectionId + '-toggle');
-  if (!content || !btn) return;
-  const isCollapsed = content.classList.contains('collapsed');
-  if (isCollapsed) {
-    content.classList.remove('collapsed');
-    btn.classList.add('expanded');
-    btn.innerHTML = 'Hide <span class="chevron">▲</span>';
-  } else {
-    content.classList.add('collapsed');
-    btn.classList.remove('expanded');
-    btn.innerHTML = 'Show <span class="chevron">▼</span>';
-  }
-}
-
-function toggleNewsDay(dayId) {
-  const highDiv = document.getElementById('high-' + dayId);
-  const allDiv = document.getElementById('all-' + dayId);
-  const btn = document.getElementById('btn-' + dayId);
-  if (!highDiv || !allDiv || !btn) return;
-
-  const isExpanded = allDiv.classList.contains('expanded');
-  if (isExpanded) {
-    allDiv.classList.remove('expanded');
-    highDiv.classList.remove('collapsed');
-    btn.classList.remove('expanded');
-    btn.innerHTML = 'Show all <span class="chevron">▼</span>';
-  } else {
-    allDiv.classList.add('expanded');
-    highDiv.classList.add('collapsed');
-    btn.classList.add('expanded');
-    btn.innerHTML = 'Show less <span class="chevron">▲</span>';
-  }
-}
-
-function renderNews() {
-  const newsRaw = state.snapshot.news_raw || [];
-  const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-
-  // Group by calendar date (IST)
-  const byDate = {};
-  newsRaw.forEach(e => {
-    const isoStr = e.date || "";
-    if (!isoStr) return;
-    const dt = new Date(isoStr);
-    if (isNaN(dt)) return;
-    const dateKey = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-    const etTime = dt.toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
-    const istTime = dt.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
-    if (!byDate[dateKey]) byDate[dateKey] = [];
-    byDate[dateKey].push({ ...e, _etTime: etTime, _istTime: istTime });
-  });
-
-  if (state.snapshot.news && typeof state.snapshot.news === 'object') {
-    Object.entries(state.snapshot.news).forEach(([d, evs]) => {
-      if (!byDate[d]) byDate[d] = evs;
-    });
-  }
-
-  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
-  const dates = Object.keys(byDate).sort();
-
-  if (dates.length === 0) {
-    document.getElementById("newsGrid").innerHTML = `<div class="empty">No upcoming events.</div>`;
-    return;
-  }
-
-  document.getElementById("newsGrid").innerHTML = dates.map(date => {
-    const events = byDate[date];
-    const d = new Date(date + "T00:00:00+05:30");
-    const dn = dayNames[d.getDay()];
-    const isToday = date === today;
-
-    // Split into high impact and others
-    const highEvents = events.filter(e => {
-      const imp = (e.impact || '').toLowerCase();
-      return imp === 'high' || imp === 'red' || imp === 'holiday';
-    });
-    const otherEvents = events.filter(e => {
-      const imp = (e.impact || '').toLowerCase();
-      return imp !== 'high' && imp !== 'red' && imp !== 'holiday';
-    });
-
-    const hasOthers = otherEvents.length > 0;
-    const highCount = highEvents.length;
-    const totalCount = events.length;
-
-    const buildEventHtml = (e) => {
-      const impact = (e.impact || '').toLowerCase();
-      const impactClass = impact === 'high' || impact === 'red' ? 'i-high' : impact === 'med' || impact === 'yellow' || impact === 'orange' ? 'i-med' : 'i-low';
-      const et = e._etTime || e.time || "—";
-      const ist = e._istTime || "—";
-      return `<div class="news-event">
-        <div class="news-impact ${impactClass}"></div>
-        <div class="news-time">${et} ET<span class="ist">${ist} IST</span></div>
-        <div class="news-curr">${escapeHTML(e.country || e.currency || "—")}</div>
-        <div class="news-title-block">
-          <div class="news-title">${escapeHTML(e.title || "")}</div>
-          <div class="news-meta">${e.forecast ? 'fcst ' + e.forecast : '—'} ${e.previous ? '· prev ' + e.previous : ''}</div>
+// ── Render: Overview ──
+function renderOverview() {
+  const grid = document.getElementById('accountsGrid');
+  const accs = state.accounts || {};
+  const names = { macro: 'Macro', nifty: 'Nifty', ny_session: 'NY Session', sweep_4h: 'Sweep 4H' };
+  const classes = { macro: 'macro', nifty: 'nifty', ny_session: 'ny', sweep_4h: 'sweep' };
+  let total = 0, todayTotal = 0, weekTotal = 0;
+  let html = '';
+  for (const [key, acc] of Object.entries(accs)) {
+    if (!acc || typeof acc !== 'object') continue;
+    const bal = parseFloat(acc.balance) || 0;
+    const tpnl = parseFloat(acc.today_pnl) || 0;
+    const wpnl = parseFloat(acc.week_pnl) || 0;
+    total += bal; todayTotal += tpnl; weekTotal += wpnl;
+    const pnlClass = tpnl >= 0 ? 'pos' : 'neg';
+    const active = acc.is_active ? 'active' : '';
+    html += `
+      <div class="account-card ${classes[key] || ''}">
+        <div class="account-name">${names[key] || key}</div>
+        <div class="account-balance">${fmtMoney(bal)}</div>
+        <div class="account-meta">
+          <span class="account-pnl ${pnlClass}">${fmtPnl(tpnl)}</span>
+          <span class="account-status ${active}"></span>
         </div>
       </div>`;
-    };
+  }
+  grid.innerHTML = html || '<div style="grid-column:1/-1;text-align:center;color:var(--text-dim);padding:20px;">No accounts loaded</div>';
+  document.getElementById('statEquity').textContent = fmtMoney(total);
+  const st = document.getElementById('statToday');
+  st.textContent = fmtPnl(todayTotal);
+  st.className = 'stat-value ' + (todayTotal >= 0 ? 'pos' : 'neg');
+  const sw = document.getElementById('statWeek');
+  sw.textContent = fmtPnl(weekTotal);
+  sw.className = 'stat-value ' + (weekTotal >= 0 ? 'pos' : 'neg');
 
-    const highHtml = highEvents.map(buildEventHtml).join("");
-    const allHtml = events.map(buildEventHtml).join("");
-    const dayId = 'news-day-' + date.replace(/-/g, '');
-
-    return `<div class="news-day">
-      <div class="news-day-head">
-        <div class="news-day-head-left">
-          <div class="news-day-name ${isToday ? 'today' : ''}">${dn} <span class="date">${date}</span></div>
-          <div class="news-high-summary">
-            ${highCount > 0 ? `<span class="news-high-dot"></span>${highCount} HIGH` : '<span style="color:var(--text-3)">No high impact</span>'}
-            <span style="color:var(--text-3)">· ${totalCount} total</span>
-          </div>
-        </div>
-        ${hasOthers ? `<button class="news-toggle-btn" onclick="toggleNewsDay('${dayId}')" id="btn-${dayId}">
-          Show all <span class="chevron">▼</span>
-        </button>` : ''}
+  const qs = document.getElementById('quickStatus');
+  const live = (state.live_trades || []).length;
+  const sig = (state.today_signals || []).length;
+  const pend = (state.pending || []).length;
+  const hist = (state.history || []).length;
+  qs.innerHTML = `
+    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
+      <div style="text-align:center;padding:8px;">
+        <div style="font-size:22px;font-weight:700;color:var(--accent);">${live}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Live Trades</div>
       </div>
-      <div class="news-events-high" id="high-${dayId}">
-        ${highHtml || '<div class="news-event" style="padding:12px 0;color:var(--text-3);font-size:12px;">No high impact events</div>'}
+      <div style="text-align:center;padding:8px;">
+        <div style="font-size:22px;font-weight:700;color:var(--info);">${sig}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Today's Signals</div>
       </div>
-      ${hasOthers ? `<div class="news-events-all" id="all-${dayId}">${allHtml}</div>` : ''}
+      <div style="text-align:center;padding:8px;">
+        <div style="font-size:22px;font-weight:700;color:var(--warning);">${pend}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Pending Setups</div>
+      </div>
+      <div style="text-align:center;padding:8px;">
+        <div style="font-size:22px;font-weight:700;color:var(--text);">${hist}</div>
+        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Closed Trades</div>
+      </div>
     </div>`;
-  }).join("");
 }
 
-// ===========================
-// CHARTS
-// ===========================
-let cumChart, dailyChart;
-const CHART_DEFAULTS = { color: "#9aa3b8", font: { family: "'Outfit', sans-serif", size: 10 } };
-
-// Compute cumulative P/L series from history
-function extractDate(t) {
-  // closed_at is full ISO like "2025-07-31T13:45:00"
-  // timestamp can be ms number or ISO
-  // time might be just "13:45" (no date) — only use as last resort
-  const c = t.closed_at || t.timestamp || t.date;
-  if (c == null) return null;
-  if (typeof c === "number") {
-    // treat as ms timestamp
-    const d = new Date(c);
-    return isNaN(d) ? null : d.toISOString().slice(0, 10);
+// ── Render: Live Trades ──
+function renderLiveTrades() {
+  const trades = state.live_trades || [];
+  document.getElementById('liveCount').textContent = trades.length;
+  updateBadge('badgeTrades', trades.length);
+  const body = document.getElementById('liveTradesBody');
+  if (!trades.length) {
+    body.innerHTML = '<div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>';
+    return;
   }
-  const s = String(c);
-  if (/^\d{4}-\d{2}-\d{2}/.test(s)) return s.slice(0, 10);
-  if (/^\d{4}\/\d{2}\/\d{2}/.test(s)) return s.slice(0, 10).replace(/\//g, "-");
-  return null;  // time-only like "13:45" — no date
-}
-
-function computeCumSeries(accountFilter) {
-  const history = (state.snapshot.history || []).filter(t => !accountFilter || t.account === accountFilter);
-  const byDate = {};
-  history.forEach(t => {
-    const date = extractDate(t);
-    if (!date) return;
-    byDate[date] = (byDate[date] || 0) + (t.pnl || 0);
-  });
-  const dates = Object.keys(byDate).sort();
-  let cum = 0;
-  const series = dates.map(d => { cum += byDate[d]; return { d, v: cum }; });
-  return {
-    labels: series.map(s => s.d.slice(5)),  // MM-DD
-    data: series.map(s => Math.round(s.v)),
-  };
-}
-
-function computeDailySeries(range) {
-  const history = state.snapshot.history || [];
-  const byDate = {};
-  history.forEach(t => {
-    const date = extractDate(t);
-    if (!date) return;
-    byDate[date] = (byDate[date] || 0) + (t.pnl || 0);
-  });
-  const allDates = Object.keys(byDate).sort();
-  const days = range === "week" ? 5 : 30;
-  const filtered = allDates.slice(-days).map(d => ({ d, v: byDate[d] }));
-  // Pad to N days
-  while (filtered.length < days) {
-    filtered.unshift({ d: "—", v: 0 });
+  let html = `<table class="data-table">
+    <thead><tr>
+      <th>Sym</th><th>Dir</th><th>Entry</th><th>Current</th>
+      <th>P/L</th><th>Prog</th><th>Acct</th>
+    </tr></thead><tbody>`;
+  for (const t of trades) {
+    const dirClass = t.direction === 'LONG' ? 'dir-long' : 'dir-short';
+    const pnlClass = (t.pnl_inr || 0) >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const prog = Math.max(0, Math.min(100, t.progress || 0));
+    html += `<tr>
+      <td class="sym">${t.symbol || '—'}</td>
+      <td class="${dirClass}">${t.direction || '—'}</td>
+      <td>${(t.entry || 0).toFixed(4)}</td>
+      <td>${(t.current || 0).toFixed(4)}</td>
+      <td class="${pnlClass}">${fmtPnl(t.pnl_inr)}</td>
+      <td><div class="progress-wrap"><div class="progress-fill" style="width:${prog}%"></div></div></td>
+      <td class="dim">${(t.account || '').slice(0,3)}</td>
+    </tr>`;
   }
-  return {
-    labels: filtered.map(s => range === "week" ? ["Mon","Tue","Wed","Thu","Fri","Sat","Sun"][new Date(s.d + "T00:00:00").getDay()] : s.d.slice(8)),
-    data: filtered.map(s => Math.round(s.v)),
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+
+// ── Render: Pending ──
+function renderPending() {
+  const pending = state.pending || [];
+  document.getElementById('pendingCount').textContent = pending.length;
+  const body = document.getElementById('pendingBody');
+  if (!pending.length) {
+    body.innerHTML = '<div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>';
+    return;
+  }
+  let html = `<table class="data-table">
+    <thead><tr><th>Sym</th><th>Dir</th><th>Status</th><th>Expires</th></tr></thead><tbody>`;
+  for (const p of pending) {
+    html += `<tr>
+      <td class="sym">${p.sym || '—'}</td>
+      <td class="${(p.dir || '').includes('BULL') ? 'dir-long' : 'dir-short'}">${p.dir || '—'}</td>
+      <td class="dim">${(p.status || '').replace(/-/g,' ')}</td>
+      <td class="dim">${(p.expires_h || 0).toFixed(1)}h</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+
+// ── Render: Signals ──
+function renderSignals() {
+  const sigs = state.today_signals || [];
+  document.getElementById('signalCount').textContent = sigs.length;
+  updateBadge('badgeSignals', sigs.length);
+  const body = document.getElementById('signalsBody');
+  if (!sigs.length) {
+    body.innerHTML = '<div class="card-empty"><span class="emoji">📡</span>No signals fired in the last 24h</div>';
+    return;
+  }
+  let html = `<table class="data-table">
+    <thead><tr><th>Time</th><th>Sym</th><th>Dir</th><th>Strat</th><th>Status</th></tr></thead><tbody>`;
+  for (const s of sigs) {
+    const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
+    html += `<tr>
+      <td class="dim">${s.time || '—'}</td>
+      <td class="sym">${s.sym || '—'}</td>
+      <td class="${dirClass}">${s.dir || '—'}</td>
+      <td class="dim">${(s.strategy || '').slice(0,12)}</td>
+      <td class="dim">${s.status || 'open'}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+
+// ── Render: History ──
+function renderHistory() {
+  const hist = state.history || [];
+  document.getElementById('historyCount').textContent = hist.length;
+  updateBadge('badgeHistory', hist.length);
+  const body = document.getElementById('historyBody');
+  if (!hist.length) {
+    body.innerHTML = '<div class="card-empty"><span class="emoji">📜</span>No closed trades yet</div>';
+    return;
+  }
+  let html = `<table class="data-table">
+    <thead><tr><th>Sym</th><th>Dir</th><th>Result</th><th>P/L</th><th>Time</th></tr></thead><tbody>`;
+  for (const h of hist.slice(0, 15)) {
+    const pnl = parseFloat(h.pnl) || 0;
+    const pnlClass = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const resClass = h.result === 'WIN' ? 'dir-long' : 'dir-short';
+    html += `<tr>
+      <td class="sym">${h.symbol || '—'}</td>
+      <td class="${(h.type || '').toUpperCase() === 'LONG' ? 'dir-long' : 'dir-short'}">${h.type || '—'}</td>
+      <td class="${resClass}">${h.result || '—'}</td>
+      <td class="${pnlClass}">${fmtPnl(pnl)}</td>
+      <td class="dim">${fmtTime(h.close_time)}</td>
+    </tr>`;
+  }
+  html += '</tbody></table>';
+  body.innerHTML = html;
+}
+
+// ── Render: News ──
+function renderNews() {
+  const news = state.news_raw || [];
+  updateBadge('badgeNews', news.filter(n => (n.impact || '').toUpperCase() === 'HIGH').length);
+  const container = document.getElementById('newsContainer');
+  if (!news.length) {
+    container.innerHTML = '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
+    return;
+  }
+  const today = new Date().toISOString().slice(0, 10);
+  const grouped = {};
+  for (const ev of news) {
+    const d = extractDate(ev.date);
+    if (!grouped[d]) grouped[d] = [];
+    grouped[d].push(ev);
+  }
+  let html = '';
+  const dayNames = {};
+  for (const d of Object.keys(grouped).sort()) {
+    const dateObj = new Date(d + 'T00:00:00');
+    const isToday = d === today;
+    const label = isToday ? 'TODAY' : dateObj.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+    const highCount = grouped[d].filter(e => (e.impact || '').toUpperCase() === 'HIGH').length;
+    html += `<div class="news-day-header">📅 ${label}${highCount > 0 ? ' · ' + highCount + ' HIGH' : ''}</div>`;
+    for (const ev of grouped[d]) {
+      const impact = (ev.impact || '').toUpperCase();
+      const impactClass = impact === 'HIGH' ? 'high' : impact === 'MEDIUM' ? 'medium' : impact === 'HOLIDAY' ? 'holiday' : 'low';
+      const tagClass = impactClass;
+      const et = extractTimeET(ev.date);
+      const ist = extractTimeIST(ev.date);
+      const timeStr = et ? `${et} ET → ${ist} IST` : 'All Day';
+      html += `
+        <div class="news-item">
+          <div class="news-impact ${impactClass}"></div>
+          <div class="news-content">
+            <div class="news-title">${ev.title || 'Unknown'}</div>
+            <div class="news-meta">
+              <span class="flag">${getFlag(ev.country || ev.currency || '???')}</span>
+              <span class="news-tag ${tagClass}">${impact}</span>
+              <span>${timeStr}</span>
+            </div>
+            ${(ev.forecast || ev.previous) ? `<div class="news-forecast"><span>Forecast:</span> ${ev.forecast || '—'} &nbsp;|&nbsp; <span>Previous:</span> ${ev.previous || '—'}</div>` : ''}
+          </div>
+        </div>`;
+    }
+  }
+  container.innerHTML = html;
+}
+
+function getFlag(code) {
+  const flags = {
+    USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦', CHF: '🇨🇭',
+    NZD: '🇳🇿', CNY: '🇨🇳', INR: '🇮🇳'
   };
+  return flags[code] || '🌐';
 }
 
-function initCumChart(series) {
-  const ctx = document.getElementById("cumPLChart").getContext("2d");
-  if (cumChart) cumChart.destroy();
-  cumChart = new Chart(ctx, {
-    type: "line",
-    data: {
-      labels: series.labels,
-      datasets: [{
-        data: series.data,
-        borderColor: "#00d68f",
-        backgroundColor: ctx => {
-          const g = ctx.chart.ctx.createLinearGradient(0, 0, 0, 240);
-          g.addColorStop(0, "rgba(0,214,143,0.25)");
-          g.addColorStop(1, "rgba(0,214,143,0)");
-          return g;
-        },
-        borderWidth: 2,
-        fill: true,
-        tension: 0.32,
-        pointRadius: 0,
-        pointHoverRadius: 5,
-        pointBackgroundColor: "#00d68f",
-        pointBorderColor: "#0a0e1a",
-        pointBorderWidth: 2,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      interaction: { mode: "index", intersect: false },
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: "#1a2032", borderColor: "rgba(255,255,255,0.1)", borderWidth: 1,
-          padding: 10, cornerRadius: 8, displayColors: false, titleColor: "#9aa3b8", bodyColor: "#e8ecf5",
-          callbacks: { label: c => "₹" + c.parsed.y.toLocaleString("en-IN") },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#5d6477", font: CHART_DEFAULTS.font } },
-        y: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#5d6477", font: CHART_DEFAULTS.font, callback: v => "₹" + (v/1000).toFixed(0) + "K" } },
-      },
-    },
-  });
+function updateBadge(id, count) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = 'flex'; }
+  else { el.style.display = 'none'; }
 }
 
-function initDailyChart(series) {
-  const ctx = document.getElementById("dailyPLChart").getContext("2d");
-  if (dailyChart) dailyChart.destroy();
-  dailyChart = new Chart(ctx, {
-    type: "bar",
-    data: {
-      labels: series.labels,
-      datasets: [{
-        data: series.data,
-        backgroundColor: series.data.map(v => v >= 0 ? "rgba(0,214,143,0.7)" : "rgba(255,77,106,0.7)"),
-        borderColor: series.data.map(v => v >= 0 ? "#00d68f" : "#ff4d6a"),
-        borderWidth: 1, borderRadius: 4, borderSkipped: false,
-      }],
-    },
-    options: {
-      responsive: true, maintainAspectRatio: false,
-      plugins: {
-        legend: { display: false },
-        tooltip: {
-          backgroundColor: "#1a2032", borderColor: "rgba(255,255,255,0.1)", borderWidth: 1,
-          padding: 10, cornerRadius: 8, displayColors: false, titleColor: "#9aa3b8", bodyColor: "#e8ecf5",
-          callbacks: { label: c => (c.parsed.y >= 0 ? "+" : "") + "₹" + c.parsed.y.toLocaleString("en-IN") },
-        },
-      },
-      scales: {
-        x: { grid: { display: false }, ticks: { color: "#5d6477", font: CHART_DEFAULTS.font } },
-        y: { grid: { color: "rgba(255,255,255,0.04)" }, ticks: { color: "#5d6477", font: CHART_DEFAULTS.font, callback: v => (v >= 0 ? "+" : "") + "₹" + (v/1000).toFixed(0) + "K" } },
-      },
-    },
-  });
+// ── Toast ──
+function showToast(msg) {
+  const t = document.getElementById('toast');
+  t.textContent = msg;
+  t.classList.add('show');
+  setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-function switchCumChart(key, btn) {
-  document.querySelectorAll("[data-cum]").forEach(b => b.classList.remove("active"));
-  if (btn) btn.classList.add("active");
-  initCumChart(computeCumSeries(key === "all" ? null : key));
-}
-function switchDailyChart(key, btn) {
-  document.querySelectorAll("[data-daily]").forEach(b => b.classList.remove("active"));
-  if (btn) btn.classList.add("active");
-  initDailyChart(computeDailySeries(key));
+// ── Fetch Data ──
+async function fetchData() {
+  try {
+    const res = await fetch('/api/dashboard', { signal: AbortSignal.timeout(30000) });
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    if (data.error) throw new Error(data.error);
+    state = data;
+    renderAll();
+  } catch (e) {
+    console.error('[Dashboard] Fetch error:', e);
+    showToast('⚠️ Connection issue — retrying...');
+  }
 }
 
 function renderAll() {
-  if (!state.snapshot) {
-    console.warn("[Dashboard] snapshot null, using MOCK fallback");
-    state.snapshot = MOCK;
-  }
-  renderKpis();
-  renderAccounts();
+  renderOverview();
   renderLiveTrades();
+  renderPending();
   renderSignals();
   renderHistory();
-  renderPending();
   renderNews();
-  initCumChart(computeCumSeries(null));
-  initDailyChart(computeDailySeries("week"));
 }
 
-// ===========================
-// BOOTSTRAP
-// ===========================
-document.querySelectorAll("[data-cum]").forEach(b => b.addEventListener("click", () => switchCumChart(b.dataset.cum, b)));
-document.querySelectorAll("[data-daily]").forEach(b => b.addEventListener("click", () => switchDailyChart(b.dataset.daily, b)));
+// ── Boot ──
+console.log('[Dashboard] Starting bootstrap...');
+fetchData();
+setInterval(fetchData, 30000);
 
-updateClock(); // run immediately
-setInterval(updateClock, 1000);
-
-bootstrap(); 
+// Error handlers
+window.onerror = (msg, src, line) => { console.error(`[Dashboard] ${msg} at ${src}:${line}`); };
+window.onunhandledrejection = e => { console.error('[Dashboard] Unhandled:', e.reason); };
 </script>
 </body>
 </html>
