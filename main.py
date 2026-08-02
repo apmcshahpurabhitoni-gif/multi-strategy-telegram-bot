@@ -1351,35 +1351,32 @@ def gen_chart(symbol, tf="1h"):
 # BOOT
 # ============================================================
 
-
 if __name__ == "__main__":
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
     sent_signals = load_json(SENT_SIGNALS_FILE, {})
     pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
-    history = load_json(HISTORY_FILE, [])    # ← MUST come before auto-save
+    history = load_json(HISTORY_FILE, [])
 
-    # AUTO-SAVE: Persist all data every 30 seconds
-# ============================================================
+    # MOVE THIS ENTIRE BLOCK INSIDE — with 4 spaces indent:
+    def auto_save_loop():
+        while True:
+            try:
+                save_json(ACTIVE_TRADES_FILE, active_trades)
+                save_json(HISTORY_FILE, history)
+                save_json(SENT_SIGNALS_FILE, sent_signals)
+                save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+                save_json(ACCOUNTS_FILE, accounts)
+            except Exception as e:
+                print(f"[AUTO-SAVE] Error: {e}")
+            time.sleep(30)
 
-def auto_save_loop():
-    """Save all in-memory data to JSON files every 30 seconds."""
-    while True:
-        try:
-            save_json(ACTIVE_TRADES_FILE, active_trades)
-            save_json(HISTORY_FILE, history)
-            save_json(SENT_SIGNALS_FILE, sent_signals)
-            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-            save_json(ACCOUNTS_FILE, accounts)
-        except Exception as e:
-            print(f"[AUTO-SAVE] Error: {e}")
-        time.sleep(30)
-
-# Start auto-save thread
-threading.Thread(target=auto_save_loop, daemon=True).start()  
+    threading.Thread(target=auto_save_loop, daemon=True).start()
 
     print("=" * 50)
+    # ... rest stays the same
+
     print(" Trading Bot Starting...")
     print(f" Macro: ₹{accounts['macro']['balance']:,.2f}")
     print(f" Nifty: ₹{accounts['nifty']['balance']:,.2f}")
