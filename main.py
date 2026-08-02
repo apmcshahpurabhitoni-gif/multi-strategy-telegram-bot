@@ -264,8 +264,18 @@ def is_market_open(symbol):
         return w < 5 and 555 <= tm <= 930
     return False
 
+_last_yf_call = 0
+_yf_min_delay = 1.5  # seconds between yf.download calls
+
 def yf_download(symbol, period, interval):
+    global _last_yf_call
     try:
+        # Rate limiting: wait at least 1.5s between calls
+        elapsed = time.time() - _last_yf_call
+        if elapsed < _yf_min_delay:
+            time.sleep(_yf_min_delay - elapsed)
+        _last_yf_call = time.time()
+        
         df = yf.download(
             symbol,
             period=period,
@@ -719,6 +729,7 @@ def monitor():
 MONITORED = [
     ("BTC-USD", "Crypto"),
     ("GC=F", "Gold"),
+    ("XAUUSD=X", "Gold-Backup"),
     ("EURUSD=X", "Forex"),
     ("GBPUSD=X", "Forex"),
     ("USDJPY=X", "Forex"),
@@ -930,16 +941,41 @@ def news_impact_hint(title, currency):
 
     return " | ".join(hints), affected
 
-def format_news_message(events, title, filter_today_only=True):
+
+def _extract_time_from_iso(date_str):
+    """Extract HH:MM ET from ISO datetime like 2026-08-03T10:00:00-04:00."""
+    if not date_str:
+        return ""
+    try:
+        # Parse ISO string
+        dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
+        # Convert to ET (UTC-4 or UTC-5 depending on DST — approximate)
+        et_offset = timedelta(hours=-4)  # EDT
+        et_dt = dt.astimezone(pytz.timezone("US/Eastern"))
+        return et_dt.strftime("%H:%M")
+    except Exception:
+        # Fallback: manual extraction
+        s = str(date_str)
+        if "T" in s:
+            time_part = s.split("T")[1]
+            return time_part[:5]  # HH:MM
+        return ""
+
+def format_news_message(events, title, filter_today_only=True, max_events=15):
     if not events:
-        return f"📰 *{title}*\\n{BR}\\n⚪ No events found.\\n{BR2}"
-    lines = [f"📰 *{title}*\\n{BR}"]
+        return f"📰 *{title}*\n{BR}\n⚪ No events found.\n{BR2}"
+    lines = [f"📰 *{title}*\n{BR}"]
     now = datetime.now(IST)
     today_str = now.strftime("%Y-%m-%d")
+    count = 0
     for ev in events:
+        if count >= max_events:
+            break
         try:
             date = _extract_date(ev.get("date", ""))
-            time_str = ev.get("time", "")
+            # FIX: Extract time from ISO date string, not from "time" field
+            raw_date = ev.get("date", "")
+            time_str = _extract_time_from_iso(raw_date)
             impact = str(ev.get("impact", "")).upper()
             title_ev = ev.get("title", "Unknown")
             currency = ev.get("country", ev.get("currency", "???"))
@@ -947,7 +983,8 @@ def format_news_message(events, title, filter_today_only=True):
             previous = ev.get("previous", "")
             if filter_today_only and date != today_str:
                 continue
-                
+
+            # Convert ET time to IST
             ts_ist = ""
             try:
                 if time_str and time_str != "All Day":
@@ -963,6 +1000,7 @@ def format_news_message(events, title, filter_today_only=True):
                         ts_ist = f" | `{ist_h:02d}:{ist_m:02d} IST`"
             except Exception:
                 pass
+
             emoji = impact_emoji(impact)
             hint, affected = news_impact_hint(title_ev, currency)
             affected_str = ", ".join(affected) if affected else ""
@@ -974,13 +1012,14 @@ def format_news_message(events, title, filter_today_only=True):
                 line += f"🎯 Affected: {affected_str}\n"
             line += f"{BR}"
             lines.append(line)
+            count += 1
         except Exception as e:
             print(f"[ERR] format_news: {e}")
             continue
     if len(lines) == 1:
         lines.append("⚪ No high-impact events for today.\n")
     lines.append(BR2)
-    return "\n".join(lines)
+    return "\n".join(lines) 
 
 
 def _extract_date(date_str):
@@ -1042,7 +1081,7 @@ def news_alert_loop():
                     if impact not in ("HIGH", "H", "RED"):
                         continue
                     date = ev.get("date", "")
-                    time_str = ev.get("time", "")
+                    time_str = _extract_time_from_iso(ev.get("date", ""))
                     if date != today_str or not time_str or time_str == "All Day":
                         continue
                     ev_id = f"{date}_{time_str}_{ev.get('title','')}"
@@ -1289,9 +1328,33 @@ def cmd_news(m):
     safe_send(chat_id, "📰 *Fetching economic calendar...*")
     def run():
         events = get_weekly_news()
-        msg = format_news_message(events, "📅 UPCOMING WEEK'S ECONOMIC CALENDAR", filter_today_only=False)
-        safe_send(chat_id, msg, parse_mode="Markdown")
+        if not events:
+            safe_send(chat_id, "📰 *ECONOMIC CALENDAR*\n" + BR + "\n⚪ No upcoming events found.\n" + BR2, parse_mode="Markdown")
+            return
+        
+        # Split into chunks of 10 events max to stay under Telegram 4096 char limit
+        chunk_size = 10
+        total = len(events)
+        for i in range(0, total, chunk_size):
+            chunk = events[i:i+chunk_size]
+            is_first = (i == 0)
+            is_last = (i + chunk_size >= total)
+            
+            if is_first and is_last:
+                title = "📅 UPCOMING WEEK'S ECONOMIC CALENDAR"
+            elif is_first:
+                title = f"📅 UPCOMING WEEK'S CALENDAR (1–{min(chunk_size, total)} of {total})"
+            else:
+                title = f"📅 CALENDAR CONTINUED ({i+1}–{min(i+chunk_size, total)} of {total})"
+            
+            msg = format_news_message(chunk, title, filter_today_only=False, max_events=chunk_size)
+            safe_send(chat_id, msg, parse_mode="Markdown")
+            time.sleep(0.5)  # Small delay between messages
+        
     threading.Thread(target=run, daemon=True).start()
+
+
+
 
 @bot.message_handler(func=lambda m: True)
 def fallback(m):
