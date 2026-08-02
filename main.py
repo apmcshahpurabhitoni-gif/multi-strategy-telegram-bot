@@ -1337,9 +1337,33 @@ def gen_chart(symbol, tf="1h"):
             plt.close()
             return None
 
+
+# ============================================================
+# AUTO-SAVE: Persist all data every 30 seconds
+# ============================================================
+import threading
+
+def auto_save_loop():
+    """Save all in-memory data to JSON files every 30 seconds."""
+    while True:
+        try:
+            save_json(ACTIVE_TRADES_FILE, active_trades)
+            save_json(HISTORY_FILE, history)
+            save_json(SENT_SIGNALS_FILE, sent_signals)
+            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+            save_json(ACCOUNTS_FILE, accounts)
+        except Exception as e:
+            print(f"[AUTO-SAVE] Error: {e}")
+        time.sleep(30)
+
+# Start auto-save thread
+threading.Thread(target=auto_save_loop, daemon=True).start()  
+
 # ============================================================
 # BOOT
 # ============================================================
+
+
 if __name__ == "__main__":
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
