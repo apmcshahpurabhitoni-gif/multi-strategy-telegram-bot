@@ -61,6 +61,10 @@ _yf_session = requests.Session()
 _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
+_yf_lock = threading.Lock()
+_last_yf_call = 0
+_yf_min_delay = 3.0  # 3 seconds between Yahoo Finance calls
+
 
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -270,44 +274,75 @@ _yf_min_delay = 1.5  # seconds between yf.download calls
 def yf_download(symbol, period, interval):
     global _last_yf_call
     try:
-        # Rate limiting: wait at least 1.5s between calls
-        elapsed = time.time() - _last_yf_call
-        if elapsed < _yf_min_delay:
-            time.sleep(_yf_min_delay - elapsed)
-        _last_yf_call = time.time()
-        
-        df = yf.download(
-            symbol,
-            period=period,
-            interval=interval,
-            progress=False,
-            auto_adjust=True,
-            threads=False,
-            session=_yf_session,
-        )
-        if df is None or df.empty:
-            print(f"[WARN] No data for {symbol} ({interval}), possibly delisted")
-            return None
-        if isinstance(df.columns, pd.MultiIndex):
-            df.columns = df.columns.get_level_values(0)
-        return df
+        with _yf_lock:
+            # Wait at least 3 seconds between yf.download calls (prevents rate limit)
+            elapsed = time.time() - _last_yf_call
+            if elapsed < _yf_min_delay:
+                time.sleep(_yf_min_delay - elapsed)
+            _last_yf_call = time.time()
+            
+            df = yf.download(
+                symbol,
+                period=period,
+                interval=interval,
+                progress=False,
+                auto_adjust=True,
+                threads=False,
+                session=_yf_session,
+            )
+            if df is None or df.empty:
+                return None
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            return df
     except Exception as e:
         print(f"[ERR] yf_download {symbol} {interval}: {e}")
         return None
-
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
         p, ts = _price_cache[symbol]
         if now - ts < 60:
             return p
+    
+    # Use CoinGecko for BTC (avoids Yahoo rate limits completely)
+    if symbol == "BTC-USD":
+        try:
+            r = requests.get(
+                "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
+                timeout=10,
+                headers={"User-Agent": "Mozilla/5.0"}
+            )
+            if r.status_code == 200:
+                p = float(r.json()["bitcoin"]["usd"])
+                _price_cache[symbol] = (p, now)
+                print(f"[PRICE] BTC via CoinGecko: ${p:,.2f}")
+                return p
+        except Exception as e:
+            print(f"[CRYPTO] CoinGecko error: {e}")
+    
+    # Use fallback for Gold (GC=F sometimes fails on Yahoo)
+    if symbol == "GC=F":
+        for gold_sym in ["GC=F", "XAUUSD=X", "GLD"]:
+            try:
+                df = yf_download(gold_sym, "1d", "1m")
+                if df is not None and not df.empty:
+                    p = float(df["Close"].iloc[-1])
+                    _price_cache[symbol] = (p, now)
+                    print(f"[PRICE] Gold via {gold_sym}: ${p:,.2f}")
+                    return p
+            except Exception:
+                continue
+        print("[PRICE] All gold symbols failed")
+        return None
+    
+    # Normal Yahoo Finance for everything else
     df = yf_download(symbol, "1d", "1m")
     if df is None or df.empty:
         return None
     p = float(df["Close"].iloc[-1])
     _price_cache[symbol] = (p, now)
     return p
-
 def calc_atr(df, period=10):
     hl = df["High"] - df["Low"]
     hc = np.abs(df["High"] - df["Close"].shift(1))
