@@ -845,7 +845,7 @@ const relativeTime = (ts) => {
 async function apiFetch(path, opts = {}) {
   const url = CONFIG.API_BASE + path;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 30000);
+  const t = setTimeout(() => ctrl.abort(), 12000);
   try {
     const r = await fetch(url, { cache: "no-store", signal: ctrl.signal, ...opts });
     if (!r.ok) throw new Error("HTTP " + r.status);
@@ -885,7 +885,6 @@ async function loadPrices() {
 // STATE MANAGEMENT
 // ===========================
 async function bootstrap() {
-  console.log("[Dashboard] Starting bootstrap...");
   // Try API first
   try {
     const snap = await loadSnapshot();
@@ -1028,7 +1027,7 @@ function updateStatusUI() {
 
 function updateClock() {
   const now = new Date();
-  const ist = new Date(now.getTime() + (5.5 * 60 - now.getTimezoneOffset()) * 60 * 1000);
+  const ist = new Date(now.getTime() + (now.getTimezoneOffset() + 330) * 60 * 1000);
   const hh = String(ist.getHours()).padStart(2,"0");
   const mm = String(ist.getMinutes()).padStart(2,"0");
   const ss = String(ist.getSeconds()).padStart(2,"0");
@@ -1350,43 +1349,59 @@ function renderPending() {
 function renderNews() {
   const newsRaw = state.snapshot.news_raw || [];
   const dayNames = ["Sun","Mon","Tue","Wed","Thu","Fri","Sat"];
-  // Group by date
+
+  // Group by calendar date (IST)
   const byDate = {};
   newsRaw.forEach(e => {
-    const d = e.date || "";
-    if (!byDate[d]) byDate[d] = [];
-    byDate[d].push(e);
+    const isoStr = e.date || "";
+    if (!isoStr) return;
+
+    // Parse ISO datetime with timezone (e.g. "2026-08-02T17:00:00-04:00")
+    const dt = new Date(isoStr);
+    if (isNaN(dt)) return;
+
+    // Get calendar date in IST for grouping
+    const dateKey = dt.toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
+
+    // Format times
+    const etTime = dt.toLocaleTimeString('en-GB', { timeZone: 'America/New_York', hour: '2-digit', minute: '2-digit', hour12: false });
+    const istTime = dt.toLocaleTimeString('en-GB', { timeZone: 'Asia/Kolkata', hour: '2-digit', minute: '2-digit', hour12: false });
+
+    if (!byDate[dateKey]) byDate[dateKey] = [];
+    byDate[dateKey].push({ ...e, _etTime: etTime, _istTime: istTime });
   });
+
   // Also include MOCK news if present (for demo)
   if (state.snapshot.news && typeof state.snapshot.news === 'object') {
     Object.entries(state.snapshot.news).forEach(([d, evs]) => {
       if (!byDate[d]) byDate[d] = evs;
     });
   }
-  const today = new Date().toISOString().slice(0, 10);
+
+  const today = new Date().toLocaleDateString('en-CA', { timeZone: 'Asia/Kolkata' });
   const dates = Object.keys(byDate).sort();
 
   if (dates.length === 0) {
     document.getElementById("newsGrid").innerHTML = `<div class="empty">No upcoming events.</div>`;
     return;
   }
+
   document.getElementById("newsGrid").innerHTML = dates.map(date => {
     const events = byDate[date];
-    const d = new Date(date + "T00:00:00");
+    const d = new Date(date + "T00:00:00+05:30");
     const dn = dayNames[d.getDay()];
     const isToday = date === today;
     const high = events.filter(e => (e.impact || '').toLowerCase() === 'high' || (e.impact || '').toUpperCase() === 'RED').length;
     const highBadge = high > 0 ? `<span class="high-tag">${high} HIGH</span>` : "";
+
     const eventsHtml = events.map(e => {
       const impact = (e.impact || '').toLowerCase();
       const impactClass = impact === 'high' || impact === 'red' ? 'i-high' : impact === 'med' || impact === 'yellow' || impact === 'orange' ? 'i-med' : 'i-low';
-      const parts = (e.time || "00:00").split(":");
-      const h = parseInt(parts[0]) || 0;
-      const istH = String((h + 9) % 24).padStart(2, "0");
-      const istM = parts[1] || "00";
+      const et = e._etTime || e.time || "—";
+      const ist = e._istTime || "—";
       return `<div class="news-event">
         <div class="news-impact ${impactClass}"></div>
-        <div class="news-time">${e.time || "—"} ET<span class="ist">${istH}:${istM} IST</span></div>
+        <div class="news-time">${et} ET<span class="ist">${ist} IST</span></div>
         <div class="news-curr">${escapeHTML(e.country || e.currency || "—")}</div>
         <div class="news-title-block">
           <div class="news-title">${escapeHTML(e.title || "")}</div>
@@ -1394,6 +1409,7 @@ function renderNews() {
         </div>
       </div>`;
     }).join("");
+
     return `<div class="news-day">
       <div class="news-day-head">
         <div class="news-day-name ${isToday ? 'today' : ''}">${dn} <span class="date">${date}</span></div>
@@ -1555,9 +1571,7 @@ function switchDailyChart(key, btn) {
 }
 
 function renderAll() {
-  if (!state.snapshot) {
-    state.snapshot = MOCK;
-  }
+  if (!state.snapshot) return;
   renderKpis();
   renderAccounts();
   renderLiveTrades();
@@ -1574,7 +1588,7 @@ function renderAll() {
 // ===========================
 document.querySelectorAll("[data-cum]").forEach(b => b.addEventListener("click", () => switchCumChart(b.dataset.cum, b)));
 document.querySelectorAll("[data-daily]").forEach(b => b.addEventListener("click", () => switchDailyChart(b.dataset.daily, b)));
-updateClock();
+
 setInterval(updateClock, 1000);
 
 bootstrap();
