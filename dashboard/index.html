@@ -845,7 +845,7 @@ const relativeTime = (ts) => {
 async function apiFetch(path, opts = {}) {
   const url = CONFIG.API_BASE + path;
   const ctrl = new AbortController();
-  const t = setTimeout(() => ctrl.abort(), 12000);
+  const t = setTimeout(() => ctrl.abort(), 30000);
   try {
     const r = await fetch(url, { cache: "no-store", signal: ctrl.signal, ...opts });
     if (!r.ok) throw new Error("HTTP " + r.status);
@@ -885,6 +885,7 @@ async function loadPrices() {
 // STATE MANAGEMENT
 // ===========================
 async function bootstrap() {
+  console.log("[Dashboard] Starting bootstrap...");
   // Try API first
   try {
     const snap = await loadSnapshot();
@@ -1554,7 +1555,9 @@ function switchDailyChart(key, btn) {
 }
 
 function renderAll() {
-  if (!state.snapshot) return;
+  if (!state.snapshot) {
+    state.snapshot = MOCK;
+  }
   renderKpis();
   renderAccounts();
   renderLiveTrades();
@@ -1571,7 +1574,7 @@ function renderAll() {
 // ===========================
 document.querySelectorAll("[data-cum]").forEach(b => b.addEventListener("click", () => switchCumChart(b.dataset.cum, b)));
 document.querySelectorAll("[data-daily]").forEach(b => b.addEventListener("click", () => switchDailyChart(b.dataset.daily, b)));
-
+updateClock();
 setInterval(updateClock, 1000);
 
 bootstrap();
