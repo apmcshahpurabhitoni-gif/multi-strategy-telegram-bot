@@ -253,6 +253,7 @@ def _build_snapshot():
     # Today signals (last 24h from sent_signals)
     today_signals = []
     cutoff = time.time() * 1000 - 24 * 3600 * 1000
+    print(f"[API] sent_signals count: {len(sent)}, memory: {len(sent_memory)}, cutoff: {cutoff}")
     for key, sig in (sent or {}).items():
         ts_ms = 0
         sym = ""
