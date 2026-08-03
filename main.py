@@ -6,7 +6,8 @@ import gc
 from datetime import datetime, timedelta
 from io import BytesIO
 from wsgiref.simple_server import make_server
-
+from telegram import InlineKeyboardButton, InlineKeyboardMarkup
+from telegram.ext import CallbackQueryHandler
 import requests
 import dashboard_api
 import numpy as np
@@ -62,7 +63,7 @@ _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 _yf_lock = threading.Lock()
-
+state = { "live_trades": [], "today_signals": [], "history": [], "accounts": {} }
 
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -1696,7 +1697,70 @@ def gen_chart(symbol, tf="1h"):
 
 
 # ============================================================
+# ========== BUTTON MENU ==========
 
+def build_menu():
+    """Creates the button grid."""
+    return InlineKeyboardMarkup([
+        # Row 1
+        [InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com"),
+         InlineKeyboardButton("🔥 Live", callback_data="live")],
+        # Row 2
+        [InlineKeyboardButton("📡 Signals", callback_data="signals"),
+         InlineKeyboardButton("📜 History", callback_data="history")],
+        # Row 3
+        [InlineKeyboardButton("🔄 Refresh", callback_data="refresh")],
+    ])
+
+async def cmd_start(update, context):
+    """/start command — sends buttons."""
+    await update.message.reply_text(
+        "🤖 *Mavis Bot* — Tap a button:",
+        parse_mode="Markdown",
+        reply_markup=build_menu()
+    )
+
+async def cmd_menu(update, context):
+    """/menu command — resends buttons."""
+    await update.message.reply_text(
+        "📋 Menu:",
+        reply_markup=build_menu()
+    )
+
+async def on_button_click(update, context):
+    """This runs when ANY button is tapped."""
+    query = update.callback_query
+    await query.answer()  # Stops the loading spinner
+    data = query.data       # The secret code from the button
+
+    if data == "live":
+        trades = state.get("live_trades", [])
+        if trades:
+            lines = [f"• {t['symbol']} {t['direction']}  P/L ₹{t.get('pnl_inr',0):+.0f}" for t in trades[:5]]
+            text = "🔥 *Live Trades*\n" + "\n".join(lines)
+        else:
+            text = "🔥 *Live Trades*\nNo open trades right now."
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
+
+    elif data == "signals":
+        sigs = state.get("today_signals", [])
+        if sigs:
+            lines = [f"• {s.get('sym','')} {s.get('dir','')} @ {s.get('time','')}" for s in sigs[:5]]
+            text = "📡 *Today's Signals*\n" + "\n".join(lines)
+        else:
+            text = "📡 *Signals*\nNo signals today."
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
+
+    elif data == "history":
+        hist = state.get("history", [])
+        total = sum(h.get("pnl", 0) for h in hist)
+        text = f"📜 *History*\n{len(hist)} closed trades · Total P/L: {total:+.0f}"
+        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
+
+    elif data == "refresh":
+        await query.edit_message_text("🔄 Refreshing data...", reply_markup=build_menu())
+        await fetch_data()  # Your existing refresh function
+        await query.edit_message_text("✅ Data refreshed!", reply_markup=build_menu())
 
 # ============================================================
 # BOOT
