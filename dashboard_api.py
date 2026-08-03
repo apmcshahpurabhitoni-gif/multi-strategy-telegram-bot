@@ -43,7 +43,7 @@ def _get_main_module():
 # 1. Batch live prices
 # ----------------------------------------------------------------
 def _batch_live_prices(symbols):
-    """ONE yf.download call for ALL uncached symbols. Returns {sym: price}."""
+    """Fetch live prices. Uses main.py _price_cache first, yf.download as fallback."""
     if not symbols:
         return {}
 
@@ -51,32 +51,39 @@ def _batch_live_prices(symbols):
     if main is None:
         return {}
 
-    _yf_session = getattr(main, "_yf_session", None)
     _price_cache = getattr(main, "_price_cache", None)
     _lock = getattr(main, "_lock", None)
-    pd = getattr(main, "pd", None)
     yf_lib = getattr(main, "yf", None)
-
-    if not (_yf_session and _price_cache is not None and _lock and pd and yf_lib):
-        return {}
+    _yf_session = getattr(main, "_yf_session", None)
 
     out = {}
     need = []
     now = time.time()
 
-    with _lock:
-        for s in symbols:
-            if s in _price_cache:
-                p, ts = _price_cache[s]
-                if now - ts < PRICE_TTL:
-                    out[s] = p
-                    continue
-            need.append(s)
+    # STEP 1: Read from main.py's price cache (updated by monitor/scanner every 15s)
+    if _price_cache is not None and _lock is not None:
+        with _lock:
+            for s in symbols:
+                if s in _price_cache:
+                    p, ts = _price_cache[s]
+                    if now - ts < 120:  # 2 min tolerance
+                        out[s] = p
+                        continue
+                need.append(s)
+    else:
+        need = list(symbols)
 
     if not need:
         return out
 
+    # STEP 2: Fallback to yf.download for missing symbols (with rate limit protection)
+    if not (yf_lib and _yf_session):
+        return out
+
     try:
+        # Wait a bit to avoid hammering Yahoo alongside scanner/monitor
+        time.sleep(0.5)
+        
         df = yf_lib.download(
             tickers=need,
             period="1d",
@@ -92,28 +99,44 @@ def _batch_live_prices(symbols):
         if len(need) == 1:
             sym = need[0]
             try:
-                p = float(df["Close"].iloc[-1])
+                # Handle both flat and MultiIndex columns
+                close_vals = df["Close"]
+                if hasattr(close_vals, 'iloc'):
+                    p = float(close_vals.iloc[-1])
+                else:
+                    p = float(close_vals[-1])
                 out[sym] = p
-                with _lock:
-                    _price_cache[sym] = (p, now)
-            except Exception:
-                pass
+                if _price_cache is not None and _lock is not None:
+                    with _lock:
+                        _price_cache[sym] = (p, now)
+            except Exception as e:
+                print(f"[PRICE] Single ticker fallback failed for {sym}: {e}")
             return out
 
-        if isinstance(df.columns, pd.MultiIndex):
+        if hasattr(df.columns, 'nlevels') and df.columns.nlevels > 1:
             for sym in need:
                 try:
                     p = float(df[sym]["Close"].iloc[-1])
                     out[sym] = p
-                    with _lock:
-                        _price_cache[sym] = (p, now)
+                    if _price_cache is not None and _lock is not None:
+                        with _lock:
+                            _price_cache[sym] = (p, now)
+                except Exception:
+                    continue
+        else:
+            for sym in need:
+                try:
+                    p = float(df["Close"].iloc[-1])
+                    out[sym] = p
+                    if _price_cache is not None and _lock is not None:
+                        with _lock:
+                            _price_cache[sym] = (p, now)
                 except Exception:
                     continue
     except Exception as e:
         print(f"[ERR] _batch_live_prices: {e}")
 
     return out
-
 
 # ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
@@ -147,9 +170,14 @@ def _build_snapshot():
 
     today_str = now.strftime("%Y-%m-%d")
     week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
-
     history = load_json(HISTORY_FILE, []) if load_json else []
+    # Read sent_signals from file, fallback to in-memory dict
     sent = load_json(SENT_SIGNALS_FILE, {}) if load_json else {}
+    sent_memory = getattr(main, "sent_signals", {})
+    if isinstance(sent_memory, dict) and len(sent_memory) > len(sent):
+        print(f"[API] Using in-memory sent_signals ({len(sent_memory)}) vs file ({len(sent)})")
+        sent = sent_memory
+    
     pending = list(pending_sweeps) if pending_sweeps else (load_json(PENDING_SWEEPS_FILE, []) if load_json else [])
 
     # Per-account today/week P/L
