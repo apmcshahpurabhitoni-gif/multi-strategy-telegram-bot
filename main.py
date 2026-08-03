@@ -6,8 +6,7 @@ import gc
 from datetime import datetime, timedelta
 from io import BytesIO
 from wsgiref.simple_server import make_server
-from telegram import InlineKeyboardButton, InlineKeyboardMarkup
-from telegram.ext import CallbackQueryHandler
+
 import requests
 import dashboard_api
 import numpy as np
@@ -63,7 +62,7 @@ _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 _yf_lock = threading.Lock()
-state = { "live_trades": [], "today_signals": [], "history": [], "accounts": {} }
+
 
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
@@ -315,7 +314,7 @@ def is_nifty_open():
 def is_market_open(symbol):
     n = datetime.now(IST)
     w, tm = n.weekday(), n.hour * 60 + n.minute
-    if symbol in ("BTC-USD", "GC=F"):
+    if symbol in ("BTC-USD", "GC=F", "XAUUSD=X"):
         return True
     if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
         return w < 5
@@ -326,134 +325,16 @@ def is_market_open(symbol):
 _last_yf_call = 0
 _yf_min_delay = 1.5  # seconds between yf.download calls
 
-# ============================================================
-# GOLD / YAHOO FALLBACK HELPERS
-# ============================================================
-
-def fetch_yahoo_v8(symbol, interval="1m", range_="1d"):
-    """Fetch OHLCV directly from Yahoo Finance v8 chart API.
-    This bypasses the heavy yfinance library and sometimes slips through
-    Render IP blocks because it is a single lightweight HTTP call.
-    """
-    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
-    params = {
-        "interval": interval,
-        "range": range_,
-        "includeAdjustedClose": "true"
-    }
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
-        "Accept": "application/json",
-        "Accept-Language": "en-US,en;q=0.9",
-    }
-    try:
-        r = requests.get(url, params=params, headers=headers, timeout=15)
-        if r.status_code != 200:
-            print(f"[YAHOO-V8] HTTP {r.status_code} for {symbol}")
-            return None
-        data = r.json()
-        result = data.get("chart", {}).get("result", [None])[0]
-        if not result:
-            return None
-
-        timestamps = result.get("timestamp", [])
-        quote = result.get("indicators", {}).get("quote", [{}])[0]
-        adjclose = result.get("indicators", {}).get("adjclose", [{}])[0]
-
-        if not timestamps or not quote:
-            return None
-
-        closes = adjclose.get("adjclose", quote.get("close", []))
-        df = pd.DataFrame({
-            "Open": quote.get("open", []),
-            "High": quote.get("high", []),
-            "Low": quote.get("low", []),
-            "Close": closes,
-            "Volume": quote.get("volume", []),
-        }, index=pd.to_datetime(timestamps, unit="s"))
-
-        df = df.dropna()
-        if df.empty:
-            return None
-        df.index.name = "Date"
-        print(f"[YAHOO-V8] {symbol} {interval} — {len(df)} rows")
-        return df
-    except Exception as e:
-        print(f"[ERR] Yahoo v8 {symbol}: {e}")
-        return None
-
-
-def fetch_gold_coingecko():
-    """Fetch gold spot via Paxos Gold (PAXG) on CoinGecko.
-    PAXG is a crypto token backed 1:1 by physical gold — price tracks
-    spot gold within ~0.1%. Uses the same free API that already works for BTC.
-    """
-    try:
-        r = requests.get(
-            "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd",
-            timeout=10,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        if r.status_code == 200:
-            p = float(r.json()["pax-gold"]["usd"])
-            print(f"[PRICE] Gold via CoinGecko PAXG: ${p:,.2f}")
-            return p
-    except Exception as e:
-        print(f"[CRYPTO] CoinGecko PAXG error: {e}")
-    return None
-
-
-def fetch_gold_history_coingecko(days=3):
-    """Fetch gold OHLC history via PAXG on CoinGecko for sweep/UT detection.
-    Returns a DataFrame in the same shape as yf_download().
-    """
-    try:
-        r = requests.get(
-            f"https://api.coingecko.com/api/v3/coins/pax-gold/ohlc?vs_currency=usd&days={days}",
-            timeout=15,
-            headers={"User-Agent": "Mozilla/5.0"}
-        )
-        if r.status_code != 200:
-            print(f"[CRYPTO] CoinGecko OHLC HTTP {r.status_code}")
-            return None
-        data = r.json()
-        if not data or not isinstance(data, list):
-            return None
-
-        rows = []
-        for candle in data:
-            if len(candle) >= 5:
-                ts, o, h, l, c = candle[0], candle[1], candle[2], candle[3], candle[4]
-                rows.append({
-                    "Open": float(o),
-                    "High": float(h),
-                    "Low": float(l),
-                    "Close": float(c),
-                    "Volume": 0.0,
-                })
-
-        if not rows:
-            return None
-
-        df = pd.DataFrame(rows, index=pd.to_datetime([c[0] for c in data], unit="ms"))
-        df.index.name = "Date"
-        print(f"[CRYPTO] PAXG OHLC — {len(df)} rows ({days}d)")
-        return df
-    except Exception as e:
-        print(f"[ERR] CoinGecko PAXG history: {e}")
-        return None
-
-
 def yf_download(symbol, period, interval):
     global _last_yf_call
-    # --- Attempt 1: yfinance library ---
     try:
         with _yf_lock:
+            # Wait at least 3 seconds between yf.download calls (prevents rate limit)
             elapsed = time.time() - _last_yf_call
             if elapsed < _yf_min_delay:
                 time.sleep(_yf_min_delay - elapsed)
             _last_yf_call = time.time()
-
+            
             df = yf.download(
                 symbol,
                 period=period,
@@ -463,48 +344,22 @@ def yf_download(symbol, period, interval):
                 threads=False,
                 session=_yf_session,
             )
-            if df is not None and not df.empty:
-                if isinstance(df.columns, pd.MultiIndex):
-                    df.columns = df.columns.get_level_values(0)
-                print(f"[YFINANCE] {symbol} {interval} — {len(df)} rows")
-                return df
+            if df is None or df.empty:
+                return None
+            if isinstance(df.columns, pd.MultiIndex):
+                df.columns = df.columns.get_level_values(0)
+            return df
     except Exception as e:
         print(f"[ERR] yf_download {symbol} {interval}: {e}")
-
-    # --- Attempt 2: Yahoo v8 chart API directly (lighter, bypasses some blocks) ---
-    v8_range = "1d"
-    if period in ("1d", "5d"):
-        v8_range = period
-    elif period == "10d":
-        v8_range = "10d"
-    elif period == "30d":
-        v8_range = "1mo"
-    elif period == "3d":
-        v8_range = "3d"
-
-    df_v8 = fetch_yahoo_v8(symbol, interval=interval, range_=v8_range)
-    if df_v8 is not None and not df_v8.empty:
-        return df_v8
-
-    # --- Attempt 3: For gold, fallback to CoinGecko PAXG history ---
-    if symbol in ("GC=F", "XAUUSD=X", "GLD"):
-        cg_days = 1 if period in ("1d",) else 3 if period in ("3d", "5d") else 10
-        df_cg = fetch_gold_history_coingecko(days=cg_days)
-        if df_cg is not None and not df_cg.empty:
-            if interval in ("1h", "4h"):
-                df_cg = df_cg.resample(interval).agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
-            return df_cg
-
-    print(f"[FAIL] All sources exhausted for {symbol} {interval}")
-    return None
+        return None
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
         p, ts = _price_cache[symbol]
         if now - ts < 60:
             return p
-
-    # ── BTC via CoinGecko (already working) ──
+    
+    # Use CoinGecko for BTC (avoids Yahoo rate limits completely)
     if symbol == "BTC-USD":
         try:
             r = requests.get(
@@ -519,38 +374,23 @@ def get_price(symbol):
                 return p
         except Exception as e:
             print(f"[CRYPTO] CoinGecko error: {e}")
-
-    # ── GOLD: 3-layer fallback ──
+    
+    # Use fallback for Gold (GC=F sometimes fails on Yahoo)
     if symbol == "GC=F":
-        # Layer 1: Yahoo v8 direct (lightweight, may bypass blocks)
-        df_v8 = fetch_yahoo_v8("GC=F", interval="1m", range_="1d")
-        if df_v8 is not None and not df_v8.empty:
-            p = float(df_v8["Close"].iloc[-1])
-            _price_cache[symbol] = (p, now)
-            print(f"[PRICE] Gold via Yahoo v8: ${p:,.2f}")
-            return p
-
-        # Layer 2: CoinGecko PAXG (crypto-backed gold, same API as BTC)
-        p = fetch_gold_coingecko()
-        if p is not None:
-            _price_cache[symbol] = (p, now)
-            return p
-
-        # Layer 3: yfinance with GLD ETF (last resort)
-        for gold_sym in ["GC=F", "GLD"]:
+        for gold_sym in ["GC=F", "XAUUSD=X", "GLD"]:
             try:
                 df = yf_download(gold_sym, "1d", "1m")
                 if df is not None and not df.empty:
                     p = float(df["Close"].iloc[-1])
                     _price_cache[symbol] = (p, now)
-                    print(f"[PRICE] Gold via yfinance {gold_sym}: ${p:,.2f}")
+                    print(f"[PRICE] Gold via {gold_sym}: ${p:,.2f}")
                     return p
             except Exception:
                 continue
-        print("[PRICE] All gold sources failed")
+        print("[PRICE] All gold symbols failed")
         return None
-
-    # ── Normal Yahoo Finance for everything else ──
+    
+    # Normal Yahoo Finance for everything else
     df = yf_download(symbol, "1d", "1m")
     if df is None or df.empty:
         return None
@@ -996,6 +836,7 @@ def monitor():
 MONITORED = [
     ("BTC-USD", "Crypto"),
     ("GC=F", "Gold"),
+    ("XAUUSD=X", "Gold-Backup"),
     ("EURUSD=X", "Forex"),
     ("GBPUSD=X", "Forex"),
     ("USDJPY=X", "Forex"),
@@ -1408,9 +1249,50 @@ def news_alert_loop():
 # ============================================================
 # TELEGRAM HANDLERS
 # ============================================================
+# ========== BUTTON MENU HELPERS ==========
+
+def build_menu():
+    """Creates the inline button grid for the bot menu."""
+    markup = InlineKeyboardMarkup()
+    markup.row(
+        InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com"),
+        InlineKeyboardButton("🔥 Live Trades", callback_data="menu_live"),
+    )
+    markup.row(
+        InlineKeyboardButton("📡 Signals", callback_data="menu_signals"),
+        InlineKeyboardButton("📜 History", callback_data="menu_history"),
+    )
+    markup.row(
+        InlineKeyboardButton("💰 Balances", callback_data="menu_balance"),
+        InlineKeyboardButton("📰 News", callback_data="menu_news"),
+    )
+    markup.row(
+        InlineKeyboardButton("🔄 Refresh Data", callback_data="menu_refresh"),
+    )
+    return markup
+
+
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(m):
-    safe_send(m.chat.id, msg_guide(), parse_mode="Markdown")
+    welcome = (
+        "🤖 *Mavis Trading Bot*
+"
+        "━━━━━━━━━━━━━━━━━━━━━━
+"
+        "Paper trading bot with multi-account support.
+
+"
+        "📊 *Dashboard:* [Open in Browser](https://multi-strategy-telegram-bot-1.onrender.com)
+"
+        "💡 Tap a button below to control the bot 👇"
+    )
+    safe_send(m.chat.id, welcome, parse_mode="Markdown", reply_markup=build_menu())
+
+
+@bot.message_handler(commands=["menu"])
+def cmd_menu(m):
+    """Resend the button menu anytime."""
+    safe_send(m.chat.id, "📋 *Control Menu*", parse_mode="Markdown", reply_markup=build_menu())
 
 @bot.message_handler(commands=["test"])
 def cmd_test(m):
@@ -1633,28 +1515,142 @@ def fallback(m):
 @bot.callback_query_handler(func=lambda c: True)
 def cb(c):
     try:
-        if c.data.startswith("chart_"):
-            sym = c.data.split("_", 1)[1]
+        data = c.data
+        chat_id = c.message.chat.id
+        msg_id = c.message.message_id
+
+        # ── MENU BUTTONS ──
+        if data == "menu_live":
+            bot.answer_callback_query(c.id, "Loading live trades...")
+            copy = list(active_trades)
+            if copy:
+                lines = []
+                for t in copy[:5]:
+                    pnl = t.get("pnl", 0)
+                    pnl_str = f"+₹{pnl:,.0f}" if pnl >= 0 else f"-₹{abs(pnl):,.0f}"
+                    lines.append(f"• `{t['symbol']}` {t['type']} @ {t['entry']:,.4f} → P/L: {pnl_str}")
+                text = "🔥 *Live Open Trades*
+" + "━━━━━━━━━━━━━━━━━━━━━━
+" + "
+".join(lines)
+            else:
+                text = "🔥 *Live Trades*
+━━━━━━━━━━━━━━━━━━━━━━
+⚪ No open trades right now."
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        elif data == "menu_signals":
+            bot.answer_callback_query(c.id, "Loading signals...")
+            sigs = list(sent_signals.values())
+            today = datetime.now(IST).strftime("%Y-%m-%d")
+            today_sigs = [s for s in sigs if s.get("time_str", "").startswith(today) or s.get("ts_ms", 0) > (time.time() - 86400) * 1000]
+            if today_sigs:
+                lines = []
+                for s in sorted(today_sigs, key=lambda x: x.get("ts_ms", 0), reverse=True)[:5]:
+                    lines.append(f"• `{s.get('symbol','')}` {s.get('sig_type','')} @ {s.get('time_str','')}")
+                text = "📡 *Today's Signals*
+" + "━━━━━━━━━━━━━━━━━━━━━━
+" + "
+".join(lines)
+            else:
+                text = "📡 *Signals*
+━━━━━━━━━━━━━━━━━━━━━━
+⚪ No signals fired in the last 24h."
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        elif data == "menu_history":
+            bot.answer_callback_query(c.id, "Loading history...")
+            hist = load_json(HISTORY_FILE, [])
+            total_pnl = sum(float(t.get("pnl", 0)) for t in hist)
+            wins = sum(1 for t in hist if t.get("result") == "WIN")
+            losses = sum(1 for t in hist if t.get("result") == "LOSS")
+            sign = "+" if total_pnl >= 0 else ""
+            text = (
+                f"📜 *Trade History*
+"
+                f"━━━━━━━━━━━━━━━━━━━━━━
+"
+                f"📊 Total trades: `{len(hist)}`
+"
+                f"✅ Wins: `{wins}`  |  ❌ Losses: `{losses}`
+"
+                f"💰 Total P/L: `{sign}₹{total_pnl:,.2f}`
+"
+                f"━━━━━━━━━━━━━━━━━━━━━━"
+            )
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        elif data == "menu_balance":
+            bot.answer_callback_query(c.id, "Loading balances...")
+            with _lock:
+                mb = accounts["macro"]["balance"]
+                nb = accounts["nifty"]["balance"]
+                nyb = accounts["ny_session"]["balance"]
+                sb = accounts.get("sweep_4h", {"balance": 100000.0})["balance"]
+            total = mb + nb + nyb + sb
+            text = (
+                f"💰 *Account Balances*
+"
+                f"━━━━━━━━━━━━━━━━━━━━━━
+"
+                f"🌐 Macro: `₹{mb:,.2f}`
+"
+                f"🇮🇳 Nifty: `₹{nb:,.2f}`
+"
+                f"🇺🇸 NY Session: `₹{nyb:,.2f}`
+"
+                f"🔵 Sweep 4H: `₹{sb:,.2f}`
+"
+                f"━━━━━━━━━━━━━━━━━━━━━━
+"
+                f"🏦 Total: `₹{total:,.2f}`"
+            )
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        elif data == "menu_news":
+            bot.answer_callback_query(c.id, "Loading news...")
+            events = get_cached_news()
+            today = datetime.now(IST).strftime("%Y-%m-%d")
+            today_events = [e for e in events if _extract_date(e.get("date","")) == today and str(e.get("impact","")).upper() in ("HIGH","MEDIUM")]
+            if today_events:
+                msg = format_news_message(today_events, "📰 Today's Economic Calendar", filter_today_only=True, max_events=10)
+            else:
+                msg = f"📰 *Economic Calendar*
+━━━━━━━━━━━━━━━━━━━━━━
+🟢 No high-impact news today.
+━━━━━━━━━━━━━━━━━━━━━━"
+            bot.edit_message_text(msg, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        elif data == "menu_refresh":
+            bot.answer_callback_query(c.id, "Refreshing...")
+            bot.edit_message_text("🔄 *Refreshing data...*", chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+            # Force refresh price cache
+            _price_cache.clear()
+            bot.edit_message_text("✅ *Data refreshed!*", chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+
+        # ── EXISTING BUTTONS (Chart / Mute) ──
+        elif data.startswith("chart_"):
+            sym = data.split("_", 1)[1]
             bot.answer_callback_query(c.id, "Generating chart...")
             buf = gen_chart(sym)
             if buf:
                 bot.send_photo(c.message.chat.id, buf, caption=f"📈 `{sym}`")
             else:
                 safe_send(c.message.chat.id, "❌ Chart failed")
-        elif c.data.startswith("mute_"):
-            sym = c.data.split("_", 1)[1]
+        elif data.startswith("mute_"):
+            sym = data.split("_", 1)[1]
             with _lock:
                 muted_assets.add(sym)
                 save_json(MUTE_FILE, list(muted_assets))
             m = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🔊 Unmute {sym}", callback_data=f"unmute_{sym}"))
-            bot.edit_message_text(f"🔇 `{sym}` muted.", c.message.chat.id, c.message.message_id, reply_markup=m)
-        elif c.data.startswith("unmute_"):
-            sym = c.data.split("_", 1)[1]
+            bot.edit_message_text(f"🔇 `{sym}` muted.", chat_id, msg_id, reply_markup=m)
+        elif data.startswith("unmute_"):
+            sym = data.split("_", 1)[1]
             with _lock:
                 muted_assets.discard(sym)
                 save_json(MUTE_FILE, list(muted_assets))
             m = InlineKeyboardMarkup().add(InlineKeyboardButton(f"🔇 Mute {sym}", callback_data=f"mute_{sym}"))
-            bot.edit_message_text(f"🔊 `{sym}` unmuted.", c.message.chat.id, c.message.message_id, reply_markup=m)
+            bot.edit_message_text(f"🔊 `{sym}` unmuted.", chat_id, msg_id, reply_markup=m)
     except Exception as e:
         print(f"[ERR] CB: {e}")
 
@@ -1697,70 +1693,7 @@ def gen_chart(symbol, tf="1h"):
 
 
 # ============================================================
-# ========== BUTTON MENU ==========
 
-def build_menu():
-    """Creates the button grid."""
-    return InlineKeyboardMarkup([
-        # Row 1
-        [InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com"),
-         InlineKeyboardButton("🔥 Live", callback_data="live")],
-        # Row 2
-        [InlineKeyboardButton("📡 Signals", callback_data="signals"),
-         InlineKeyboardButton("📜 History", callback_data="history")],
-        # Row 3
-        [InlineKeyboardButton("🔄 Refresh", callback_data="refresh")],
-    ])
-
-async def cmd_start(update, context):
-    """/start command — sends buttons."""
-    await update.message.reply_text(
-        "🤖 *Mavis Bot* — Tap a button:",
-        parse_mode="Markdown",
-        reply_markup=build_menu()
-    )
-
-async def cmd_menu(update, context):
-    """/menu command — resends buttons."""
-    await update.message.reply_text(
-        "📋 Menu:",
-        reply_markup=build_menu()
-    )
-
-async def on_button_click(update, context):
-    """This runs when ANY button is tapped."""
-    query = update.callback_query
-    await query.answer()  # Stops the loading spinner
-    data = query.data       # The secret code from the button
-
-    if data == "live":
-        trades = state.get("live_trades", [])
-        if trades:
-            lines = [f"• {t['symbol']} {t['direction']}  P/L ₹{t.get('pnl_inr',0):+.0f}" for t in trades[:5]]
-            text = "🔥 *Live Trades*\n" + "\n".join(lines)
-        else:
-            text = "🔥 *Live Trades*\nNo open trades right now."
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
-
-    elif data == "signals":
-        sigs = state.get("today_signals", [])
-        if sigs:
-            lines = [f"• {s.get('sym','')} {s.get('dir','')} @ {s.get('time','')}" for s in sigs[:5]]
-            text = "📡 *Today's Signals*\n" + "\n".join(lines)
-        else:
-            text = "📡 *Signals*\nNo signals today."
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
-
-    elif data == "history":
-        hist = state.get("history", [])
-        total = sum(h.get("pnl", 0) for h in hist)
-        text = f"📜 *History*\n{len(hist)} closed trades · Total P/L: {total:+.0f}"
-        await query.edit_message_text(text, parse_mode="Markdown", reply_markup=build_menu())
-
-    elif data == "refresh":
-        await query.edit_message_text("🔄 Refreshing data...", reply_markup=build_menu())
-        await fetch_data()  # Your existing refresh function
-        await query.edit_message_text("✅ Data refreshed!", reply_markup=build_menu())
 
 # ============================================================
 # BOOT
