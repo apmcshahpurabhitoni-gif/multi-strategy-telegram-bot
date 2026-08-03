@@ -555,11 +555,15 @@ function fmtPnl(n) {
 }
 function fmtTime(ts) {
   if (!ts) return '—';
-  try {
-    const d = new Date(ts);
+  const d = new Date(ts);
+  if (!isNaN(d.getTime())) {
     return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  } catch { return ts; }
-}
+  }
+  // Fallback for IST strings like "2026-08-03 13:18 IST (+5:30)"
+  const m = String(ts).match(/(\d{2}):(\d{2})/);
+  if (m) return m[0];
+  return ts;
+} 
 function extractDate(iso) {
   if (!iso) return '';
   const s = String(iso);
@@ -712,7 +716,7 @@ function renderSignals() {
   for (const s of sigs) {
     const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
     html += `<tr>
-      <td class="dim">${s.time || '—'}</td>
+      <td style="font-weight:700;color:var(--text);">${s.time || '—'}</td>
       <td class="sym">${s.sym || '—'}</td>
       <td class="${dirClass}">${s.dir || '—'}</td>
       <td class="dim">${(s.strategy || '').slice(0,12)}</td>
@@ -744,7 +748,7 @@ function renderHistory() {
       <td class="${(h.type || '').toUpperCase() === 'LONG' ? 'dir-long' : 'dir-short'}">${h.type || '—'}</td>
       <td class="${resClass}">${h.result || '—'}</td>
       <td class="${pnlClass}">${fmtPnl(pnl)}</td>
-      <td class="dim">${fmtTime(h.close_time)}</td>
+      <td style="font-weight:600;color:var(--text);">${fmtTime(h.close_time)}</td>
     </tr>`;
   }
   html += '</tbody></table>';
