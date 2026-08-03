@@ -200,6 +200,35 @@ threading.Thread(target=run_web, daemon=True).start()
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 
 def load_json(fp, default):
+    key = os.path.basename(fp)
+    sup_url = os.environ.get("SUPABASE_URL")
+    sup_key = os.environ.get("SUPABASE_KEY")
+
+    # 1. Try Supabase first (survives redeploys)
+    if sup_url and sup_key:
+        try:
+            r = requests.get(
+                f"{sup_url}/rest/v1/bot_data?id=eq.{key}",
+                headers={
+                    "apikey": sup_key,
+                    "Authorization": f"Bearer {sup_key}"
+                },
+                timeout=15
+            )
+            if r.status_code == 200:
+                rows = r.json()
+                if rows and len(rows) > 0:
+                    # Write locally for fast loads next time
+                    try:
+                        with open(fp, "w") as f:
+                            json.dump(rows[0]["data"], f, indent=4)
+                    except:
+                        pass
+                    return rows[0]["data"]
+        except Exception as e:
+            print(f"[ERR] Supabase load {key}: {e}")
+
+    # 2. Fallback to local file (if Supabase is down or not configured)
     try:
         if os.path.exists(fp):
             with open(fp) as f:
@@ -209,13 +238,36 @@ def load_json(fp, default):
     return default
 
 def save_json(fp, data):
+    key = os.path.basename(fp)
+    # 1. Always save locally too (fast, works if Supabase is down)
     try:
         tmp = fp + ".tmp"
         with open(tmp, "w") as f:
             json.dump(data, f, indent=4)
-        os.replace(tmp, fp)  # atomic — never leaves a half-written file
+        os.replace(tmp, fp)
     except Exception as e:
-        print(f"[ERR] save_json {fp}: {e}")
+        print(f"[ERR] local save {fp}: {e}")
+
+    # 2. Sync to Supabase so data survives redeploys
+    sup_url = os.environ.get("SUPABASE_URL")
+    sup_key = os.environ.get("SUPABASE_KEY")
+    if sup_url and sup_key:
+        try:
+            r = requests.post(
+                f"{sup_url}/rest/v1/bot_data",
+                headers={
+                    "apikey": sup_key,
+                    "Authorization": f"Bearer {sup_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates"
+                },
+                json={"id": key, "data": data},
+                timeout=15
+            )
+            if r.status_code not in (200, 201):
+                print(f"[ERR] Supabase save {key}: HTTP {r.status_code}")
+        except Exception as e:
+            print(f"[ERR] Supabase save {key}: {e}")
 
 
 
