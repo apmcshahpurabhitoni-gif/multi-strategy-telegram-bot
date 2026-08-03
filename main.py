@@ -1482,11 +1482,13 @@ if __name__ == "__main__":
     def auto_save_loop():
         while True:
             try:
-                save_json(ACTIVE_TRADES_FILE, active_trades)
-                save_json(HISTORY_FILE, history)
-                save_json(SENT_SIGNALS_FILE, sent_signals)
-                save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-                save_json(ACCOUNTS_FILE, accounts)
+                with _lock:
+                    save_json(ACTIVE_TRADES_FILE, active_trades)
+                    save_json(HISTORY_FILE, history)
+                    save_json(SENT_SIGNALS_FILE, sent_signals)
+                    save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+                    save_json(ACCOUNTS_FILE, accounts)
+                    print(f"[AUTO-SAVE] OK — trades:{len(active_trades)} hist:{len(history)} sigs:{len(sent_signals)}")
             except Exception as e:
                 print(f"[AUTO-SAVE] Error: {e}")
             time.sleep(30)
