@@ -314,7 +314,7 @@ def is_nifty_open():
 def is_market_open(symbol):
     n = datetime.now(IST)
     w, tm = n.weekday(), n.hour * 60 + n.minute
-    if symbol in ("BTC-USD", "GC=F", "XAUUSD=X"):
+    if symbol in ("BTC-USD", "GC=F"):
         return True
     if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
         return w < 5
@@ -325,16 +325,134 @@ def is_market_open(symbol):
 _last_yf_call = 0
 _yf_min_delay = 1.5  # seconds between yf.download calls
 
+# ============================================================
+# GOLD / YAHOO FALLBACK HELPERS
+# ============================================================
+
+def fetch_yahoo_v8(symbol, interval="1m", range_="1d"):
+    """Fetch OHLCV directly from Yahoo Finance v8 chart API.
+    This bypasses the heavy yfinance library and sometimes slips through
+    Render IP blocks because it is a single lightweight HTTP call.
+    """
+    url = f"https://query1.finance.yahoo.com/v8/finance/chart/{symbol}"
+    params = {
+        "interval": interval,
+        "range": range_,
+        "includeAdjustedClose": "true"
+    }
+    headers = {
+        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36",
+        "Accept": "application/json",
+        "Accept-Language": "en-US,en;q=0.9",
+    }
+    try:
+        r = requests.get(url, params=params, headers=headers, timeout=15)
+        if r.status_code != 200:
+            print(f"[YAHOO-V8] HTTP {r.status_code} for {symbol}")
+            return None
+        data = r.json()
+        result = data.get("chart", {}).get("result", [None])[0]
+        if not result:
+            return None
+
+        timestamps = result.get("timestamp", [])
+        quote = result.get("indicators", {}).get("quote", [{}])[0]
+        adjclose = result.get("indicators", {}).get("adjclose", [{}])[0]
+
+        if not timestamps or not quote:
+            return None
+
+        closes = adjclose.get("adjclose", quote.get("close", []))
+        df = pd.DataFrame({
+            "Open": quote.get("open", []),
+            "High": quote.get("high", []),
+            "Low": quote.get("low", []),
+            "Close": closes,
+            "Volume": quote.get("volume", []),
+        }, index=pd.to_datetime(timestamps, unit="s"))
+
+        df = df.dropna()
+        if df.empty:
+            return None
+        df.index.name = "Date"
+        print(f"[YAHOO-V8] {symbol} {interval} — {len(df)} rows")
+        return df
+    except Exception as e:
+        print(f"[ERR] Yahoo v8 {symbol}: {e}")
+        return None
+
+
+def fetch_gold_coingecko():
+    """Fetch gold spot via Paxos Gold (PAXG) on CoinGecko.
+    PAXG is a crypto token backed 1:1 by physical gold — price tracks
+    spot gold within ~0.1%. Uses the same free API that already works for BTC.
+    """
+    try:
+        r = requests.get(
+            "https://api.coingecko.com/api/v3/simple/price?ids=pax-gold&vs_currencies=usd",
+            timeout=10,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if r.status_code == 200:
+            p = float(r.json()["pax-gold"]["usd"])
+            print(f"[PRICE] Gold via CoinGecko PAXG: ${p:,.2f}")
+            return p
+    except Exception as e:
+        print(f"[CRYPTO] CoinGecko PAXG error: {e}")
+    return None
+
+
+def fetch_gold_history_coingecko(days=3):
+    """Fetch gold OHLC history via PAXG on CoinGecko for sweep/UT detection.
+    Returns a DataFrame in the same shape as yf_download().
+    """
+    try:
+        r = requests.get(
+            f"https://api.coingecko.com/api/v3/coins/pax-gold/ohlc?vs_currency=usd&days={days}",
+            timeout=15,
+            headers={"User-Agent": "Mozilla/5.0"}
+        )
+        if r.status_code != 200:
+            print(f"[CRYPTO] CoinGecko OHLC HTTP {r.status_code}")
+            return None
+        data = r.json()
+        if not data or not isinstance(data, list):
+            return None
+
+        rows = []
+        for candle in data:
+            if len(candle) >= 5:
+                ts, o, h, l, c = candle[0], candle[1], candle[2], candle[3], candle[4]
+                rows.append({
+                    "Open": float(o),
+                    "High": float(h),
+                    "Low": float(l),
+                    "Close": float(c),
+                    "Volume": 0.0,
+                })
+
+        if not rows:
+            return None
+
+        df = pd.DataFrame(rows, index=pd.to_datetime([c[0] for c in data], unit="ms"))
+        df.index.name = "Date"
+        print(f"[CRYPTO] PAXG OHLC — {len(df)} rows ({days}d)")
+        return df
+    except Exception as e:
+        print(f"[ERR] CoinGecko PAXG history: {e}")
+        return None
+
+
 def yf_download(symbol, period, interval):
     global _last_yf_call
+    # --- Attempt 1: yfinance library ---
     try:
         with _yf_lock:
-            # Wait at least 3 seconds between yf.download calls (prevents rate limit)
             elapsed = time.time() - _last_yf_call
             if elapsed < _yf_min_delay:
                 time.sleep(_yf_min_delay - elapsed)
             _last_yf_call = time.time()
-            
+
             df = yf.download(
                 symbol,
                 period=period,
@@ -344,22 +462,48 @@ def yf_download(symbol, period, interval):
                 threads=False,
                 session=_yf_session,
             )
-            if df is None or df.empty:
-                return None
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                print(f"[YFINANCE] {symbol} {interval} — {len(df)} rows")
+                return df
     except Exception as e:
         print(f"[ERR] yf_download {symbol} {interval}: {e}")
-        return None
+
+    # --- Attempt 2: Yahoo v8 chart API directly (lighter, bypasses some blocks) ---
+    v8_range = "1d"
+    if period in ("1d", "5d"):
+        v8_range = period
+    elif period == "10d":
+        v8_range = "10d"
+    elif period == "30d":
+        v8_range = "1mo"
+    elif period == "3d":
+        v8_range = "3d"
+
+    df_v8 = fetch_yahoo_v8(symbol, interval=interval, range_=v8_range)
+    if df_v8 is not None and not df_v8.empty:
+        return df_v8
+
+    # --- Attempt 3: For gold, fallback to CoinGecko PAXG history ---
+    if symbol in ("GC=F", "XAUUSD=X", "GLD"):
+        cg_days = 1 if period in ("1d",) else 3 if period in ("3d", "5d") else 10
+        df_cg = fetch_gold_history_coingecko(days=cg_days)
+        if df_cg is not None and not df_cg.empty:
+            if interval in ("1h", "4h"):
+                df_cg = df_cg.resample(interval).agg({"Open":"first","High":"max","Low":"min","Close":"last","Volume":"sum"}).dropna()
+            return df_cg
+
+    print(f"[FAIL] All sources exhausted for {symbol} {interval}")
+    return None
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
         p, ts = _price_cache[symbol]
         if now - ts < 60:
             return p
-    
-    # Use CoinGecko for BTC (avoids Yahoo rate limits completely)
+
+    # ── BTC via CoinGecko (already working) ──
     if symbol == "BTC-USD":
         try:
             r = requests.get(
@@ -374,23 +518,38 @@ def get_price(symbol):
                 return p
         except Exception as e:
             print(f"[CRYPTO] CoinGecko error: {e}")
-    
-    # Use fallback for Gold (GC=F sometimes fails on Yahoo)
+
+    # ── GOLD: 3-layer fallback ──
     if symbol == "GC=F":
-        for gold_sym in ["GC=F", "XAUUSD=X", "GLD"]:
+        # Layer 1: Yahoo v8 direct (lightweight, may bypass blocks)
+        df_v8 = fetch_yahoo_v8("GC=F", interval="1m", range_="1d")
+        if df_v8 is not None and not df_v8.empty:
+            p = float(df_v8["Close"].iloc[-1])
+            _price_cache[symbol] = (p, now)
+            print(f"[PRICE] Gold via Yahoo v8: ${p:,.2f}")
+            return p
+
+        # Layer 2: CoinGecko PAXG (crypto-backed gold, same API as BTC)
+        p = fetch_gold_coingecko()
+        if p is not None:
+            _price_cache[symbol] = (p, now)
+            return p
+
+        # Layer 3: yfinance with GLD ETF (last resort)
+        for gold_sym in ["GC=F", "GLD"]:
             try:
                 df = yf_download(gold_sym, "1d", "1m")
                 if df is not None and not df.empty:
                     p = float(df["Close"].iloc[-1])
                     _price_cache[symbol] = (p, now)
-                    print(f"[PRICE] Gold via {gold_sym}: ${p:,.2f}")
+                    print(f"[PRICE] Gold via yfinance {gold_sym}: ${p:,.2f}")
                     return p
             except Exception:
                 continue
-        print("[PRICE] All gold symbols failed")
+        print("[PRICE] All gold sources failed")
         return None
-    
-    # Normal Yahoo Finance for everything else
+
+    # ── Normal Yahoo Finance for everything else ──
     df = yf_download(symbol, "1d", "1m")
     if df is None or df.empty:
         return None
@@ -836,7 +995,6 @@ def monitor():
 MONITORED = [
     ("BTC-USD", "Crypto"),
     ("GC=F", "Gold"),
-    ("XAUUSD=X", "Gold-Backup"),
     ("EURUSD=X", "Forex"),
     ("GBPUSD=X", "Forex"),
     ("USDJPY=X", "Forex"),
