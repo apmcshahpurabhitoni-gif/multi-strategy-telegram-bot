@@ -189,7 +189,7 @@ def _build_snapshot():
             pnl = float(t.get("pnl", 0))
         except Exception:
             pnl = 0.0
-        ts = str(t.get("closed_at", t.get("time", t.get("timestamp", ""))))
+        ts = str(t.get("closed_at", t.get("close_time", t.get("time", t.get("timestamp", "")))))
         date_part = ts[:10]
         if acc in per_acc_today:
             if date_part == today_str:
