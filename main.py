@@ -210,10 +210,14 @@ def load_json(fp, default):
 
 def save_json(fp, data):
     try:
-        with open(fp, "w") as f:
+        tmp = fp + ".tmp"
+        with open(tmp, "w") as f:
             json.dump(data, f, indent=4)
-    except Exception:
-        pass
+        os.replace(tmp, fp)  # atomic — never leaves a half-written file
+    except Exception as e:
+        print(f"[ERR] save_json {fp}: {e}")
+
+
 
 def safe_send(chat_id, text, **kwargs):
     try:
@@ -755,6 +759,7 @@ def monitor():
                     t["pnl"] = float(pnl)
                     t["result"] = "WIN" if hit_tp else "LOSS"
                     t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
+                    t["closed_at"] = datetime.now(IST).isoformat()  # 2026-08-03T13:52:00+05:30
                     to_close.append(t)
                     save_json(ACCOUNTS_FILE, accounts)
                     global history
