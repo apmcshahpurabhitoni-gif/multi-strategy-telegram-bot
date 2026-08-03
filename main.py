@@ -62,8 +62,6 @@ _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 _yf_lock = threading.Lock()
-_last_yf_call = 0
-_yf_min_delay = 3.0  # 3 seconds between Yahoo Finance calls
 
 
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
@@ -260,7 +258,7 @@ def is_nifty_open():
 def is_market_open(symbol):
     n = datetime.now(IST)
     w, tm = n.weekday(), n.hour * 60 + n.minute
-    if symbol in ("BTC-USD", "GC=F"):
+    if symbol in ("BTC-USD", "GC=F", "XAUUSD=X"):
         return True
     if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
         return w < 5
@@ -496,7 +494,8 @@ def manage_pending_sweeps():
                 live = float(live_df["Close"].iloc[-1])
                 age_hours = (time.time() * 1000 - p["sweep_close_ts"]) / (3600 * 1000)
                 if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
-                    p["status"] = "expired"
+                    with _lock:
+                        p["status"] = "expired"
                     to_remove.append(p)
                     _refund_sweep_slot()
                     safe_send(CHAT_ID, (
@@ -507,7 +506,8 @@ def manage_pending_sweeps():
                     print(f"[EXPIRED] Pending sweep {sym} {p['direction']}")
                     continue
                 if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
-                    p["status"] = "invalidated"
+                    with _lock:
+                        p["status"] = "invalidated"
                     to_remove.append(p)
                     _refund_sweep_slot()
                     safe_send(CHAT_ID, (
@@ -518,7 +518,8 @@ def manage_pending_sweeps():
                     print(f"[INVALID] Pending sweep {sym} BULLISH")
                     continue
                 if p["direction"] == "BEARISH" and live >= p["sweep_high"]:
-                    p["status"] = "invalidated"
+                    with _lock:
+                        p["status"] = "invalidated"
                     to_remove.append(p)
                     _refund_sweep_slot()
                     safe_send(CHAT_ID, (
@@ -532,11 +533,11 @@ def manage_pending_sweeps():
                     df_1h = yf_download(sym, "5d", "1h")
                     fvg = find_fvg(df_1h, p["direction"], p["sweep_open_ts"])
                     if fvg:
-                        p["fvg_zone"] = [float(fvg[0]), float(fvg[1])]
-                        p["fvg_found_at"] = int(time.time() * 1000)
-                        p["status"] = "waiting_fill"
                         zl, zh = fvg
                         with _lock:
+                            p["fvg_zone"] = [float(fvg[0]), float(fvg[1])]
+                            p["fvg_found_at"] = int(time.time() * 1000)
+                            p["status"] = "waiting_fill"
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                         safe_send(CHAT_ID, (
                             f"🎯 *FVG FORMED — WAITING FOR FILL*\n{BR}\n"
@@ -562,7 +563,8 @@ def manage_pending_sweeps():
                         "sweep_ts": p["sweep_close_ts"],
                         "zone": p["fvg_zone"],
                     }
-                    p["status"] = "entered"
+                    with _lock:
+                        p["status"] = "entered"
                     to_remove.append(p)
                     with _lock:
                         if sym in muted_assets:
@@ -668,7 +670,17 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
             key = f"{symbol}_{ts}_{sig_type}_{account}_fvg_{price:.6f}"
             if key in sent_signals:
                 return
-        sent_signals[key] = True
+        sent_signals[key] = {
+            "ts_ms": int(time.time() * 1000),
+            "symbol": symbol,
+            "sig_type": sig_type,
+            "strat": strat,
+            "account": account,
+            "status": "open",
+            "pnl": 0,
+            "hint": "",
+            "time_str": datetime.now(IST).strftime("%H:%M"),
+        }
         save_json(SENT_SIGNALS_FILE, sent_signals)
         lim = ACCOUNT_LIMITS.get(account, 3)
         if fvg_entry is None and accounts[account]["daily_trades"] >= lim:
@@ -719,6 +731,9 @@ def monitor():
                 if df is None or df.empty:
                     continue
                 live = float(df["Close"].iloc[-1])
+                # Cache the live price so the dashboard API can read it without hitting Yahoo
+                with _lock:
+                    _price_cache[t["symbol"]] = (live, time.time())
                 long = t["type"] == "LONG"
                 if long:
                     pct = (live - t["entry"]) / t["entry"] * 100
@@ -1288,16 +1303,18 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
-    global active_trades, history          # ← ADD history here
+    global active_trades, history, sent_signals   # ← ADD sent_signals
     with _lock:
         active_trades = []
-        history = []                        # ← ADD this line
+        history = []
+        sent_signals = {}                          # ← ADD THIS
         for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
             accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, [])
         save_json(HISTORY_FILE, [])
-    safe_send(m.chat.id, f"🗑 *RESET DONE*\n{BR}\n✅ All balances → `₹1,00,000`\n✅ Trades closed\n✅ History wiped\n✅ Counters reset\n{BR2}", parse_mode="Markdown")
+        save_json(SENT_SIGNALS_FILE, {})           # ← ADD THIS
+    safe_send(m.chat.id, f"🗑 *RESET DONE*\n{BR}\n✅ All balances → `₹1,00,000`\n✅ Trades closed\n✅ History wiped\n✅ Signals wiped\n✅ Counters reset\n{BR2}", parse_mode="Markdown")
 
 @bot.message_handler(commands=["indi1"])
 def cmd_indi1(m):
