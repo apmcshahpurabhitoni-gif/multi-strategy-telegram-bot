@@ -93,7 +93,7 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 16px 16px 100px 16px;
+    padding: 20px 16px 100px 16px;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
   }
@@ -202,12 +202,12 @@
   }
   .stat-box {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px 8px; text-align: center;
+    border-radius: 10px; padding: 12px 6px; text-align: center;
     min-width: 0;
   }
   .stat-value {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 16px; font-weight: 700; margin-bottom: 4px;
+    font-size: 15px; font-weight: 700; margin-bottom: 4px;
     white-space: nowrap;
     overflow: hidden;
     text-overflow: ellipsis;
@@ -419,7 +419,6 @@
   }
 </style>
 <base target="_blank">
-<base target="_blank">
 </head>
 <body>
 <div id="app">
@@ -465,21 +464,23 @@
 
     <!-- TAB: TRADES -->
     <div class="tab-page" id="tab-trades">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="icon">🔥</span> Live Open Trades</div>
-          <div class="card-badge" id="liveCount">0</div>
+      <div class="collapse-card">
+        <div class="collapse-header open" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
+          <span class="collapse-title">🔥 Live Open Trades</span>
+          <span class="collapse-meta" id="liveCountBadge">0</span>
+          <span class="collapse-icon">▼</span>
         </div>
-        <div class="card-body" id="liveTradesBody">
+        <div class="collapse-body open" id="liveTradesBody">
           <div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>
         </div>
       </div>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="icon">⏳</span> Pending Setups</div>
-          <div class="card-badge" id="pendingCount">0</div>
+      <div class="collapse-card">
+        <div class="collapse-header open" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
+          <span class="collapse-title">⏳ Pending Setups</span>
+          <span class="collapse-meta" id="pendingCountBadge">0</span>
+          <span class="collapse-icon">▼</span>
         </div>
-        <div class="card-body" id="pendingBody">
+        <div class="collapse-body open" id="pendingBody">
           <div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>
         </div>
       </div>
@@ -489,11 +490,11 @@
     <div class="tab-page" id="tab-signals">
       <div class="card">
         <div class="card-header">
-          <div class="card-title"><span class="icon">📡</span> Today's Signals</div>
+          <div class="card-title"><span class="icon">📡</span> Signal History</div>
           <div class="card-badge" id="signalCount">0</div>
         </div>
         <div class="card-body" id="signalsBody">
-          <div class="card-empty"><span class="emoji">📡</span>No signals fired in the last 24h</div>
+          <div class="card-empty"><span class="emoji">📡</span>No signals in the last 24h</div>
         </div>
       </div>
     </div>
@@ -502,7 +503,7 @@
     <div class="tab-page" id="tab-history">
       <div class="card">
         <div class="card-header">
-          <div class="card-title"><span class="icon">📜</span> Closed Trades</div>
+          <div class="card-title"><span class="icon">📜</span> Trade History</div>
           <div class="card-badge" id="historyCount">0</div>
         </div>
         <div class="card-body" id="historyBody">
@@ -585,7 +586,6 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('tab-' + tab).classList.add('active');
     currentTab = tab;
     document.getElementById('mainContent').scrollTop = 0;
-    // Mark tab as seen (badge baseline updates)
     setBadgeBaseline(tab, getTabCount(tab));
     updateBadges();
   });
@@ -641,18 +641,24 @@ function fmtDateHeader(dateStr) {
 
 // ── Badge Daily Reset Logic ──
 function getBadgeState() {
-  const raw = localStorage.getItem('mavis_badges');
   const today = new Date().toISOString().slice(0, 10);
-  if (!raw) return { date: today, baseline: {} };
-  const st = JSON.parse(raw);
-  if (st.date !== today) {
+  try {
+    const raw = localStorage.getItem('mavis_badges');
+    if (!raw) return { date: today, baseline: {} };
+    const st = JSON.parse(raw);
+    if (st.date !== today) {
+      return { date: today, baseline: {} };
+    }
+    return st;
+  } catch {
     return { date: today, baseline: {} };
   }
-  return st;
 }
 function saveBadgeState(baseline) {
   const today = new Date().toISOString().slice(0, 10);
-  localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline }));
+  try {
+    localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline }));
+  } catch {}
 }
 function setBadgeBaseline(tab, count) {
   const st = getBadgeState();
@@ -754,7 +760,7 @@ function renderOverview() {
 // ── Render: Live Trades ──
 function renderLiveTrades() {
   const trades = state.live_trades || [];
-  document.getElementById('liveCount').textContent = trades.length;
+  document.getElementById('liveCountBadge').textContent = trades.length + ' open';
   const body = document.getElementById('liveTradesBody');
   if (!trades.length) {
     body.innerHTML = '<div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>';
@@ -786,7 +792,7 @@ function renderLiveTrades() {
 // ── Render: Pending ──
 function renderPending() {
   const pending = state.pending || [];
-  document.getElementById('pendingCount').textContent = pending.length;
+  document.getElementById('pendingCountBadge').textContent = pending.length + ' pending';
   const body = document.getElementById('pendingBody');
   if (!pending.length) {
     body.innerHTML = '<div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>';
@@ -812,12 +818,14 @@ function renderSignals() {
   document.getElementById('signalCount').textContent = sigs.length;
   const body = document.getElementById('signalsBody');
   if (!sigs.length) {
-    body.innerHTML = '<div class="card-empty"><span class="emoji">📡</span>No signals fired in the last 24h</div>';
+    body.innerHTML = '<div class="card-empty"><span class="emoji">📡</span>No signals in the last 24h</div>';
     return;
   }
   const groups = {};
   for (const s of sigs) {
-    const d = s.date || extractDate(s.ts_ms ? new Date(s.ts_ms).toISOString() : s.time) || 'Unknown';
+    let d = s.date;
+    if (!d && s.ts_ms) d = extractDate(new Date(s.ts_ms).toISOString());
+    if (!d) d = new Date().toISOString().slice(0, 10);
     if (!groups[d]) groups[d] = [];
     groups[d].push(s);
   }
@@ -829,10 +837,10 @@ function renderSignals() {
     for (const s of items) {
       const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
       bodyHtml += `<tr>
-        <td style="font-weight:800;color:#ffffff;font-size:12px;letter-spacing:0.5px;">${s.time || '—'}</td>
-        <td class="sym">${s.sym || '—'}</td>
+        <td style="font-weight:800;color:#ffffff;font-size:12px;letter-spacing:0.5px;">${s.time || s.time_str || '—'}</td>
+        <td class="sym">${s.sym || s.symbol || '—'}</td>
         <td class="${dirClass}">${s.dir || '—'}</td>
-        <td class="dim">${(s.strategy || '').slice(0,12)}</td>
+        <td class="dim">${(s.strategy || s.strat || '').slice(0,12)}</td>
         <td class="dim">${s.status || 'open'}</td>
       </tr>`;
     }
