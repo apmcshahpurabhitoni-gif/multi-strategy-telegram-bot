@@ -1255,7 +1255,7 @@ def build_menu():
     """Creates the inline button grid for the bot menu."""
     markup = InlineKeyboardMarkup()
     markup.add(
-        InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com"),
+        InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com/dashboard"),
         InlineKeyboardButton("🔥 Live Trades", callback_data="menu_live"),
     )
     markup.add(
@@ -1278,7 +1278,7 @@ def cmd_start(m):
         "🤖 *Mavis Trading Bot*\n"
         "━━━━━━━━━━━━━━━━━━━━━━\n"
         "Paper trading bot with multi-account support.\n\n"
-        "📊 *Dashboard:* [Open in Browser](https://multi-strategy-telegram-bot-1.onrender.com)\n"
+        "📊 *Dashboard:* [Open in Browser](https://multi-strategy-telegram-bot-1.onrender.com/dashboard)\n"
         "💡 Tap a button below to control the bot 👇"
     )
     safe_send(m.chat.id, welcome, parse_mode="Markdown", reply_markup=build_menu())
