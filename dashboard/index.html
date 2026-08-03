@@ -93,7 +93,7 @@
     flex: 1;
     overflow-y: auto;
     overflow-x: hidden;
-    padding: 12px 16px 100px 16px;
+    padding: 16px 16px 100px 16px;
     scroll-behavior: smooth;
     -webkit-overflow-scrolling: touch;
   }
@@ -150,7 +150,7 @@
     display: grid;
     grid-template-columns: repeat(2, 1fr);
     gap: 10px;
-    margin-bottom: 12px;
+    margin-bottom: 16px;
   }
   .account-card {
     background: var(--bg-card);
@@ -197,21 +197,25 @@
 
   /* ── Stats Row ── */
   .stats-row {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 10px;
-    margin-bottom: 12px;
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    margin-bottom: 16px;
   }
   .stat-box {
     background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 14px 10px; text-align: center;
+    border-radius: 10px; padding: 12px 8px; text-align: center;
+    min-width: 0;
   }
   .stat-value {
     font-family: 'JetBrains Mono', monospace;
-    font-size: 20px; font-weight: 700; margin-bottom: 4px;
+    font-size: 16px; font-weight: 700; margin-bottom: 4px;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
   }
   .stat-value.pos { color: var(--accent); }
   .stat-value.neg { color: var(--danger); }
   .stat-label {
-    font-size: 10px; font-weight: 500; text-transform: uppercase;
+    font-size: 9px; font-weight: 500; text-transform: uppercase;
     letter-spacing: 0.6px; color: var(--text-dim);
   }
 
@@ -236,6 +240,61 @@
   .data-table .pnl-neg { color: var(--danger); }
   .data-table .sym { font-weight: 600; color: var(--text); }
   .data-table .dim { color: var(--text-dim); }
+
+  /* ── Collapsible Sections ── */
+  .collapse-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 10px;
+    margin-bottom: 8px;
+    overflow: hidden;
+  }
+  .collapse-header {
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    cursor: pointer;
+    background: var(--bg-elevated);
+    user-select: none;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .collapse-header:active { opacity: 0.8; }
+  .collapse-title {
+    font-size: 12px;
+    font-weight: 700;
+    color: var(--text);
+    letter-spacing: 0.3px;
+  }
+  .collapse-meta {
+    font-size: 11px;
+    color: var(--text-dim);
+    margin-left: auto;
+    margin-right: 10px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .collapse-meta .pnl-pos { color: var(--accent); }
+  .collapse-meta .pnl-neg { color: var(--danger); }
+  .collapse-icon {
+    font-size: 10px;
+    color: var(--text-dim);
+    transition: transform 0.25s ease;
+  }
+  .collapse-header.open .collapse-icon {
+    transform: rotate(180deg);
+  }
+  .collapse-body {
+    max-height: 0;
+    overflow: hidden;
+    transition: max-height 0.35s ease;
+  }
+  .collapse-body.open {
+    max-height: 3000px;
+  }
+  .collapse-body .data-table {
+    margin: 0 8px 8px 8px;
+    width: calc(100% - 16px);
+  }
 
   /* ── Progress Bar ── */
   .progress-wrap {
@@ -340,18 +399,6 @@
     padding: 0 4px; border: 2px solid var(--tab-bg);
   }
 
-  /* ── Skeleton Loading ── */
-  .skeleton {
-    background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--border) 50%, var(--bg-elevated) 75%);
-    background-size: 200% 100%;
-    animation: shimmer 1.5s infinite;
-    border-radius: 4px;
-  }
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-
   /* ── Toast ── */
   .toast {
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px);
@@ -371,6 +418,7 @@
     .tab-bar { max-width: 900px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
   }
 </style>
+<base target="_blank">
 <base target="_blank">
 </head>
 <body>
@@ -454,7 +502,7 @@
     <div class="tab-page" id="tab-history">
       <div class="card">
         <div class="card-header">
-          <div class="card-title"><span class="icon">📜</span> Last Closed Trades</div>
+          <div class="card-title"><span class="icon">📜</span> Closed Trades</div>
           <div class="card-badge" id="historyCount">0</div>
         </div>
         <div class="card-body" id="historyBody">
@@ -531,15 +579,15 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
     if (tab === currentTab) return;
-    // Update buttons
     document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
     btn.classList.add('active');
-    // Update pages
     document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
     document.getElementById('tab-' + tab).classList.add('active');
     currentTab = tab;
-    // Scroll to top
     document.getElementById('mainContent').scrollTop = 0;
+    // Mark tab as seen (badge baseline updates)
+    setBadgeBaseline(tab, getTabCount(tab));
+    updateBadges();
   });
 });
 
@@ -559,11 +607,10 @@ function fmtTime(ts) {
   if (!isNaN(d.getTime())) {
     return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
   }
-  // Fallback for IST strings like "2026-08-03 13:18 IST (+5:30)"
   const m = String(ts).match(/(\d{2}):(\d{2})/);
   if (m) return m[0];
   return ts;
-} 
+}
 function extractDate(iso) {
   if (!iso) return '';
   const s = String(iso);
@@ -582,6 +629,65 @@ function extractTimeIST(iso) {
     const d = new Date(iso);
     return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
   } catch { return ''; }
+}
+function fmtDateHeader(dateStr) {
+  const today = new Date().toISOString().slice(0, 10);
+  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
+  if (dateStr === today) return 'Today';
+  if (dateStr === yesterday) return 'Yesterday';
+  const d = new Date(dateStr + 'T00:00:00');
+  return d.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
+}
+
+// ── Badge Daily Reset Logic ──
+function getBadgeState() {
+  const raw = localStorage.getItem('mavis_badges');
+  const today = new Date().toISOString().slice(0, 10);
+  if (!raw) return { date: today, baseline: {} };
+  const st = JSON.parse(raw);
+  if (st.date !== today) {
+    return { date: today, baseline: {} };
+  }
+  return st;
+}
+function saveBadgeState(baseline) {
+  const today = new Date().toISOString().slice(0, 10);
+  localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline }));
+}
+function setBadgeBaseline(tab, count) {
+  const st = getBadgeState();
+  st.baseline[tab] = count;
+  saveBadgeState(st.baseline);
+}
+function getTabCount(tab) {
+  if (tab === 'trades') return (state.live_trades || []).length + (state.pending || []).length;
+  if (tab === 'signals') return (state.today_signals || []).length;
+  if (tab === 'history') return (state.history || []).length;
+  if (tab === 'news') return (state.news_raw || []).filter(n => (n.impact || '').toUpperCase() === 'HIGH').length;
+  return 0;
+}
+function getBadgeCount(tab) {
+  const st = getBadgeState();
+  const baseline = st.baseline[tab] || 0;
+  return Math.max(0, getTabCount(tab) - baseline);
+}
+let badgeInitDone = false;
+function initBadges() {
+  if (badgeInitDone) return;
+  const st = getBadgeState();
+  if (Object.keys(st.baseline).length === 0) {
+    setBadgeBaseline('trades', getTabCount('trades'));
+    setBadgeBaseline('signals', getTabCount('signals'));
+    setBadgeBaseline('history', getTabCount('history'));
+    setBadgeBaseline('news', getTabCount('news'));
+  }
+  badgeInitDone = true;
+}
+function updateBadges() {
+  updateBadge('badgeTrades', getBadgeCount('trades'));
+  updateBadge('badgeSignals', getBadgeCount('signals'));
+  updateBadge('badgeHistory', getBadgeCount('history'));
+  updateBadge('badgeNews', getBadgeCount('news'));
 }
 
 // ── Render: Overview ──
@@ -649,7 +755,6 @@ function renderOverview() {
 function renderLiveTrades() {
   const trades = state.live_trades || [];
   document.getElementById('liveCount').textContent = trades.length;
-  updateBadge('badgeTrades', trades.length);
   const body = document.getElementById('liveTradesBody');
   if (!trades.length) {
     body.innerHTML = '<div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>';
@@ -701,64 +806,100 @@ function renderPending() {
   body.innerHTML = html;
 }
 
-// ── Render: Signals ──
+// ── Render: Signals (Collapsible by Date) ──
 function renderSignals() {
   const sigs = state.today_signals || [];
   document.getElementById('signalCount').textContent = sigs.length;
-  updateBadge('badgeSignals', sigs.length);
   const body = document.getElementById('signalsBody');
   if (!sigs.length) {
     body.innerHTML = '<div class="card-empty"><span class="emoji">📡</span>No signals fired in the last 24h</div>';
     return;
   }
-  let html = `<table class="data-table">
-    <thead><tr><th>Time</th><th>Sym</th><th>Dir</th><th>Strat</th><th>Status</th></tr></thead><tbody>`;
+  const groups = {};
   for (const s of sigs) {
-    const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
-    html += `<tr>
-      <td style="font-weight:700;color:var(--text);">${s.time || '—'}</td>
-      <td class="sym">${s.sym || '—'}</td>
-      <td class="${dirClass}">${s.dir || '—'}</td>
-      <td class="dim">${(s.strategy || '').slice(0,12)}</td>
-      <td class="dim">${s.status || 'open'}</td>
-    </tr>`;
+    const d = s.date || extractDate(s.ts_ms ? new Date(s.ts_ms).toISOString() : s.time) || 'Unknown';
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(s);
   }
-  html += '</tbody></table>';
+  let html = '';
+  for (const [date, items] of Object.entries(groups).sort().reverse()) {
+    const header = `<span class="collapse-title">${fmtDateHeader(date)}</span><span class="collapse-meta">${items.length} signals</span>`;
+    let bodyHtml = `<table class="data-table">
+      <thead><tr><th>Time</th><th>Sym</th><th>Dir</th><th>Strat</th><th>Status</th></tr></thead><tbody>`;
+    for (const s of items) {
+      const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
+      bodyHtml += `<tr>
+        <td style="font-weight:800;color:#ffffff;font-size:12px;letter-spacing:0.5px;">${s.time || '—'}</td>
+        <td class="sym">${s.sym || '—'}</td>
+        <td class="${dirClass}">${s.dir || '—'}</td>
+        <td class="dim">${(s.strategy || '').slice(0,12)}</td>
+        <td class="dim">${s.status || 'open'}</td>
+      </tr>`;
+    }
+    bodyHtml += '</tbody></table>';
+    html += buildCollapse(header, bodyHtml, date === new Date().toISOString().slice(0,10));
+  }
   body.innerHTML = html;
 }
 
-// ── Render: History ──
+// ── Render: History (Collapsible by Date with Totals) ──
 function renderHistory() {
   const hist = state.history || [];
   document.getElementById('historyCount').textContent = hist.length;
-  updateBadge('badgeHistory', hist.length);
   const body = document.getElementById('historyBody');
   if (!hist.length) {
     body.innerHTML = '<div class="card-empty"><span class="emoji">📜</span>No closed trades yet</div>';
     return;
   }
-  let html = `<table class="data-table">
-    <thead><tr><th>Sym</th><th>Dir</th><th>Result</th><th>P/L</th><th>Time</th></tr></thead><tbody>`;
-  for (const h of hist.slice(0, 15)) {
-    const pnl = parseFloat(h.pnl) || 0;
-    const pnlClass = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const resClass = h.result === 'WIN' ? 'dir-long' : 'dir-short';
-    html += `<tr>
-      <td class="sym">${h.symbol || '—'}</td>
-      <td class="${(h.type || '').toUpperCase() === 'LONG' ? 'dir-long' : 'dir-short'}">${h.type || '—'}</td>
-      <td class="${resClass}">${h.result || '—'}</td>
-      <td class="${pnlClass}">${fmtPnl(pnl)}</td>
-      <td style="font-weight:600;color:var(--text);">${fmtTime(h.close_time)}</td>
-    </tr>`;
+  const groups = {};
+  for (const h of hist) {
+    const d = extractDate(h.closed_at || h.close_time) || 'Unknown';
+    if (!groups[d]) groups[d] = [];
+    groups[d].push(h);
   }
-  html += '</tbody></table>';
+  let html = '';
+  for (const [date, items] of Object.entries(groups).sort().reverse()) {
+    const totalPnl = items.reduce((sum, h) => sum + (parseFloat(h.pnl) || 0), 0);
+    const pnlClass = totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+    const wins = items.filter(h => h.result === 'WIN').length;
+    const header = `<span class="collapse-title">${fmtDateHeader(date)}</span><span class="collapse-meta ${pnlClass}">${items.length} trades · ${fmtPnl(totalPnl)} · ${wins}W/${items.length-wins}L</span>`;
+    let bodyHtml = `<table class="data-table">
+      <thead><tr><th>Sym</th><th>Dir</th><th>Result</th><th>P/L</th><th>Time</th></tr></thead><tbody>`;
+    for (const h of items) {
+      const pnl = parseFloat(h.pnl) || 0;
+      const pnlC = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
+      const resC = h.result === 'WIN' ? 'dir-long' : 'dir-short';
+      bodyHtml += `<tr>
+        <td class="sym">${h.symbol || '—'}</td>
+        <td class="${(h.type || '').toUpperCase() === 'LONG' ? 'dir-long' : 'dir-short'}">${h.type || '—'}</td>
+        <td class="${resC}">${h.result || '—'}</td>
+        <td class="${pnlC}">${fmtPnl(pnl)}</td>
+        <td style="font-weight:600;color:var(--text);">${fmtTime(h.close_time)}</td>
+      </tr>`;
+    }
+    bodyHtml += '</tbody></table>';
+    html += buildCollapse(header, bodyHtml, date === new Date().toISOString().slice(0,10));
+  }
   body.innerHTML = html;
+}
+
+function buildCollapse(headerHtml, bodyHtml, openDefault) {
+  const openClass = openDefault ? 'open' : '';
+  return `
+    <div class="collapse-card">
+      <div class="collapse-header ${openClass}" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
+        ${headerHtml}
+        <span class="collapse-icon">▼</span>
+      </div>
+      <div class="collapse-body ${openClass}">
+        ${bodyHtml}
+      </div>
+    </div>`;
 }
 
 // ── Render: News ──
 function renderNews() {
   const news = state.news_raw || [];
-  updateBadge('badgeNews', news.filter(n => (n.impact || '').toUpperCase() === 'HIGH').length);
   const container = document.getElementById('newsContainer');
   if (!news.length) {
     container.innerHTML = '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
@@ -772,7 +913,6 @@ function renderNews() {
     grouped[d].push(ev);
   }
   let html = '';
-  const dayNames = {};
   for (const d of Object.keys(grouped).sort()) {
     const dateObj = new Date(d + 'T00:00:00');
     const isToday = d === today;
@@ -836,6 +976,8 @@ async function fetchData() {
     if (data.error) throw new Error(data.error);
     state = data;
     renderAll();
+    initBadges();
+    updateBadges();
   } catch (e) {
     console.error('[Dashboard] Fetch error:', e);
     showToast('⚠️ Connection issue — retrying...');
