@@ -2,1175 +2,585 @@
 <html lang="en">
 <head>
 <meta charset="UTF-8">
-<meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
 <title>Mavis · Trade Command Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
 <style>
   :root {
-    --bg: #0a0e17;
-    --bg-elevated: #111827;
-    --bg-card: #1a2233;
-    --bg-card-hover: #1f2937;
-    --border: #1e293b;
-    --border-light: #334155;
-    --text: #e2e8f0;
-    --text-muted: #64748b;
-    --text-dim: #475569;
-    --accent: #10b981;
-    --accent-dim: #059669;
-    --accent-glow: rgba(16, 185, 129, 0.15);
-    --danger: #ef4444;
-    --danger-dim: #dc2626;
-    --warning: #f59e0b;
-    --warning-dim: #d97706;
-    --info: #3b82f6;
-    --info-dim: #2563eb;
-    --long: #10b981;
-    --short: #ef4444;
-    --tab-bg: #0f172a;
-    --tab-active: #1e293b;
-    --tab-icon: #475569;
-    --tab-icon-active: #10b981;
+    --bg: #0d1117;
+    --bg-elev: #161b22;
+    --bg-card: #1c2128;
+    --border: #30363d;
+    --text: #c9d1d9;
+    --text-dim: #8b949e;
+    --accent: #58a6ff;
+    --accent-glow: rgba(88,166,255,0.15);
+    --success: #3fb950;
+    --danger: #f85149;
+    --warning: #d29922;
+    --font: -apple-system, BlinkMacSystemFont, "Segoe UI", Roboto, sans-serif;
   }
-  * { margin: 0; padding: 0; box-sizing: border-box; }
-  html, body {
-    font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
+  * { box-sizing: border-box; margin: 0; padding: 0; }
+  body {
     background: var(--bg);
     color: var(--text);
-    height: 100%;
-    overflow: hidden;
-    -webkit-font-smoothing: antialiased;
-  }
-  #app {
-    height: 100vh;
+    font-family: var(--font);
+    font-size: 14px;
+    line-height: 1.5;
+    min-height: 100vh;
     display: flex;
     flex-direction: column;
   }
   .header {
-    background: var(--bg-elevated);
+    padding: 16px 20px;
     border-bottom: 1px solid var(--border);
-    padding: 12px 16px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    background: var(--bg-elev);
+    position: sticky;
+    top: 0;
+    z-index: 100;
+  }
+  .header h1 { font-size: 16px; font-weight: 600; }
+  .header .subtitle { font-size: 11px; color: var(--text-dim); }
+  .status-badge {
     display: flex;
     align-items: center;
-    justify-content: space-between;
-    flex-shrink: 0;
-    z-index: 10;
+    gap: 6px;
+    font-size: 12px;
+    color: var(--success);
+    background: rgba(63,185,80,0.1);
+    padding: 4px 10px;
+    border-radius: 20px;
   }
-  .header-left { display: flex; align-items: center; gap: 10px; }
-  .logo-dot {
-    width: 10px; height: 10px; border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent-glow);
+  .status-badge::before {
+    content: "";
+    width: 6px; height: 6px;
+    background: var(--success);
+    border-radius: 50%;
     animation: pulse 2s infinite;
   }
-  @keyframes pulse {
-    0%, 100% { opacity: 1; }
-    50% { opacity: 0.4; }
-  }
-  .header h1 {
-    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
-    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
-    -webkit-background-clip: text; -webkit-text-fill-color: transparent;
-  }
-  .header .badge {
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--text-muted);
-    background: var(--bg-card); padding: 3px 8px;
-    border-radius: 4px; border: 1px solid var(--border);
-  }
-  .clock {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 13px; font-weight: 600; color: var(--accent);
-    background: var(--bg-card); padding: 4px 10px;
-    border-radius: 6px; border: 1px solid var(--border);
-    letter-spacing: 0.5px;
-  }
-  .main-content {
-    flex: 1;
-    overflow-y: auto;
-    overflow-x: hidden;
-    padding: 20px 16px 100px 16px;
-    scroll-behavior: smooth;
-    -webkit-overflow-scrolling: touch;
-  }
-  .main-content::-webkit-scrollbar { width: 4px; }
-  .main-content::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
-  .tab-page {
-    display: none;
-    animation: fadeIn 0.25s ease;
-  }
-  .tab-page.active { display: block; }
-  @keyframes fadeIn {
-    from { opacity: 0; transform: translateY(6px); }
-    to { opacity: 1; transform: translateY(0); }
-  }
-  .card {
-    background: var(--bg-card);
-    border: 1px solid var(--border);
-    border-radius: 12px;
-    margin-bottom: 12px;
-    overflow: hidden;
-    transition: border-color 0.2s;
-  }
-  .card:hover { border-color: var(--border-light); }
-  .card-header {
-    padding: 14px 16px;
-    display: flex; align-items: center; justify-content: space-between;
-    border-bottom: 1px solid var(--border);
-  }
-  .card-title {
-    font-size: 13px; font-weight: 600; color: var(--text-muted);
-    text-transform: uppercase; letter-spacing: 0.5px;
-    display: flex; align-items: center; gap: 8px;
-  }
-  .card-title .icon { font-size: 15px; }
-  .card-badge {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 12px; font-weight: 600;
-    padding: 2px 8px; border-radius: 4px;
-    background: var(--bg-elevated); color: var(--text-dim);
-  }
-  .card-body { padding: 12px 16px; }
-  .card-empty {
-    text-align: center; padding: 32px 16px;
-    color: var(--text-dim); font-size: 13px;
-  }
-  .card-empty .emoji { font-size: 28px; display: block; margin-bottom: 8px; opacity: 0.5; }
-  .accounts-grid {
+  @keyframes pulse { 0%,100%{opacity:1} 50%{opacity:0.4} }
+
+  .main-content { flex: 1; overflow-y: auto; padding: 16px 20px 80px; }
+
+  /* Top stats */
+  .stats-grid {
     display: grid;
-    grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
-    margin-bottom: 16px;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 12px;
+    margin-bottom: 20px;
   }
-  .account-card {
+  .stat-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 14px;
-    position: relative;
-    overflow: hidden;
+    padding: 16px;
+    text-align: center;
   }
-  .account-card::before {
-    content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
-  }
-  .account-card.macro::before { background: linear-gradient(90deg, #10b981, #059669); }
-  .account-card.nifty::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
-  .account-card.ny::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
-  .account-card.sweep::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
-  .account-name {
-    font-size: 11px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px;
-  }
-  .account-balance {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 18px; font-weight: 700; color: var(--text);
-    margin-bottom: 8px;
-  }
-  .account-meta {
-    display: flex; align-items: center; justify-content: space-between;
-    font-size: 11px; color: var(--text-dim);
-  }
-  .account-pnl {
-    font-family: 'JetBrains Mono', monospace;
-    font-weight: 600; font-size: 11px;
-  }
-  .account-pnl.pos { color: var(--accent); }
-  .account-pnl.neg { color: var(--danger); }
-  .account-status {
-    width: 6px; height: 6px; border-radius: 50%;
-    background: var(--text-dim);
-  }
-  .account-status.active {
-    background: var(--accent);
-    box-shadow: 0 0 6px var(--accent-glow);
-  }
-  .stats-row {
-    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
-    margin-bottom: 16px;
-  }
-  .stat-box {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px 6px; text-align: center;
-    min-width: 0;
-  }
-  .stat-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 15px; font-weight: 700; margin-bottom: 4px;
-    white-space: nowrap;
-    overflow: hidden;
-    text-overflow: ellipsis;
-  }
-  .stat-value.pos { color: var(--accent); }
-  .stat-value.neg { color: var(--danger); }
-  .stat-label {
-    font-size: 9px; font-weight: 500; text-transform: uppercase;
-    letter-spacing: 0.6px; color: var(--text-dim);
-  }
-  .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
-  .data-table th {
-    text-align: left; padding: 8px 6px;
-    font-size: 10px; font-weight: 600; text-transform: uppercase;
-    letter-spacing: 0.5px; color: var(--text-dim);
-    border-bottom: 1px solid var(--border);
-    white-space: nowrap;
-  }
-  .data-table td {
-    padding: 10px 6px; border-bottom: 1px solid var(--border);
-    color: var(--text); font-family: 'JetBrains Mono', monospace;
-    font-size: 11px; white-space: nowrap;
-  }
-  .data-table tr:last-child td { border-bottom: none; }
-  .data-table .dir-long { color: var(--long); font-weight: 600; }
-  .data-table .dir-short { color: var(--short); font-weight: 600; }
-  .data-table .pnl-pos { color: var(--accent); }
-  .data-table .pnl-neg { color: var(--danger); }
-  .data-table .sym { font-weight: 600; color: var(--text); }
-  .data-table .dim { color: var(--text-dim); }
-  .collapse-card {
+  .stat-value { font-size: 22px; font-weight: 700; }
+  .stat-label { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+  .stat-value.up { color: var(--success); }
+  .stat-value.down { color: var(--danger); }
+
+  /* Section cards */
+  .section-card {
     background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    margin-bottom: 16px;
+    overflow: hidden;
+  }
+  .section-header {
+    padding: 14px 16px;
+    border-bottom: 1px solid var(--border);
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    cursor: pointer;
+    user-select: none;
+  }
+  .section-header h3 { font-size: 14px; font-weight: 600; display: flex; align-items: center; gap: 8px; }
+  .section-header .badge {
+    background: var(--accent);
+    color: #000;
+    font-size: 11px;
+    font-weight: 700;
+    padding: 2px 8px;
+    border-radius: 10px;
+  }
+  .section-body { padding: 12px 16px; }
+  .section-body.collapsed { display: none; }
+
+  /* Account rows */
+  .account-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+  }
+  .account-row:last-child { border-bottom: none; }
+  .account-name { font-weight: 500; font-size: 13px; }
+  .account-meta { font-size: 11px; color: var(--text-dim); margin-top: 2px; }
+  .account-balance { font-weight: 700; font-size: 14px; text-align: right; }
+  .account-pnl { font-size: 11px; margin-top: 2px; }
+  .account-pnl.up { color: var(--success); }
+  .account-pnl.down { color: var(--danger); }
+
+  /* Trade cards */
+  .trade-card {
+    background: var(--bg-elev);
     border: 1px solid var(--border);
     border-radius: 10px;
-    margin-bottom: 8px;
-    overflow: hidden;
+    padding: 12px;
+    margin-bottom: 10px;
   }
-  .collapse-header {
-    padding: 12px 14px;
+  .trade-card:last-child { margin-bottom: 0; }
+  .trade-header {
     display: flex;
-    align-items: center;
     justify-content: space-between;
-    cursor: pointer;
-    background: var(--bg-elevated);
-    user-select: none;
-    -webkit-tap-highlight-color: transparent;
+    align-items: center;
+    margin-bottom: 8px;
   }
-  .collapse-header:active { opacity: 0.8; }
-  .collapse-title {
-    font-size: 12px;
+  .trade-symbol { font-weight: 600; font-size: 13px; }
+  .trade-dir {
+    font-size: 11px;
     font-weight: 700;
-    color: var(--text);
-    letter-spacing: 0.3px;
+    padding: 2px 8px;
+    border-radius: 4px;
   }
-  .collapse-meta {
+  .trade-dir.long { background: rgba(63,185,80,0.15); color: var(--success); }
+  .trade-dir.short { background: rgba(248,81,73,0.15); color: var(--danger); }
+  .trade-details {
+    display: grid;
+    grid-template-columns: repeat(3, 1fr);
+    gap: 8px;
     font-size: 11px;
     color: var(--text-dim);
-    margin-left: auto;
-    margin-right: 10px;
-    font-family: 'JetBrains Mono', monospace;
   }
-  .collapse-meta .pnl-pos { color: var(--accent); }
-  .collapse-meta .pnl-neg { color: var(--danger); }
-  .collapse-icon {
-    font-size: 10px;
-    color: var(--text-dim);
-    transition: transform 0.25s ease;
-  }
-  .collapse-header.open .collapse-icon {
-    transform: rotate(180deg);
-  }
-  .collapse-body {
-    max-height: 0;
+  .trade-detail strong { color: var(--text); display: block; font-size: 12px; }
+  .trade-pnl { font-size: 14px; font-weight: 700; margin-top: 8px; }
+  .trade-pnl.up { color: var(--success); }
+  .trade-pnl.down { color: var(--danger); }
+  .progress-bar {
+    height: 4px;
+    background: var(--border);
+    border-radius: 2px;
+    margin-top: 6px;
     overflow: hidden;
-    transition: max-height 0.35s ease;
-  }
-  .collapse-body.open {
-    max-height: 3000px;
-  }
-  .collapse-body .data-table {
-    margin: 0 8px 8px 8px;
-    width: calc(100% - 16px);
-  }
-  .progress-wrap {
-    width: 60px; height: 4px; background: var(--bg-elevated);
-    border-radius: 2px; overflow: hidden;
   }
   .progress-fill {
-    height: 100%; border-radius: 2px;
-    background: linear-gradient(90deg, var(--accent), var(--accent-dim));
-    transition: width 0.5s ease;
+    height: 100%;
+    background: var(--accent);
+    border-radius: 2px;
+    transition: width 0.3s;
   }
-  .news-day-header {
-    font-size: 11px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.8px; color: var(--text-muted);
-    padding: 16px 0 8px 0;
-    display: flex; align-items: center; gap: 8px;
+
+  /* Signal / History rows */
+  .list-row {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    padding: 10px 0;
+    border-bottom: 1px solid var(--border);
+    font-size: 13px;
   }
-  .news-day-header:first-child { padding-top: 0; }
-  .news-item {
-    background: var(--bg-card); border: 1px solid var(--border);
-    border-radius: 10px; padding: 12px 14px; margin-bottom: 8px;
-    display: flex; align-items: flex-start; gap: 10px;
-    transition: all 0.2s;
+  .list-row:last-child { border-bottom: none; }
+  .list-left { display: flex; align-items: center; gap: 10px; }
+  .list-time { color: var(--text-dim); font-size: 11px; min-width: 36px; }
+  .list-sym { font-weight: 600; }
+  .list-strat { font-size: 11px; color: var(--text-dim); }
+  .list-dir { font-size: 11px; font-weight: 700; }
+  .list-dir.long { color: var(--success); }
+  .list-dir.short { color: var(--danger); }
+  .list-pnl { font-weight: 700; font-size: 12px; }
+
+  /* Pending sweeps */
+  .pending-card {
+    background: var(--bg-elev);
+    border-left: 3px solid var(--warning);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
   }
-  .news-item:hover { border-color: var(--border-light); }
-  .news-impact {
-    width: 4px; height: 40px; border-radius: 2px; flex-shrink: 0;
-    margin-top: 2px;
+  .pending-card:last-child { margin-bottom: 0; }
+  .pending-status { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* News */
+  .news-card {
+    background: var(--bg-elev);
+    border-radius: 8px;
+    padding: 10px 12px;
+    margin-bottom: 8px;
+    font-size: 12px;
   }
-  .news-impact.high { background: var(--danger); box-shadow: 0 0 8px rgba(239,68,68,0.2); }
-  .news-impact.medium { background: var(--warning); }
-  .news-impact.low { background: var(--accent); }
-  .news-impact.holiday { background: var(--text-dim); }
-  .news-content { flex: 1; min-width: 0; }
-  .news-title {
-    font-size: 13px; font-weight: 600; color: var(--text);
-    margin-bottom: 3px; line-height: 1.3;
-  }
-  .news-meta {
-    font-size: 11px; color: var(--text-dim);
-    display: flex; align-items: center; gap: 8px; flex-wrap: wrap;
-  }
-  .news-meta .flag { font-size: 13px; }
-  .news-tag {
-    font-size: 9px; font-weight: 700; text-transform: uppercase;
-    letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px;
-  }
-  .news-tag.high { background: rgba(239,68,68,0.15); color: var(--danger); }
-  .news-tag.medium { background: rgba(245,158,11,0.15); color: var(--warning); }
-  .news-tag.low { background: rgba(16,185,129,0.15); color: var(--accent); }
-  .news-tag.holiday { background: rgba(100,116,139,0.15); color: var(--text-muted); }
-  .news-forecast {
-    font-size: 11px; color: var(--text-dim); margin-top: 6px;
-    font-family: 'JetBrains Mono', monospace;
-  }
-  .news-forecast span { color: var(--text-muted); }
+  .news-impact { font-size: 11px; font-weight: 700; margin-bottom: 4px; }
+  .news-impact.high { color: var(--danger); }
+  .news-impact.medium { color: var(--warning); }
+  .news-impact.low { color: var(--success); }
+  .news-time { font-size: 11px; color: var(--text-dim); margin-top: 4px; }
+
+  /* Nifty tab */
   .nifty-header {
     display: flex;
     justify-content: space-between;
     align-items: center;
     margin-bottom: 16px;
-    flex-wrap: wrap;
-    gap: 10px;
   }
-  .nifty-header .title-wrap { flex: 1; }
-  .nifty-header .card-title {
-    font-size: 15px;
-    font-weight: 700;
+  .nifty-header h2 { font-size: 16px; }
+  .nifty-header .sub { font-size: 11px; color: var(--text-dim); }
+  .refresh-btn {
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
     color: var(--text);
-    text-transform: none;
-    letter-spacing: 0;
+    padding: 6px 12px;
+    border-radius: 6px;
+    cursor: pointer;
+    font-size: 12px;
+    display: flex;
+    align-items: center;
+    gap: 6px;
   }
-  .nifty-header .card-subtitle {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 3px;
-  }
-  .nifty-indices {
+  .refresh-btn:hover { border-color: var(--accent); }
+  .refresh-btn.spinning .icon { animation: spin 1s linear infinite; }
+  @keyframes spin { 100% { transform: rotate(360deg); } }
+
+  .index-cards {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
-    gap: 10px;
+    gap: 12px;
     margin-bottom: 16px;
   }
   .index-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
     border-radius: 12px;
-    padding: 16px 12px;
+    padding: 16px;
     text-align: center;
-    position: relative;
-    overflow: hidden;
   }
-  .index-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: linear-gradient(90deg, var(--info), var(--info-dim));
-  }
-  .index-name {
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-muted);
-    text-transform: uppercase;
-    letter-spacing: 0.8px;
-    margin-bottom: 6px;
-  }
-  .index-price {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 24px;
-    font-weight: 700;
-    margin-bottom: 4px;
-  }
-  .index-change {
-    font-size: 12px;
-    font-weight: 600;
-  }
+  .index-name { font-size: 12px; color: var(--text-dim); margin-bottom: 6px; }
+  .index-price { font-size: 20px; font-weight: 700; }
   .stock-grid {
     display: grid;
-    grid-template-columns: 1fr;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
     gap: 10px;
-  }
-  @media (min-width: 480px) {
-    .stock-grid { grid-template-columns: repeat(2, 1fr); }
   }
   .stock-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
-    padding: 14px;
+    border-radius: 10px;
+    padding: 12px;
     position: relative;
-    overflow: hidden;
-    transition: border-color 0.2s;
   }
-  .stock-card:hover { border-color: var(--border-light); }
-  .stock-card::before {
-    content: '';
-    position: absolute;
-    top: 0; left: 0; right: 0;
-    height: 3px;
-    background: var(--border);
-  }
-  .stock-card.bullish::before { background: linear-gradient(90deg, var(--accent), var(--accent-dim)); }
-  .stock-card.bearish::before { background: linear-gradient(90deg, var(--danger), var(--danger-dim)); }
-  .stock-card.neutral::before { background: var(--text-dim); }
   .sector-label {
     position: absolute;
-    top: 8px;
-    right: 8px;
+    top: 8px; right: 8px;
     font-size: 9px;
-    font-weight: 600;
-    color: var(--text-muted);
-    background: var(--bg-elevated);
-    padding: 2px 8px;
+    color: var(--text-dim);
+    background: var(--bg-elev);
+    padding: 2px 6px;
     border-radius: 4px;
     text-transform: uppercase;
     letter-spacing: 0.5px;
   }
-  .stock-header {
-    display: flex;
-    justify-content: space-between;
-    align-items: flex-start;
-    margin-bottom: 10px;
-    padding-right: 50px;
-  }
-  .stock-symbol {
-    font-size: 15px;
-    font-weight: 700;
-    color: var(--text);
-  }
-  .stock-name {
-    font-size: 11px;
-    color: var(--text-muted);
-    margin-top: 2px;
-  }
-  .stock-price-section { text-align: right; }
-  .stock-price {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 18px;
-    font-weight: 700;
-  }
-  .stock-change {
-    font-size: 11px;
-    font-weight: 600;
-    margin-top: 2px;
-  }
-  .stock-metrics {
-    display: grid;
-    grid-template-columns: 1fr 1fr;
-    gap: 6px;
-    margin-top: 10px;
-    padding-top: 10px;
-    border-top: 1px solid var(--border);
-  }
-  .metric-label {
-    font-size: 9px;
-    color: var(--text-dim);
-    text-transform: uppercase;
-    letter-spacing: 0.5px;
-  }
-  .metric-value {
-    font-family: 'JetBrains Mono', monospace;
-    font-size: 11px;
-    font-weight: 600;
-    color: var(--text-secondary);
-    margin-top: 1px;
-  }
-  .stock-sweep-status {
+  .stock-symbol { font-weight: 700; font-size: 13px; }
+  .stock-name { font-size: 11px; color: var(--text-dim); margin-bottom: 8px; }
+  .stock-price { font-size: 15px; font-weight: 700; }
+  .stock-sweep {
     margin-top: 8px;
-    display: flex;
-    gap: 6px;
-    flex-wrap: wrap;
+    font-size: 10px;
   }
   .mini-tag {
-    display: inline-flex;
-    align-items: center;
-    gap: 4px;
-    padding: 3px 8px;
+    display: inline-block;
+    padding: 2px 6px;
     border-radius: 4px;
     font-size: 10px;
     font-weight: 600;
+    margin-right: 4px;
   }
-  .mini-tag.pending { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
-  .mini-tag.long { background: rgba(16, 185, 129, 0.15); color: var(--accent); }
-  .mini-tag.short { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
-  .mini-tag.closed { background: rgba(71, 85, 105, 0.15); color: var(--text-dim); }
+  .mini-tag.pending { background: rgba(210,153,34,0.15); color: var(--warning); }
+  .mini-tag.long { background: rgba(63,185,80,0.15); color: var(--success); }
+  .mini-tag.short { background: rgba(248,81,73,0.15); color: var(--danger); }
+  .mini-tag.closed { background: var(--bg-elev); color: var(--text-dim); }
+
+  /* Empty state */
+  .empty-state {
+    text-align: center;
+    padding: 24px;
+    color: var(--text-dim);
+    font-size: 13px;
+  }
+  .empty-state .emoji { font-size: 24px; display: block; margin-bottom: 8px; }
+
+  /* Skeleton */
   .skeleton {
-    background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-card) 50%, var(--bg-elevated) 75%);
+    background: linear-gradient(90deg, var(--bg-elev) 25%, var(--border) 50%, var(--bg-elev) 75%);
     background-size: 200% 100%;
     animation: shimmer 1.5s infinite;
     border-radius: 4px;
   }
-  @keyframes shimmer {
-    0% { background-position: 200% 0; }
-    100% { background-position: -200% 0; }
-  }
-  .refresh-btn {
-    background: var(--bg-elevated);
-    border: 1px solid var(--border);
-    color: var(--text-muted);
-    padding: 6px 12px;
-    border-radius: 8px;
-    font-size: 12px;
-    font-weight: 600;
-    cursor: pointer;
-    display: flex;
-    align-items: center;
-    gap: 6px;
-    transition: all 0.2s;
-    font-family: 'Inter', sans-serif;
-  }
-  .refresh-btn:hover {
-    background: var(--accent);
-    color: var(--bg);
-    border-color: var(--accent);
-  }
-  .refresh-btn.spinning .spin-icon { animation: spin 1s linear infinite; }
-  @keyframes spin { to { transform: rotate(360deg); } }
+  @keyframes shimmer { 0% { background-position: 200% 0; } 100% { background-position: -200% 0; } }
+
+  /* Bottom tab bar */
   .tab-bar {
-    position: fixed; bottom: 0; left: 0; right: 0;
-    background: var(--tab-bg);
+    position: fixed;
+    bottom: 0;
+    left: 0;
+    right: 0;
+    background: var(--bg-elev);
     border-top: 1px solid var(--border);
-    display: flex; justify-content: space-around;
-    align-items: center;
-    height: 64px;
-    padding-bottom: env(safe-area-inset-bottom, 0);
+    display: flex;
+    justify-content: space-around;
+    padding: 6px 0 12px;
     z-index: 100;
-    backdrop-filter: blur(20px);
-    -webkit-backdrop-filter: blur(20px);
   }
   .tab-btn {
-    flex: 1; display: flex; flex-direction: column;
-    align-items: center; justify-content: center;
-    gap: 3px; height: 100%; cursor: pointer;
-    background: none; border: none; color: var(--tab-icon);
-    transition: all 0.2s; position: relative;
-    -webkit-tap-highlight-color: transparent;
+    background: none;
+    border: none;
+    color: var(--text-dim);
+    font-size: 11px;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    cursor: pointer;
+    padding: 4px 8px;
+    border-radius: 8px;
+    transition: all 0.2s;
   }
-  .tab-btn:active { transform: scale(0.92); }
-  .tab-btn.active { color: var(--tab-icon-active); }
-  .tab-btn.active::before {
-    content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%);
-    width: 24px; height: 3px; background: var(--accent);
-    border-radius: 0 0 3px 3px;
-  }
-  .tab-icon {
-    font-size: 20px; line-height: 1;
-    transition: transform 0.2s;
-  }
-  .tab-btn.active .tab-icon { transform: translateY(-1px); }
-  .tab-label {
-    font-size: 10px; font-weight: 600; letter-spacing: 0.3px;
-  }
-  .tab-badge {
-    position: absolute; top: 6px; right: calc(50% - 16px);
-    min-width: 16px; height: 16px; border-radius: 8px;
-    background: var(--danger); color: white;
-    font-size: 9px; font-weight: 700;
-    display: flex; align-items: center; justify-content: center;
-    padding: 0 4px; border: 2px solid var(--tab-bg);
-  }
+  .tab-btn .icon { font-size: 18px; }
+  .tab-btn.active { color: var(--accent); background: var(--accent-glow); }
+  .tab-btn:hover { color: var(--text); }
+
+  /* Tab pages */
+  .tab-page { display: none; }
+  .tab-page.active { display: block; }
+
+  /* Toast */
   .toast {
-    position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px);
-    background: var(--bg-card); border: 1px solid var(--border-light);
-    color: var(--text); padding: 10px 18px; border-radius: 8px;
-    font-size: 13px; font-weight: 500; z-index: 200;
-    box-shadow: 0 8px 32px rgba(0,0,0,0.4);
-    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+    position: fixed;
+    bottom: 70px;
+    left: 50%;
+    transform: translateX(-50%);
+    background: var(--bg-elev);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 10px 18px;
+    border-radius: 8px;
+    font-size: 12px;
+    z-index: 200;
+    opacity: 0;
+    transition: opacity 0.3s;
     pointer-events: none;
   }
-  .toast.show { transform: translateX(-50%) translateY(0); }
-  @media (min-width: 768px) {
-    .accounts-grid { grid-template-columns: repeat(4, 1fr); }
-    .main-content { padding: 20px 24px 100px 24px; max-width: 900px; margin: 0 auto; }
-    .tab-bar { max-width: 900px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+  .toast.show { opacity: 1; }
+
+  /* Responsive */
+  @media (max-width: 400px) {
+    .stats-grid { grid-template-columns: 1fr; }
+    .index-cards { grid-template-columns: 1fr; }
     .stock-grid { grid-template-columns: repeat(2, 1fr); }
   }
-  @media (min-width: 1024px) {
-    .stock-grid { grid-template-columns: repeat(3, 1fr); }
-  }
 </style>
-<base target="_blank">
 </head>
 <body>
-<div id="app">
-  <div class="header">
-    <div class="header-left">
-      <div class="logo-dot"></div>
-      <h1>Mavis</h1>
-      <span class="badge">Paper · Multi-Account</span>
-    </div>
-    <div class="clock" id="clock">--:--:--</div>
+
+<div class="header">
+  <div>
+    <h1>🤖 Mavis Trading Bot</h1>
+    <div class="subtitle">Paper · Multi-Account · <span id="clock">--:--:--</span></div>
   </div>
-
-  <div class="main-content" id="mainContent">
-    <div class="tab-page active" id="tab-overview">
-      <div class="accounts-grid" id="accountsGrid"></div>
-      <div class="stats-row">
-        <div class="stat-box">
-          <div class="stat-value" id="statEquity">₹0</div>
-          <div class="stat-label">Total Equity</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value pos" id="statToday">+₹0</div>
-          <div class="stat-label">Today P/L</div>
-        </div>
-        <div class="stat-box">
-          <div class="stat-value" id="statWeek">+₹0</div>
-          <div class="stat-label">Week P/L</div>
-        </div>
-      </div>
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="icon">📊</span> Quick Status</div>
-        </div>
-        <div class="card-body" id="quickStatus">
-          <div class="card-empty"><span class="emoji">⏳</span>Loading market data...</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-page" id="tab-trades">
-      <div class="collapse-card">
-        <div class="collapse-header open" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
-          <span class="collapse-title">🔥 Live Open Trades</span>
-          <span class="collapse-meta" id="liveCountBadge">0</span>
-          <span class="collapse-icon">▼</span>
-        </div>
-        <div class="collapse-body open" id="liveTradesBody">
-          <div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>
-        </div>
-      </div>
-      <div class="collapse-card">
-        <div class="collapse-header open" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
-          <span class="collapse-title">⏳ Pending Setups</span>
-          <span class="collapse-meta" id="pendingCountBadge">0</span>
-          <span class="collapse-icon">▼</span>
-        </div>
-        <div class="collapse-body open" id="pendingBody">
-          <div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-page" id="tab-signals">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="icon">📡</span> Signal History</div>
-          <div class="card-badge" id="signalCount">0</div>
-        </div>
-        <div class="card-body" id="signalsBody">
-          <div class="card-empty"><span class="emoji">📡</span>No signals in the last 24h</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-page" id="tab-history">
-      <div class="card">
-        <div class="card-header">
-          <div class="card-title"><span class="icon">📜</span> Trade History</div>
-          <div class="card-badge" id="historyCount">0</div>
-        </div>
-        <div class="card-body" id="historyBody">
-          <div class="card-empty"><span class="emoji">📜</span>No closed trades yet</div>
-        </div>
-      </div>
-    </div>
-
-    <div class="tab-page" id="tab-nifty">
-      <div class="nifty-header">
-        <div class="title-wrap">
-          <div class="card-title" style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;">📈 Nifty 50 Universe</div>
-          <div class="card-subtitle">15 stocks + 2 indices · 4H Sweep · NSE delayed 15 min</div>
-        </div>
-        <button class="refresh-btn" onclick="refreshNifty()" id="niftyRefreshBtn">
-          <svg class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
-          Refresh
-        </button>
-      </div>
-      <div class="nifty-indices" id="niftyIndices">
-        <div class="index-card">
-          <div class="index-name">Nifty 50</div>
-          <div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div>
-        </div>
-        <div class="index-card">
-          <div class="index-name">Bank Nifty</div>
-          <div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div>
-        </div>
-      </div>
-      <div class="stock-grid" id="stockGrid"></div>
-    </div>
-
-    <div class="tab-page" id="tab-news">
-      <div id="newsContainer">
-        <div class="card-empty"><span class="emoji">📰</span>Loading economic calendar...</div>
-      </div>
-    </div>
-  </div>
-
-  <div class="tab-bar">
-    <button class="tab-btn active" data-tab="overview">
-      <span class="tab-icon">🏠</span>
-      <span class="tab-label">Overview</span>
-    </button>
-    <button class="tab-btn" data-tab="trades">
-      <span class="tab-icon">🔥</span>
-      <span class="tab-label">Trades</span>
-      <span class="tab-badge" id="badgeTrades" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" data-tab="signals">
-      <span class="tab-icon">📡</span>
-      <span class="tab-label">Signals</span>
-      <span class="tab-badge" id="badgeSignals" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" data-tab="history">
-      <span class="tab-icon">📜</span>
-      <span class="tab-label">History</span>
-      <span class="tab-badge" id="badgeHistory" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" data-tab="nifty">
-      <span class="tab-icon">📈</span>
-      <span class="tab-label">Nifty</span>
-      <span class="tab-badge" id="badgeNifty" style="display:none">0</span>
-    </button>
-    <button class="tab-btn" data-tab="news">
-      <span class="tab-icon">📰</span>
-      <span class="tab-label">News</span>
-      <span class="tab-badge" id="badgeNews" style="display:none">0</span>
-    </button>
-  </div>
-
-  <div class="toast" id="toast"></div>
+  <div class="status-badge">System Online</div>
 </div>
 
-<script>
-let state = { accounts: {}, live_trades: [], today_signals: [], history: [], pending: [], news_raw: [] };
-let currentTab = 'overview';
-const IST_OFFSET = 330;
+<div class="main-content">
 
-const NIFTY_STOCKS = [
-  { symbol: "RELIANCE.NS", name: "Reliance Industries", sector: "Energy" },
-  { symbol: "HDFCBANK.NS", name: "HDFC Bank", sector: "Banking" },
-  { symbol: "ICICIBANK.NS", name: "ICICI Bank", sector: "Banking" },
-  { symbol: "INFY.NS", name: "Infosys", sector: "IT" },
-  { symbol: "TCS.NS", name: "Tata Consultancy", sector: "IT" },
-  { symbol: "ITC.NS", name: "ITC Limited", sector: "FMCG" },
-  { symbol: "SBIN.NS", name: "State Bank of India", sector: "Banking" },
-  { symbol: "BHARTIARTL.NS", name: "Bharti Airtel", sector: "Telecom" },
-  { symbol: "LT.NS", name: "Larsen & Toubro", sector: "Infra" },
-  { symbol: "HINDUNILVR.NS", name: "Hindustan Unilever", sector: "FMCG" },
-  { symbol: "AXISBANK.NS", name: "Axis Bank", sector: "Banking" },
-  { symbol: "KOTAKBANK.NS", name: "Kotak Mahindra Bank", sector: "Banking" },
-  { symbol: "BAJFINANCE.NS", name: "Bajaj Finance", sector: "NBFC" },
-  { symbol: "MARUTI.NS", name: "Maruti Suzuki", sector: "Auto" },
-  { symbol: "SUNPHARMA.NS", name: "Sun Pharmaceutical", sector: "Pharma" },
-];
+  <!-- OVERVIEW TAB -->
+  <div class="tab-page active" id="tab-overview">
+    <div class="stats-grid">
+      <div class="stat-card">
+        <div class="stat-value" id="totalEquity">₹0</div>
+        <div class="stat-label">Total Equity</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="todayPnl">+₹0</div>
+        <div class="stat-label">Today P/L</div>
+      </div>
+      <div class="stat-card">
+        <div class="stat-value" id="weekPnl">+₹0</div>
+        <div class="stat-label">Week P/L</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <h3>📊 Quick Status</h3>
+        <span style="font-size:11px;color:var(--text-dim)">▼</span>
+      </div>
+      <div class="section-body" id="accountsBody">
+        <div class="empty-state"><span class="emoji">⏳</span>Loading accounts...</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <h3>🔥 Live Open Trades <span class="badge" id="liveBadge">0</span></h3>
+        <span style="font-size:11px;color:var(--text-dim)">▼</span>
+      </div>
+      <div class="section-body" id="liveBody">
+        <div class="empty-state"><span class="emoji">📭</span>No open trades right now</div>
+      </div>
+    </div>
+
+    <div class="section-card">
+      <div class="section-header" onclick="toggleSection(this)">
+        <h3>⏳ Pending Setups <span class="badge" id="pendingBadge">0</span></h3>
+        <span style="font-size:11px;color:var(--text-dim)">▼</span>
+      </div>
+      <div class="section-body" id="pendingBody">
+        <div class="empty-state"><span class="emoji">🎯</span>No pending sweep setups</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- SIGNALS TAB -->
+  <div class="tab-page" id="tab-signals">
+    <div class="section-card">
+      <div class="section-header">
+        <h3>📡 Signal History <span class="badge" id="signalBadge">0</span></h3>
+      </div>
+      <div class="section-body" id="signalsBody">
+        <div class="empty-state"><span class="emoji">📡</span>No signals in the last 24h</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- HISTORY TAB -->
+  <div class="tab-page" id="tab-history">
+    <div class="section-card">
+      <div class="section-header">
+        <h3>📜 Trade History <span class="badge" id="historyBadge">0</span></h3>
+      </div>
+      <div class="section-body" id="historyBody">
+        <div class="empty-state"><span class="emoji">📜</span>No closed trades yet</div>
+      </div>
+    </div>
+  </div>
+
+  <!-- NIFTY TAB -->
+  <div class="tab-page" id="tab-nifty">
+    <div class="nifty-header">
+      <div>
+        <h2>📈 Nifty 50 Universe</h2>
+        <div class="sub">15 stocks + 2 indices · 4H Sweep · NSE delayed 15 min</div>
+      </div>
+      <button class="refresh-btn" id="niftyRefreshBtn" onclick="refreshNifty()">
+        <span class="icon">🔄</span> Refresh
+      </button>
+    </div>
+    <div class="index-cards" id="niftyIndices">
+      <div class="index-card">
+        <div class="index-name">Nifty 50</div>
+        <div class="skeleton" style="height:28px;width:120px;margin:0 auto;"></div>
+      </div>
+      <div class="index-card">
+        <div class="index-name">Bank Nifty</div>
+        <div class="skeleton" style="height:28px;width:120px;margin:0 auto;"></div>
+      </div>
+    </div>
+    <div class="stock-grid" id="stockGrid">
+      <!-- Stocks rendered here -->
+    </div>
+  </div>
+
+  <!-- NEWS TAB -->
+  <div class="tab-page" id="tab-news">
+    <div class="section-card">
+      <div class="section-header">
+        <h3>📰 Economic Calendar</h3>
+      </div>
+      <div class="section-body" id="newsBody">
+        <div class="empty-state"><span class="emoji">📰</span>Loading economic calendar...</div>
+      </div>
+    </div>
+  </div>
+
+</div>
+
+<!-- Bottom Tab Bar -->
+<div class="tab-bar">
+  <button class="tab-btn active" onclick="switchTab('overview', this)">
+    <span class="icon">📊</span>
+    <span>Overview</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('trades', this)">
+    <span class="icon">🔥</span>
+    <span>Trades</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('signals', this)">
+    <span class="icon">📡</span>
+    <span>Signals</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('history', this)">
+    <span class="icon">📜</span>
+    <span>History</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('nifty', this)">
+    <span class="icon">📈</span>
+    <span>Nifty</span>
+  </button>
+  <button class="tab-btn" onclick="switchTab('news', this)">
+    <span class="icon">📰</span>
+    <span>News</span>
+  </button>
+</div>
+
+<div class="toast" id="toast"></div>
+
+<script>
+// ── STATE ──
+let state = {};
+let niftyPrices = {};
+let niftyLoaded = false;
+let currentTab = 'overview';
+
 const INDICES = [
   { symbol: "^NSEI", name: "Nifty 50" },
   { symbol: "^NSEBANK", name: "Bank Nifty" }
 ];
-let niftyPrices = {};
-let niftyLoaded = false;
 
+const NIFTY_STOCKS = [
+  { symbol: "RELIANCE.NS", name: "Reliance", sector: "Energy" },
+  { symbol: "HDFCBANK.NS", name: "HDFC Bank", sector: "Banking" },
+  { symbol: "ICICIBANK.NS", name: "ICICI Bank", sector: "Banking" },
+  { symbol: "INFY.NS", name: "Infosys", sector: "IT" },
+  { symbol: "TCS.NS", name: "TCS", sector: "IT" },
+  { symbol: "ITC.NS", name: "ITC", sector: "FMCG" },
+  { symbol: "SBIN.NS", name: "SBI", sector: "Banking" },
+  { symbol: "BHARTIARTL.NS", name: "Bharti Airtel", sector: "Telecom" },
+  { symbol: "LT.NS", name: "L&T", sector: "Infra" },
+  { symbol: "HINDUNILVR.NS", name: "HUL", sector: "FMCG" },
+  { symbol: "AXISBANK.NS", name: "Axis Bank", sector: "Banking" },
+  { symbol: "KOTAKBANK.NS", name: "Kotak Bank", sector: "Banking" },
+  { symbol: "BAJFINANCE.NS", name: "Bajaj Finance", sector: "NBFC" },
+  { symbol: "MARUTI.NS", name: "Maruti", sector: "Auto" },
+  { symbol: "SUNPHARMA.NS", name: "Sun Pharma", sector: "Pharma" },
+];
+
+// ── CLOCK ──
 function updateClock() {
   const now = new Date();
-  const offset = now.getTimezoneOffset();
-  const istTime = new Date(now.getTime() + (offset + IST_OFFSET) * 60000);
-  const h = istTime.getHours();
-  const m = istTime.getMinutes();
-  const s = istTime.getSeconds();
-  const ampm = h >= 12 ? 'PM' : 'AM';
-  const h12 = h % 12 || 12;
-  document.getElementById('clock').textContent =
-    `${String(h12).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ${ampm}`;
+  const h = String(now.getHours()).padStart(2, '0');
+  const m = String(now.getMinutes()).padStart(2, '0');
+  const s = String(now.getSeconds()).padStart(2, '0');
+  document.getElementById('clock').textContent = h + ':' + m + ':' + s;
 }
-updateClock();
 setInterval(updateClock, 1000);
+updateClock();
 
-document.querySelectorAll('.tab-btn').forEach(btn => {
-  btn.addEventListener('click', () => {
-    const tab = btn.dataset.tab;
-    if (tab === currentTab) return;
-    document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
-    btn.classList.add('active');
-    document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
-    document.getElementById('tab-' + tab).classList.add('active');
-    currentTab = tab;
-    document.getElementById('mainContent').scrollTop = 0;
-    setBadgeBaseline(tab, getTabCount(tab));
-    updateBadges();
-    if (tab === 'nifty' && !niftyLoaded) refreshNifty();
-  });
-});
-
-function fmtMoney(n) {
-  const v = parseFloat(n) || 0;
-  return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
-}
-function fmtPnl(n) {
-  const v = parseFloat(n) || 0;
-  const sign = v >= 0 ? '+' : '';
-  return sign + fmtMoney(v);
-}
-function fmtTime(ts) {
-  if (!ts) return '—';
-  const d = new Date(ts);
-  if (!isNaN(d.getTime())) {
-    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: true });
-  }
-  const m = String(ts).match(/(\d{2}):(\d{2})/);
-  if (m) return m[0];
-  return ts;
-}
-function extractDate(iso) {
-  if (!iso) return '';
-  const s = String(iso);
-  return s.includes('T') ? s.split('T')[0] : s.slice(0, 10);
-}
-function extractTimeET(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('en-US', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'America/New_York' });
-  } catch { return ''; }
-}
-function extractTimeIST(iso) {
-  if (!iso) return '';
-  try {
-    const d = new Date(iso);
-    return d.toLocaleTimeString('en-IN', { hour: '2-digit', minute: '2-digit', hour12: false, timeZone: 'Asia/Kolkata' });
-  } catch { return ''; }
-}
-function fmtDateHeader(dateStr) {
-  const today = new Date().toISOString().slice(0, 10);
-  const yesterday = new Date(Date.now() - 864e5).toISOString().slice(0, 10);
-  if (dateStr === today) return 'Today';
-  if (dateStr === yesterday) return 'Yesterday';
-  const d = new Date(dateStr + 'T00:00:00');
-  return d.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
-}
-
-function getBadgeState() {
-  const today = new Date().toISOString().slice(0, 10);
-  try {
-    const raw = localStorage.getItem('mavis_badges');
-    if (!raw) return { date: today, baseline: {} };
-    const st = JSON.parse(raw);
-    if (st.date !== today) return { date: today, baseline: {} };
-    return st;
-  } catch { return { date: today, baseline: {} }; }
-}
-function saveBadgeState(baseline) {
-  const today = new Date().toISOString().slice(0, 10);
-  try { localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline })); } catch {}
-}
-function setBadgeBaseline(tab, count) {
-  const st = getBadgeState();
-  st.baseline[tab] = count;
-  saveBadgeState(st.baseline);
-}
-function getTabCount(tab) {
-  if (tab === 'trades') return (state.live_trades || []).length + (state.pending || []).length;
-  if (tab === 'signals') return (state.today_signals || []).length;
-  if (tab === 'history') return (state.history || []).length;
-  if (tab === 'news') return (state.news_raw || []).filter(n => (n.impact || '').toUpperCase() === 'HIGH').length;
-  if (tab === 'nifty') return (state.pending || []).filter(p => p.sym && p.sym.endsWith('.NS')).length;
-  return 0;
-}
-let badgeInitDone = false;
-function initBadges() {
-  if (badgeInitDone) return;
-  const st = getBadgeState();
-  if (Object.keys(st.baseline).length === 0) {
-    setBadgeBaseline('trades', getTabCount('trades'));
-    setBadgeBaseline('signals', getTabCount('signals'));
-    setBadgeBaseline('history', getTabCount('history'));
-    setBadgeBaseline('news', getTabCount('news'));
-    setBadgeBaseline('nifty', getTabCount('nifty'));
-  }
-  badgeInitDone = true;
-}
-function updateBadges() {
-  updateBadge('badgeTrades', getBadgeCount('trades'));
-  updateBadge('badgeSignals', getBadgeCount('signals'));
-  updateBadge('badgeHistory', getBadgeCount('history'));
-  updateBadge('badgeNews', getBadgeCount('news'));
-  updateBadge('badgeNifty', getBadgeCount('nifty'));
-}
-
-function renderOverview() {
-  const grid = document.getElementById('accountsGrid');
-  const accs = state.accounts || {};
-  const names = { macro: 'Macro', nifty: 'Nifty', ny_session: 'NY Session', sweep_4h: 'Sweep 4H' };
-  const classes = { macro: 'macro', nifty: 'nifty', ny_session: 'ny', sweep_4h: 'sweep' };
-  let total = 0, todayTotal = 0, weekTotal = 0;
-  let html = '';
-  for (const [key, acc] of Object.entries(accs)) {
-    if (!acc || typeof acc !== 'object') continue;
-    const bal = parseFloat(acc.balance) || 0;
-    const tpnl = parseFloat(acc.today_pnl) || 0;
-    const wpnl = parseFloat(acc.week_pnl) || 0;
-    total += bal; todayTotal += tpnl; weekTotal += wpnl;
-    const pnlClass = tpnl >= 0 ? 'pos' : 'neg';
-    const active = acc.is_active ? 'active' : '';
-    html += `
-      <div class="account-card ${classes[key] || ''}">
-        <div class="account-name">${names[key] || key}</div>
-        <div class="account-balance">${fmtMoney(bal)}</div>
-        <div class="account-meta">
-          <span class="account-pnl ${pnlClass}">${fmtPnl(tpnl)}</span>
-          <span class="account-status ${active}"></span>
-        </div>
-      </div>`;
-  }
-  grid.innerHTML = html || '<div style="grid-column:1/-1;text-align:center;color:var(--text-dim);padding:20px;">No accounts loaded</div>';
-  document.getElementById('statEquity').textContent = fmtMoney(total);
-  const st = document.getElementById('statToday');
-  st.textContent = fmtPnl(todayTotal);
-  st.className = 'stat-value ' + (todayTotal >= 0 ? 'pos' : 'neg');
-  const sw = document.getElementById('statWeek');
-  sw.textContent = fmtPnl(weekTotal);
-  sw.className = 'stat-value ' + (weekTotal >= 0 ? 'pos' : 'neg');
-
-  const qs = document.getElementById('quickStatus');
-  const live = (state.live_trades || []).length;
-  const sig = (state.today_signals || []).length;
-  const pend = (state.pending || []).length;
-  const hist = (state.history || []).length;
-  qs.innerHTML = `
-    <div style="display:grid;grid-template-columns:repeat(2,1fr);gap:12px;">
-      <div style="text-align:center;padding:8px;">
-        <div style="font-size:22px;font-weight:700;color:var(--accent);">${live}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Live Trades</div>
-      </div>
-      <div style="text-align:center;padding:8px;">
-        <div style="font-size:22px;font-weight:700;color:var(--info);">${sig}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Today's Signals</div>
-      </div>
-      <div style="text-align:center;padding:8px;">
-        <div style="font-size:22px;font-weight:700;color:var(--warning);">${pend}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Pending Setups</div>
-      </div>
-      <div style="text-align:center;padding:8px;">
-        <div style="font-size:22px;font-weight:700;color:var(--text);">${hist}</div>
-        <div style="font-size:11px;color:var(--text-dim);margin-top:2px;">Closed Trades</div>
-      </div>
-    </div>`;
-}
-
-function renderLiveTrades() {
-  const trades = state.live_trades || [];
-  document.getElementById('liveCountBadge').textContent = trades.length + ' open';
-  const body = document.getElementById('liveTradesBody');
-  if (!trades.length) {
-    body.innerHTML = '<div class="card-empty"><span class="emoji">📭</span>No open trades right now</div>';
-    return;
-  }
-  let html = `<table class="data-table">
-    <thead><tr>
-      <th>Sym</th><th>Dir</th><th>Entry</th><th>Current</th>
-      <th>P/L</th><th>Prog</th><th>Acct</th>
-    </tr></thead><tbody>`;
-  for (const t of trades) {
-    const dirClass = t.direction === 'LONG' ? 'dir-long' : 'dir-short';
-    const pnlClass = (t.pnl_inr || 0) >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const prog = Math.max(0, Math.min(100, t.progress || 0));
-    html += `<tr>
-      <td class="sym">${t.symbol || '—'}</td>
-      <td class="${dirClass}">${t.direction || '—'}</td>
-      <td>${(t.entry || 0).toFixed(4)}</td>
-      <td>${(t.current || 0).toFixed(4)}</td>
-      <td class="${pnlClass}">${t.pnl ? (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2) : '—'}</td>
-      <td><div class="progress-wrap"><div class="progress-fill" style="width:${prog}%"></div></div></td>
-      <td class="dim">${(t.account || '').slice(0,3)}</td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-  body.innerHTML = html;
-}
-
-function renderPending() {
-  const pending = state.pending || [];
-  document.getElementById('pendingCountBadge').textContent = pending.length + ' pending';
-  const body = document.getElementById('pendingBody');
-  if (!pending.length) {
-    body.innerHTML = '<div class="card-empty"><span class="emoji">🎯</span>No pending sweep setups</div>';
-    return;
-  }
-  let html = `<table class="data-table">
-    <thead><tr><th>Sym</th><th>Dir</th><th>Status</th><th>Expires</th></tr></thead><tbody>`;
-  for (const p of pending) {
-    html += `<tr>
-      <td class="sym">${p.sym || '—'}</td>
-      <td class="${(p.dir || '').includes('BULL') ? 'dir-long' : 'dir-short'}">${p.dir || '—'}</td>
-      <td class="dim">${(p.status || '').replace(/-/g,' ')}</td>
-      <td class="dim">${(p.expires_h || 0).toFixed(1)}h</td>
-    </tr>`;
-  }
-  html += '</tbody></table>';
-  body.innerHTML = html;
-}
-
-function renderSignals() {
-  const sigs = state.today_signals || [];
-  document.getElementById('signalCount').textContent = sigs.length;
-  const body = document.getElementById('signalsBody');
-  if (!sigs.length) {
-    body.innerHTML = '<div class="card-empty"><span class="emoji">📡</span>No signals in the last 24h</div>';
-    return;
-  }
-  const groups = {};
-  for (const s of sigs) {
-    let d = s.date;
-    if (!d && s.ts_ms) d = extractDate(new Date(s.ts_ms).toISOString());
-    if (!d) d = new Date().toISOString().slice(0, 10);
-    if (!groups[d]) groups[d] = [];
-    groups[d].push(s);
-  }
-  let html = '';
-  for (const [date, items] of Object.entries(groups).sort().reverse()) {
-    const header = `<span class="collapse-title">${fmtDateHeader(date)}</span><span class="collapse-meta">${items.length} signals</span>`;
-    let bodyHtml = `<table class="data-table">
-      <thead><tr><th>Time</th><th>Sym</th><th>Dir</th><th>Strat</th><th>Status</th></tr></thead><tbody>`;
-    for (const s of items) {
-      const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
-      bodyHtml += `<tr>
-        <td style="font-weight:800;color:#ffffff;font-size:12px;letter-spacing:0.5px;">${s.time || s.time_str || '—'}</td>
-        <td class="sym">${s.sym || s.symbol || '—'}</td>
-        <td class="${dirClass}">${s.dir || '—'}</td>
-        <td class="dim">${(s.strategy || s.strat || '').slice(0,12)}</td>
-        <td class="dim">${s.status || 'open'}</td>
-      </tr>`;
-    }
-    bodyHtml += '</tbody></table>';
-    html += buildCollapse(header, bodyHtml, date === new Date().toISOString().slice(0,10));
-  }
-  body.innerHTML = html;
-}
-
-function renderHistory() {
-  const hist = state.history || [];
-  document.getElementById('historyCount').textContent = hist.length;
-  const body = document.getElementById('historyBody');
-  if (!hist.length) {
-    body.innerHTML = '<div class="card-empty"><span class="emoji">📜</span>No closed trades yet</div>';
-    return;
-  }
-  const groups = {};
-  for (const h of hist) {
-    const d = extractDate(h.closed_at || h.close_time) || 'Unknown';
-    if (!groups[d]) groups[d] = [];
-    groups[d].push(h);
-  }
-  let html = '';
-  for (const [date, items] of Object.entries(groups).sort().reverse()) {
-    const totalPnl = items.reduce((sum, h) => sum + (parseFloat(h.pnl) || 0), 0);
-    const pnlClass = totalPnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-    const wins = items.filter(h => h.result === 'WIN').length;
-    const header = `<span class="collapse-title">${fmtDateHeader(date)}</span><span class="collapse-meta ${pnlClass}">${items.length} trades · ${fmtPnl(totalPnl)} · ${wins}W/${items.length-wins}L</span>`;
-    let bodyHtml = `<table class="data-table">
-      <thead><tr><th>Sym</th><th>Dir</th><th>Result</th><th>P/L</th><th>Time</th></tr></thead><tbody>`;
-    for (const h of items) {
-      const pnl = parseFloat(h.pnl) || 0;
-      const pnlC = pnl >= 0 ? 'pnl-pos' : 'pnl-neg';
-      const resC = h.result === 'WIN' ? 'dir-long' : 'dir-short';
-      bodyHtml += `<tr>
-        <td class="sym">${h.symbol || '—'}</td>
-        <td class="${(h.type || '').toUpperCase() === 'LONG' ? 'dir-long' : 'dir-short'}">${h.type || '—'}</td>
-        <td class="${resC}">${h.result || '—'}</td>
-        <td class="${pnlC}">${fmtPnl(pnl)}</td>
-        <td style="font-weight:600;color:var(--text);">${fmtTime(h.close_time)}</td>
-      </tr>`;
-    }
-    bodyHtml += '</tbody></table>';
-    html += buildCollapse(header, bodyHtml, date === new Date().toISOString().slice(0,10));
-  }
-  body.innerHTML = html;
-}
-
-function buildCollapse(headerHtml, bodyHtml, openDefault) {
-  const openClass = openDefault ? 'open' : '';
-  return `
-    <div class="collapse-card">
-      <div class="collapse-header ${openClass}" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
-        ${headerHtml}
-        <span class="collapse-icon">▼</span>
-      </div>
-      <div class="collapse-body ${openClass}">
-        ${bodyHtml}
-      </div>
-    </div>`;
-}
-
-function renderNews() {
-  const news = state.news_raw || [];
-  const container = document.getElementById('newsContainer');
-  if (!news.length) {
-    container.innerHTML = '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
-    return;
-  }
-  const today = new Date().toISOString().slice(0, 10);
-  const grouped = {};
-  for (const ev of news) {
-    const d = extractDate(ev.date);
-    if (!grouped[d]) grouped[d] = [];
-    grouped[d].push(ev);
-  }
-  let html = '';
-  for (const d of Object.keys(grouped).sort()) {
-    const dateObj = new Date(d + 'T00:00:00');
-    const isToday = d === today;
-    const label = isToday ? 'TODAY' : dateObj.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
-    const highCount = grouped[d].filter(e => (e.impact || '').toUpperCase() === 'HIGH').length;
-    html += `<div class="news-day-header">📅 ${label}${highCount > 0 ? ' · ' + highCount + ' HIGH' : ''}</div>`;
-    for (const ev of grouped[d]) {
-      const impact = (ev.impact || '').toUpperCase();
-      const impactClass = impact === 'HIGH' ? 'high' : impact === 'MEDIUM' ? 'medium' : impact === 'HOLIDAY' ? 'holiday' : 'low';
-      const tagClass = impactClass;
-      const et = extractTimeET(ev.date);
-      const ist = extractTimeIST(ev.date);
-      const timeStr = et ? `${et} ET → ${ist} IST` : 'All Day';
-      html += `
-        <div class="news-item">
-          <div class="news-impact ${impactClass}"></div>
-          <div class="news-content">
-            <div class="news-title">${ev.title || 'Unknown'}</div>
-            <div class="news-meta">
-              <span class="flag">${getFlag(ev.country || ev.currency || '???')}</span>
-              <span class="news-tag ${tagClass}">${impact}</span>
-              <span>${timeStr}</span>
-            </div>
-            ${(ev.forecast || ev.previous) ? `<div class="news-forecast"><span>Forecast:</span> ${ev.forecast || '—'} &nbsp;|&nbsp; <span>Previous:</span> ${ev.previous || '—'}</div>` : ''}
-          </div>
-        </div>`;
-    }
-  }
-  container.innerHTML = html;
-}
-
-function getFlag(code) {
-  const flags = {
-    USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦', CHF: '🇨🇭',
-    NZD: '🇳🇿', CNY: '🇨🇳', INR: '🇮🇳'
-  };
-  return flags[code] || '🌐';
-}
-
-function updateBadge(id, count) {
-  const el = document.getElementById(id);
-  if (!el) return;
-  if (count > 0) { el.textContent = count > 99 ? '99+' : count; el.style.display = 'flex'; }
-  else { el.style.display = 'none'; }
-}
-
+// ── TOAST ──
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -1178,49 +588,205 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-async function refreshNifty() {
-  const btn = document.getElementById('niftyRefreshBtn');
-  btn.classList.add('spinning');
-  try {
-    const allSymbols = [...INDICES.map(i => i.symbol), ...NIFTY_STOCKS.map(s => s.symbol)];
-    const res = await fetch('/api/prices?symbols=' + encodeURIComponent(allSymbols.join(',')));
-    if (!res.ok) throw new Error('HTTP ' + res.status);
-    const data = await res.json();
-    const prices = data.prices || {};
-    
-    // Check if we got ANY prices back
-    const gotPrices = Object.keys(prices).length;
-    if (gotPrices === 0) {
-      throw new Error('No prices returned from API');
-    }
-    
-    niftyPrices = prices;
-    niftyLoaded = true;
-    renderNiftyIndices();
-    renderStockGrid();
-    showToast('Nifty prices updated (' + gotPrices + ' symbols)');
-  } catch (err) {
-    console.error('[Nifty] refresh error:', err);
-    niftyLoaded = false;  // ← Allow retry on next tab open
-    renderNiftyError();
-    showToast('Failed to load prices — tap Refresh to retry');
-  } finally {
-    btn.classList.remove('spinning');
+// ── TAB SWITCHER ──
+function switchTab(tab, btn) {
+  currentTab = tab;
+  document.querySelectorAll('.tab-page').forEach(p => p.classList.remove('active'));
+  document.querySelectorAll('.tab-btn').forEach(b => b.classList.remove('active'));
+  document.getElementById('tab-' + tab).classList.add('active');
+  btn.classList.add('active');
+  if (tab === 'nifty' && !niftyLoaded) refreshNifty();
+}
+
+// ── SECTION TOGGLE ──
+function toggleSection(header) {
+  const body = header.nextElementSibling;
+  body.classList.toggle('collapsed');
+  const arrow = header.querySelector('span:last-child');
+  arrow.textContent = body.classList.contains('collapsed') ? '▶' : '▼';
+}
+
+// ── FORMATTERS ──
+function fmtMoney(n) {
+  if (n === undefined || n === null) return '₹0';
+  const val = parseFloat(n);
+  const sign = val >= 0 ? '+' : '';
+  return sign + '₹' + Math.abs(val).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+function fmtPrice(n) {
+  if (n === undefined || n === null) return '—';
+  return parseFloat(n).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+}
+
+// ── RENDER: OVERVIEW ──
+function renderOverview() {
+  const accounts = state.accounts || {};
+  let total = 0, today = 0, week = 0;
+  for (const k in accounts) {
+    const a = accounts[k];
+    total += a.balance || 0;
+    today += a.today_pnl || 0;
+    week += a.week_pnl || 0;
+  }
+  document.getElementById('totalEquity').textContent = fmtMoney(total).replace(/^[+-]/, '');
+  const tEl = document.getElementById('todayPnl');
+  tEl.textContent = fmtMoney(today);
+  tEl.className = 'stat-value ' + (today >= 0 ? 'up' : 'down');
+  const wEl = document.getElementById('weekPnl');
+  wEl.textContent = fmtMoney(week);
+  wEl.className = 'stat-value ' + (week >= 0 ? 'up' : 'down');
+
+  // Accounts
+  const accBody = document.getElementById('accountsBody');
+  const accKeys = Object.keys(accounts);
+  if (!accKeys.length) {
+    accBody.innerHTML = '<div class="empty-state">No accounts loaded</div>';
+    return;
+  }
+  accBody.innerHTML = accKeys.map(k => {
+    const a = accounts[k];
+    const pnl = a.today_pnl || 0;
+    return `
+      <div class="account-row">
+        <div>
+          <div class="account-name">${a.name || k}</div>
+          <div class="account-meta">Trades: ${a.daily_trades || 0}/${a.daily_limit || 0}</div>
+        </div>
+        <div style="text-align:right">
+          <div class="account-balance">₹${(a.balance || 0).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
+          <div class="account-pnl ${pnl >= 0 ? 'up' : 'down'}">${fmtMoney(pnl)} today</div>
+        </div>
+      </div>
+    `;
+  }).join('');
+
+  // Live trades
+  const live = state.live_trades || [];
+  document.getElementById('liveBadge').textContent = live.length;
+  const liveBody = document.getElementById('liveBody');
+  if (!live.length) {
+    liveBody.innerHTML = '<div class="empty-state"><span class="emoji">📭</span>No open trades right now</div>';
+  } else {
+    liveBody.innerHTML = live.map(t => {
+      const pnl = t.pnl_inr || 0;
+      const isUp = pnl >= 0;
+      return `
+        <div class="trade-card">
+          <div class="trade-header">
+            <span class="trade-symbol">${t.symbol}</span>
+            <span class="trade-dir ${t.direction === 'LONG' ? 'long' : 'short'}">${t.direction}</span>
+          </div>
+          <div class="trade-details">
+            <div>Entry<strong>$${fmtPrice(t.entry)}</strong></div>
+            <div>Current<strong>$${fmtPrice(t.current)}</strong></div>
+            <div>SL<strong>$${fmtPrice(t.sl)}</strong></div>
+            <div>TP<strong>$${fmtPrice(t.tp)}</strong></div>
+            <div>Qty<strong>${(t.qty || 0).toFixed(4)}</strong></div>
+            <div>Acct<strong>${t.account}</strong></div>
+          </div>
+          <div class="trade-pnl ${isUp ? 'up' : 'down'}">${fmtMoney(pnl)}</div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${t.progress || 0}%"></div></div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  // Pending
+  const pending = state.pending || [];
+  document.getElementById('pendingBadge').textContent = pending.length;
+  const pendBody = document.getElementById('pendingBody');
+  if (!pending.length) {
+    pendBody.innerHTML = '<div class="empty-state"><span class="emoji">🎯</span>No pending sweep setups</div>';
+  } else {
+    pendBody.innerHTML = pending.map(p => `
+      <div class="pending-card">
+        <strong>${p.sym}</strong> · ${p.dir} · ${p.status.replace(/-/g, ' ').toUpperCase()}
+        <div class="pending-status">Expires: ${p.expires_h || 0}h · Zone: ${p.zone ? p.zone.map(x=>x.toFixed(2)).join(' — ') : 'Waiting for FVG'}</div>
+      </div>
+    `).join('');
   }
 }
 
+// ── RENDER: SIGNALS ──
+function renderSignals() {
+  const sigs = state.today_signals || [];
+  document.getElementById('signalBadge').textContent = sigs.length;
+  const body = document.getElementById('signalsBody');
+  if (!sigs.length) {
+    body.innerHTML = '<div class="empty-state"><span class="emoji">📡</span>No signals in the last 24h</div>';
+    return;
+  }
+  body.innerHTML = sigs.map(s => `
+    <div class="list-row">
+      <div class="list-left">
+        <span class="list-time">${s.time || ''}</span>
+        <div>
+          <div class="list-sym">${s.sym}</div>
+          <div class="list-strat">${s.strategy || ''}</div>
+        </div>
+      </div>
+      <span class="list-dir ${s.dir === 'LONG' ? 'long' : 'short'}">${s.dir}</span>
+    </div>
+  `).join('');
+}
+
+// ── RENDER: HISTORY ──
+function renderHistory() {
+  const hist = state.history || [];
+  document.getElementById('historyBadge').textContent = hist.length;
+  const body = document.getElementById('historyBody');
+  if (!hist.length) {
+    body.innerHTML = '<div class="empty-state"><span class="emoji">📜</span>No closed trades yet</div>';
+    return;
+  }
+  body.innerHTML = hist.slice(0, 15).map(h => {
+    const pnl = parseFloat(h.pnl || 0);
+    const isWin = h.result === 'WIN';
+    return `
+      <div class="list-row">
+        <div class="list-left">
+          <span class="list-time">${(h.close_time || '').slice(11, 16) || ''}</span>
+          <div>
+            <div class="list-sym">${h.symbol} <span style="color:var(--text-dim)">${h.strat}</span></div>
+            <div class="list-strat">${h.type} @ $${fmtPrice(h.entry)} → $${fmtPrice(h.exit_price || h.entry)}</div>
+          </div>
+        </div>
+        <span class="list-pnl ${isWin ? 'up' : 'down'}">${isWin ? '+' : ''}₹${Math.abs(pnl).toLocaleString('en-IN', {minimumFractionDigits:2})}</span>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── RENDER: NEWS ──
+function renderNews() {
+  const news = state.news_raw || [];
+  const body = document.getElementById('newsBody');
+  if (!news.length) {
+    body.innerHTML = '<div class="empty-state"><span class="emoji">📰</span>No news events</div>';
+    return;
+  }
+  body.innerHTML = news.slice(0, 12).map(n => {
+    const imp = (n.impact || '').toLowerCase();
+    const timeStr = n.date ? n.date.slice(11, 16) : '';
+    return `
+      <div class="news-card">
+        <div class="news-impact ${imp}">${n.impact || 'LOW'} · ${n.country || ''}</div>
+        <div>${n.title}</div>
+        <div class="news-time">${timeStr} ET · Forecast: ${n.forecast || '—'} · Prev: ${n.previous || '—'}</div>
+      </div>
+    `;
+  }).join('');
+}
+
+// ── RENDER: NIFTY ──
 function renderNiftyIndices() {
   const container = document.getElementById('niftyIndices');
   container.innerHTML = INDICES.map(idx => {
     const p = niftyPrices[idx.symbol];
     if (!p) {
-      return `<div class="index-card"><div class="index-name">${idx.name}</div><div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div></div>`;
+      return `<div class="index-card"><div class="index-name">${idx.name}</div><div class="skeleton" style="height:28px;width:120px;margin:0 auto;"></div></div>`;
     }
-    return `
-      <div class="index-card">
-        <div class="index-name">${idx.name}</div>
-        <div class="index-price">${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-      </div>`;
+    return `<div class="index-card"><div class="index-name">${idx.name}</div><div class="index-price">${parseFloat(p).toLocaleString('en-IN', {minimumFractionDigits:2})}</div></div>`;
   }).join('');
 }
 
@@ -1233,110 +799,71 @@ function renderStockGrid() {
       return `
         <div class="stock-card">
           <span class="sector-label">${stock.sector}</span>
-          <div class="stock-header">
-            <div>
-              <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
-              <div class="stock-name">${stock.name}</div>
-            </div>
-          </div>
-          <div style="color:var(--text-dim);font-size:12px;margin-top:6px;">Price unavailable</div>
+          <div class="stock-symbol">${stock.symbol.replace('.NS', '')}</div>
+          <div class="stock-name">${stock.name}</div>
+          <div style="color:var(--text-dim);font-size:11px;margin-top:4px;">Loading...</div>
         </div>`;
     }
     const sweep = pendingNS.find(s => s.sym === stock.symbol);
     const sweepHtml = sweep
-      ? `<div class="stock-sweep-status">
-           <span class="mini-tag pending">⏳ Pending</span>
-           <span class="mini-tag ${sweep.dir === 'BULLISH' ? 'long' : 'short'}">${sweep.dir === 'BULLISH' ? '📈 Long' : '📉 Short'}</span>
-         </div>`
-      : `<div class="stock-sweep-status"><span class="mini-tag closed">No active setup</span></div>`;
+      ? `<div class="stock-sweep"><span class="mini-tag pending">⏳ Pending</span><span class="mini-tag ${sweep.dir === 'BULLISH' ? 'long' : 'short'}">${sweep.dir === 'BULLISH' ? '📈 Long' : '📉 Short'}</span></div>`
+      : `<div class="stock-sweep"><span class="mini-tag closed">No setup</span></div>`;
     return `
       <div class="stock-card">
         <span class="sector-label">${stock.sector}</span>
-        <div class="stock-header">
-          <div>
-            <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
-            <div class="stock-name">${stock.name}</div>
-          </div>
-          <div class="stock-price-section">
-            <div class="stock-price">₹${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-          </div>
-        </div>
+        <div class="stock-symbol">${stock.symbol.replace('.NS', '')}</div>
+        <div class="stock-name">${stock.name}</div>
+        <div class="stock-price">₹${parseFloat(p).toLocaleString('en-IN', {minimumFractionDigits:2})}</div>
         ${sweepHtml}
       </div>`;
   }).join('');
 }
 
-function renderNiftyError() {
-  document.getElementById('niftyIndices').innerHTML = `
-    <div class="index-card" style="grid-column:1/-1;">
-      <div class="index-name">Error</div>
-      <div style="color:var(--danger);font-size:13px;">Could not fetch prices</div>
-    </div>`;
-  document.getElementById('stockGrid').innerHTML = `
-    <div class="card-empty" style="grid-column:1/-1;">
-      <span class="emoji">⚠️</span>
-      <div style="color:var(--text-dim);font-size:13px;">Tap Refresh to try again</div>
-    </div>`;
-}
-    const sweep = pendingNS.find(s => s.sym === stock.symbol);
-    const sweepHtml = sweep
-      ? `<div class="stock-sweep-status">
-           <span class="mini-tag pending">⏳ Pending</span>
-           <span class="mini-tag ${sweep.dir === 'BULLISH' ? 'long' : 'short'}">${sweep.dir === 'BULLISH' ? '📈 Long' : '📉 Short'}</span>
-         </div>`
-      : `<div class="stock-sweep-status"><span class="mini-tag closed">No active setup</span></div>`;
-    return `
-      <div class="stock-card">
-        <span class="sector-label">${stock.sector}</span>
-        <div class="stock-header">
-          <div>
-            <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
-            <div class="stock-name">${stock.name}</div>
-          </div>
-          <div class="stock-price-section">
-            <div class="stock-price">₹${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
-          </div>
-        </div>
-        ${sweepHtml}
-      </div>`;
-  }).join('');
-}
-
-async function fetchData() {
+async function refreshNifty() {
+  const btn = document.getElementById('niftyRefreshBtn');
+  btn.classList.add('spinning');
   try {
-    const res = await fetch('/api/dashboard', { signal: AbortSignal.timeout(30000) });
+    const allSymbols = [...INDICES.map(i => i.symbol), ...NIFTY_STOCKS.map(s => s.symbol)];
+    const res = await fetch('/api/prices?symbols=' + encodeURIComponent(allSymbols.join(',')));
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
-    if (data.error) throw new Error(data.error);
-    state = data;
-    renderAll();
-    initBadges();
-    updateBadges();
-  } catch (e) {
-    console.error('[Dashboard] Fetch error:', e);
-    showToast('Connection issue — retrying...');
-  }
-}
-
-function renderAll() {
-  renderOverview();
-  renderLiveTrades();
-  renderPending();
-  renderSignals();
-  renderHistory();
-  renderNews();
-  if (currentTab === 'nifty' && niftyLoaded) {
+    const prices = data.prices || {};
+    if (!Object.keys(prices).length) throw new Error('No prices returned');
+    niftyPrices = prices;
+    niftyLoaded = true;
     renderNiftyIndices();
     renderStockGrid();
+    showToast('Nifty prices updated (' + Object.keys(prices).length + ' symbols)');
+  } catch (err) {
+    console.error('[Nifty] refresh error:', err);
+    niftyLoaded = false;
+    showToast('Failed to load prices — tap Refresh to retry');
+  } finally {
+    btn.classList.remove('spinning');
   }
 }
 
-console.log('[Dashboard] Starting bootstrap...');
-fetchData();
-setInterval(fetchData, 30000);
+// ── FETCH DASHBOARD ──
+async function fetchDashboard() {
+  try {
+    const res = await fetch('/api/dashboard');
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    state = data;
+    renderOverview();
+    renderSignals();
+    renderHistory();
+    renderNews();
+    if (currentTab === 'nifty' && !niftyLoaded) refreshNifty();
+  } catch (err) {
+    console.error('[Dashboard] fetch error:', err);
+    showToast('Dashboard refresh failed');
+  }
+}
 
-window.onerror = (msg, src, line) => { console.error(`[Dashboard] ${msg} at ${src}:${line}`); };
-window.onunhandledrejection = e => { console.error('[Dashboard] Unhandled:', e.reason); };
+// ── INIT ──
+fetchDashboard();
+setInterval(fetchDashboard, 30000);
 </script>
 </body>
 </html>
