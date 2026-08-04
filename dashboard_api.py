@@ -43,7 +43,7 @@ def _get_main_module():
 # 1. Batch live prices
 # ----------------------------------------------------------------
 def _batch_live_prices(symbols):
-    """Fetch live prices using main.py's get_price() for reliability."""
+    """Fetch live prices using main.py's get_price() + yfinance fallback."""
     if not symbols:
         return {}
 
@@ -57,7 +57,7 @@ def _batch_live_prices(symbols):
     now = time.time()
     out = {}
 
-    # STEP 1: Pull from main.py's live cache (monitor thread updates this every 15s)
+    # STEP 1: Pull from main.py's live cache
     if _price_cache is not None and _lock is not None:
         with _lock:
             for s in symbols:
@@ -66,23 +66,49 @@ def _batch_live_prices(symbols):
                     if now - ts < 120:
                         out[s] = p
 
-    # STEP 2: For missing symbols, use get_price() individually (has delays + fallbacks)
+    # STEP 2: For missing symbols, use get_price() + fallback
     if get_price:
         for s in symbols:
             if s in out:
                 continue
+            p = None
+            # Try 1: main.py get_price()
             try:
                 p = get_price(s)
-                if p:
-                    out[s] = float(p)
-                    if _price_cache is not None and _lock is not None:
-                        with _lock:
-                            _price_cache[s] = (float(p), now)
             except Exception as e:
                 print(f"[PRICE] get_price failed for {s}: {e}")
-            time.sleep(0.5)
+            
+            # Try 2: yfinance 1h history (more reliable for NSE indices)
+            if not p:
+                try:
+                    import yfinance as yf
+                    ticker = yf.Ticker(s)
+                    hist = ticker.history(period="5d", interval="1h")
+                    if hist is not None and not hist.empty:
+                        p = float(hist["Close"].iloc[-1])
+                except Exception as e:
+                    print(f"[PRICE] 1h fallback failed for {s}: {e}")
+            
+            # Try 3: yfinance daily history
+            if not p:
+                try:
+                    import yfinance as yf
+                    ticker = yf.Ticker(s)
+                    hist = ticker.history(period="5d", interval="1d")
+                    if hist is not None and not hist.empty:
+                        p = float(hist["Close"].iloc[-1])
+                except Exception as e:
+                    print(f"[PRICE] 1d fallback failed for {s}: {e}")
 
-    return out 
+            if p:
+                out[s] = float(p)
+                if _price_cache is not None and _lock is not None:
+                    with _lock:
+                        _price_cache[s] = (float(p), now)
+            
+            time.sleep(0.3)
+
+    return out
 # ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
