@@ -43,7 +43,7 @@ def _get_main_module():
 # 1. Batch live prices
 # ----------------------------------------------------------------
 def _batch_live_prices(symbols):
-    """Fetch live prices. Uses main.py _price_cache first, yf.download as fallback."""
+    """Fetch live prices using main.py's get_price() for reliability."""
     if not symbols:
         return {}
 
@@ -53,91 +53,36 @@ def _batch_live_prices(symbols):
 
     _price_cache = getattr(main, "_price_cache", None)
     _lock = getattr(main, "_lock", None)
-    yf_lib = getattr(main, "yf", None)
-    _yf_session = getattr(main, "_yf_session", None)
-
-    out = {}
-    need = []
+    get_price = getattr(main, "get_price", None)
     now = time.time()
+    out = {}
 
-    # STEP 1: Read from main.py's price cache (updated by monitor/scanner every 15s)
+    # STEP 1: Pull from main.py's live cache (monitor thread updates this every 15s)
     if _price_cache is not None and _lock is not None:
         with _lock:
             for s in symbols:
                 if s in _price_cache:
                     p, ts = _price_cache[s]
-                    if now - ts < 120:  # 2 min tolerance
+                    if now - ts < 120:
                         out[s] = p
-                        continue
-                need.append(s)
-    else:
-        need = list(symbols)
 
-    if not need:
-        return out
-
-    # STEP 2: Fallback to yf.download for missing symbols (with rate limit protection)
-    if not (yf_lib and _yf_session):
-        return out
-
-    try:
-        # Wait a bit to avoid hammering Yahoo alongside scanner/monitor
-        time.sleep(0.5)
-        
-        df = yf_lib.download(
-            tickers=need,
-            period="1d",
-            interval="1m",
-            progress=False,
-            auto_adjust=True,
-            threads=False,
-            session=_yf_session,
-        )
-        if df is None or df.empty:
-            return out
-
-        if len(need) == 1:
-            sym = need[0]
+    # STEP 2: For missing symbols, use get_price() individually (has delays + fallbacks)
+    if get_price:
+        for s in symbols:
+            if s in out:
+                continue
             try:
-                # Handle both flat and MultiIndex columns
-                close_vals = df["Close"]
-                if hasattr(close_vals, 'iloc'):
-                    p = float(close_vals.iloc[-1])
-                else:
-                    p = float(close_vals[-1])
-                out[sym] = p
-                if _price_cache is not None and _lock is not None:
-                    with _lock:
-                        _price_cache[sym] = (p, now)
+                p = get_price(s)
+                if p:
+                    out[s] = float(p)
+                    if _price_cache is not None and _lock is not None:
+                        with _lock:
+                            _price_cache[s] = (float(p), now)
             except Exception as e:
-                print(f"[PRICE] Single ticker fallback failed for {sym}: {e}")
-            return out
-
-        if hasattr(df.columns, 'nlevels') and df.columns.nlevels > 1:
-            for sym in need:
-                try:
-                    p = float(df[sym]["Close"].iloc[-1])
-                    out[sym] = p
-                    if _price_cache is not None and _lock is not None:
-                        with _lock:
-                            _price_cache[sym] = (p, now)
-                except Exception:
-                    continue
-        else:
-            for sym in need:
-                try:
-                    p = float(df["Close"].iloc[-1])
-                    out[sym] = p
-                    if _price_cache is not None and _lock is not None:
-                        with _lock:
-                            _price_cache[sym] = (p, now)
-                except Exception:
-                    continue
-    except Exception as e:
-        print(f"[ERR] _batch_live_prices: {e}")
+                print(f"[PRICE] get_price failed for {s}: {e}")
+            time.sleep(0.5)
 
     return out
-
 # ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
