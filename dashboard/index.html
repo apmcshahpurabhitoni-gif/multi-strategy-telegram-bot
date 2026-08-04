@@ -1187,14 +1187,23 @@ async function refreshNifty() {
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     const prices = data.prices || {};
+    
+    // Check if we got ANY prices back
+    const gotPrices = Object.keys(prices).length;
+    if (gotPrices === 0) {
+      throw new Error('No prices returned from API');
+    }
+    
     niftyPrices = prices;
     niftyLoaded = true;
     renderNiftyIndices();
     renderStockGrid();
-    showToast('Nifty prices updated');
+    showToast('Nifty prices updated (' + gotPrices + ' symbols)');
   } catch (err) {
     console.error('[Nifty] refresh error:', err);
-    showToast('Failed to load Nifty prices');
+    niftyLoaded = false;  // ← Allow retry on next tab open
+    renderNiftyError();
+    showToast('Failed to load prices — tap Refresh to retry');
   } finally {
     btn.classList.remove('spinning');
   }
@@ -1230,9 +1239,45 @@ function renderStockGrid() {
               <div class="stock-name">${stock.name}</div>
             </div>
           </div>
-          <div class="skeleton" style="height:20px;width:80px;"></div>
+          <div style="color:var(--text-dim);font-size:12px;margin-top:6px;">Price unavailable</div>
         </div>`;
     }
+    const sweep = pendingNS.find(s => s.sym === stock.symbol);
+    const sweepHtml = sweep
+      ? `<div class="stock-sweep-status">
+           <span class="mini-tag pending">⏳ Pending</span>
+           <span class="mini-tag ${sweep.dir === 'BULLISH' ? 'long' : 'short'}">${sweep.dir === 'BULLISH' ? '📈 Long' : '📉 Short'}</span>
+         </div>`
+      : `<div class="stock-sweep-status"><span class="mini-tag closed">No active setup</span></div>`;
+    return `
+      <div class="stock-card">
+        <span class="sector-label">${stock.sector}</span>
+        <div class="stock-header">
+          <div>
+            <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
+            <div class="stock-name">${stock.name}</div>
+          </div>
+          <div class="stock-price-section">
+            <div class="stock-price">₹${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+          </div>
+        </div>
+        ${sweepHtml}
+      </div>`;
+  }).join('');
+}
+
+function renderNiftyError() {
+  document.getElementById('niftyIndices').innerHTML = `
+    <div class="index-card" style="grid-column:1/-1;">
+      <div class="index-name">Error</div>
+      <div style="color:var(--danger);font-size:13px;">Could not fetch prices</div>
+    </div>`;
+  document.getElementById('stockGrid').innerHTML = `
+    <div class="card-empty" style="grid-column:1/-1;">
+      <span class="emoji">⚠️</span>
+      <div style="color:var(--text-dim);font-size:13px;">Tap Refresh to try again</div>
+    </div>`;
+}
     const sweep = pendingNS.find(s => s.sym === stock.symbol);
     const sweepHtml = sweep
       ? `<div class="stock-sweep-status">
