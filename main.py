@@ -19,7 +19,8 @@ import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-
+import os
+os.makedirs("/workspace", exist_ok=True)
 matplotlib.use("Agg")
 plt.style.use("dark_background")
 
