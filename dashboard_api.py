@@ -82,7 +82,7 @@ def _batch_live_prices(symbols):
                 print(f"[PRICE] get_price failed for {s}: {e}")
             time.sleep(0.5)
 
-    return out
+    return out 
 # ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
