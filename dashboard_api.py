@@ -43,7 +43,7 @@ def _get_main_module():
 # 1. Batch live prices
 # ----------------------------------------------------------------
 def _batch_live_prices(symbols):
-    """Fetch live prices using main.py's get_price() + yfinance fallback."""
+    """Fetch live prices. Uses main.py cache first, yf.download batch fallback."""
     if not symbols:
         return {}
 
@@ -52,12 +52,12 @@ def _batch_live_prices(symbols):
         return {}
 
     _price_cache = getattr(main, "_price_cache", None)
-    _lock = getattr(main, "_lock", None)
-    get_price = getattr(main, "get_price", None)
+    _lock        = getattr(main, "_lock", None)
+    fetch_price  = getattr(main, "fetch_price", None)  # FIXED: was "get_price"
     now = time.time()
     out = {}
 
-    # STEP 1: Pull from main.py's live cache
+    # --- 1. warm cache hit ---
     if _price_cache is not None and _lock is not None:
         with _lock:
             for s in symbols:
@@ -66,47 +66,50 @@ def _batch_live_prices(symbols):
                     if now - ts < 120:
                         out[s] = p
 
-    # STEP 2: For missing symbols, use get_price() + fallback
-    if get_price:
-        for s in symbols:
-            if s in out:
-                continue
-            p = None
-            # Try 1: main.py get_price()
-            try:
-                p = get_price(s)
-            except Exception as e:
-                print(f"[PRICE] get_price failed for {s}: {e}")
-            
-            # Try 2: yfinance 1h history (more reliable for NSE indices)
-            if not p:
-                try:
-                    import yfinance as yf
-                    ticker = yf.Ticker(s)
-                    hist = ticker.history(period="5d", interval="1h")
-                    if hist is not None and not hist.empty:
-                        p = float(hist["Close"].iloc[-1])
-                except Exception as e:
-                    print(f"[PRICE] 1h fallback failed for {s}: {e}")
-            
-            # Try 3: yfinance daily history
-            if not p:
-                try:
-                    import yfinance as yf
-                    ticker = yf.Ticker(s)
-                    hist = ticker.history(period="5d", interval="1d")
-                    if hist is not None and not hist.empty:
-                        p = float(hist["Close"].iloc[-1])
-                except Exception as e:
-                    print(f"[PRICE] 1d fallback failed for {s}: {e}")
+    # --- 2. yfinance batch download (FAST: one request for all symbols) ---
+    need = [s for s in symbols if s not in out]
+    if need:
+        try:
+            import yfinance as yf
+            # Batch download all missing symbols in ONE HTTP request
+            df = yf.download(
+                tickers=",".join(need),
+                period="1d",
+                interval="1d",
+                progress=False,
+                threads=True,
+                timeout=15
+            )
+            if df is not None and not df.empty:
+                if len(need) == 1:
+                    # Single symbol: df["Close"] is a Series
+                    close = df["Close"].dropna()
+                    if not close.empty:
+                        out[need[0]] = float(close.iloc[-1])
+                else:
+                    # Multiple symbols: df["Close"] is DataFrame with symbol columns
+                    for s in need:
+                        try:
+                            if s in df["Close"].columns:
+                                val = df["Close"][s].dropna()
+                                if not val.empty:
+                                    out[s] = float(val.iloc[-1])
+                        except Exception:
+                            pass
+        except Exception as e:
+            print(f"[PRICE] batch yf.download failed: {e}")
 
-            if p:
-                out[s] = float(p)
-                if _price_cache is not None and _lock is not None:
-                    with _lock:
-                        _price_cache[s] = (float(p), now)
-            
-            time.sleep(0.3)
+    # --- 3. Individual fallback for any still missing ---
+    still_need = [s for s in symbols if s not in out]
+    if fetch_price and still_need:
+        for s in still_need:
+            try:
+                p = fetch_price(s)
+                if p:
+                    out[s] = float(p)
+            except Exception as e:
+                print(f"[PRICE] fetch_price failed for {s}: {e}")
+            time.sleep(0.2)
 
     return out
 # ----------------------------------------------------------------
