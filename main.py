@@ -75,7 +75,8 @@ _lock = threading.RLock()
 _chart_lock = threading.RLock()
 _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
-
+# ── Sweep cooldown tracker ──
+_sweep_cooldown = {}  # key: "SYMBOL_DIRECTION" → timestamp_ms
 _yf_session = requests.Session()
 _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -439,33 +440,55 @@ def check_sweep(ticker):
     try:
         is_nifty_index = "^NSE" in ticker
         is_nse_stock = ticker.endswith(".NS")
-        if is_nifty_index:
-            interval = "1h"
-            period = "10d"
-        elif is_nse_stock:
-            interval = "1h"
-            period = "30d"
-        else:
-            interval = "4h"
-            period = "30d"
-        df = yf_download(ticker, period, interval)
-        if df is None or df.empty or len(df) < 10:
-            print(f"[WARN] Sweep {ticker}: no data")
+        
+        # FIX: Always fetch 1h — Yahoo's 4h interval is unreliable / not a real interval.
+        # Then resample to 4h ourselves. This gives clean, consistent candles.
+        df = yf_download(ticker, "15d", "1h")
+        if df is None or df.empty or len(df) < 20:
+            print(f"[WARN] Sweep {ticker}: insufficient 1h data")
             return None
-        if not is_nifty_index:
-            df = df.resample("4h").agg({"Open":"first","High":"max","Low":"min","Close":"last"}).dropna()
+            
+        # Build 4h candles from 1h data
+        df = df.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min", "Close": "last"
+        }).dropna()
+        
         if len(df) < 4:
             return None
-        c = df.iloc[-2]
-        m = df.iloc[-3]
+            
+        # ── CRITICAL: Drop the last candle if it's still forming ──
+        # A 4h candle needs ~4 hours to complete. If it's newer than 3.5h, skip it.
+        last_time = df.index[-1]
+        now_utc = datetime.now(pytz.UTC)
+        if last_time.tzinfo is None:
+            last_time = last_time.tz_localize("UTC")
+        else:
+            last_time = last_time.tz_convert("UTC")
+            
+        age_hours = (now_utc - last_time).total_seconds() / 3600
+        if age_hours < 3.5:
+            df = df.iloc[:-1]  # Drop incomplete forming candle
+            
+        if len(df) < 4:
+            return None
+            
+        c = df.iloc[-2]   # Last completed 4h candle
+        m = df.iloc[-3]   # Previous 4h candle
         ts = int(df.index[-2].timestamp() * 1000)
+        
+        # ── YOUR ORIGINAL LOGIC — COMPLETELY UNCHANGED ──
         if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]:
+            print(f"[SWEEP] {ticker} BULLISH — swept low {float(c['Low']):.4f}, closed {float(c['Close']):.4f}")
             return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
+            
         if c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]:
+            print(f"[SWEEP] {ticker} BEARISH — swept high {float(c['High']):.4f}, closed {float(c['Close']):.4f}")
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
+            
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
     return None
+
 
 def find_fvg(df_1h, direction, sweep_open_ts_ms):
     try:
@@ -509,25 +532,44 @@ def find_fvg(df_1h, direction, sweep_open_ts_ms):
         print(f"[ERR] find_fvg: {e}")
     return None
 
+
 FVG_EXPIRY_HOURS = 24
 
 def register_pending_sweep(symbol, mtype, sweep):
-    global pending_sweeps
+    global pending_sweeps, _sweep_cooldown
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     target_account = "nifty" if symbol.endswith(".NS") else "sweep_4h"
+    
+    # ── COOLDOWN: Same symbol+direction cannot fire within 4 hours ──
+    # Prevents duplicate alerts if Yahoo sends stale/incomplete data twice
+    cooldown_key = f"{symbol}_{direction}"
+    now_ms = int(time.time() * 1000)
+    last_fired = _sweep_cooldown.get(cooldown_key, 0)
+    if now_ms - last_fired < 4 * 3600 * 1000:
+        print(f"[SWEEP COOLDOWN] {symbol} {direction} — last fired {(now_ms-last_fired)/3600000:.1f}h ago")
+        return
+    
     with _lock:
+        # Dedup: exact same candle timestamp
         for p in pending_sweeps:
             if (p["symbol"] == symbol and p["direction"] == direction
                     and p["sweep_close_ts"] == sweep_close_ts):
                 return
+                
         lim = ACCOUNT_LIMITS.get(target_account, 3)
         if accounts[target_account]["daily_trades"] >= lim:
             return
+            
         if any(t["symbol"] == symbol and t["account"] == target_account for t in active_trades):
             return
+            
         if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill")
                for p in pending_sweeps):
             return
+            
+        # Passed all checks — record cooldown and register
+        _sweep_cooldown[cooldown_key] = now_ms
+        
         pending_sweeps.append({
             "symbol": symbol,
             "mtype": mtype,
@@ -545,6 +587,7 @@ def register_pending_sweep(symbol, mtype, sweep):
         accounts[target_account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
         save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+        
     sl_extreme = sweep_low if direction == "BULLISH" else sweep_high
     msg = (
         f"🔵 *SWEEP DETECTED — WAITING FOR FVG*\n"
@@ -1287,7 +1330,6 @@ def news_alert_loop():
 # ========== BUTTON MENU HELPERS ==========
 
 def build_menu():
-    """Creates the inline button grid for the bot menu."""
     markup = InlineKeyboardMarkup()
     markup.add(
         InlineKeyboardButton("📊 Dashboard", url="https://multi-strategy-telegram-bot-1.onrender.com/dashboard"),
@@ -1302,7 +1344,8 @@ def build_menu():
         InlineKeyboardButton("📰 News", callback_data="menu_news"),
     )
     markup.add(
-        InlineKeyboardButton("🔄 Refresh Data", callback_data="menu_refresh"),
+        InlineKeyboardButton("📈 Nifty", callback_data="menu_nifty"),     # ← ADD THIS
+        InlineKeyboardButton("🔄 Refresh", callback_data="menu_refresh"),
     )
     return markup
 
