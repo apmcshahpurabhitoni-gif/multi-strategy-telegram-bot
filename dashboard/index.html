@@ -46,8 +46,6 @@
     display: flex;
     flex-direction: column;
   }
-
-  /* ── Header ── */
   .header {
     background: var(--bg-elevated);
     border-bottom: 1px solid var(--border);
@@ -87,8 +85,6 @@
     border-radius: 6px; border: 1px solid var(--border);
     letter-spacing: 0.5px;
   }
-
-  /* ── Main Content Area ── */
   .main-content {
     flex: 1;
     overflow-y: auto;
@@ -99,8 +95,6 @@
   }
   .main-content::-webkit-scrollbar { width: 4px; }
   .main-content::-webkit-scrollbar-thumb { background: var(--border-light); border-radius: 2px; }
-
-  /* ── Tab Pages ── */
   .tab-page {
     display: none;
     animation: fadeIn 0.25s ease;
@@ -110,8 +104,6 @@
     from { opacity: 0; transform: translateY(6px); }
     to { opacity: 1; transform: translateY(0); }
   }
-
-  /* ── Cards ── */
   .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -144,8 +136,6 @@
     color: var(--text-dim); font-size: 13px;
   }
   .card-empty .emoji { font-size: 28px; display: block; margin-bottom: 8px; opacity: 0.5; }
-
-  /* ── Account Cards (Overview Tab) ── */
   .accounts-grid {
     display: grid;
     grid-template-columns: repeat(2, 1fr);
@@ -194,8 +184,6 @@
     background: var(--accent);
     box-shadow: 0 0 6px var(--accent-glow);
   }
-
-  /* ── Stats Row ── */
   .stats-row {
     display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
     margin-bottom: 16px;
@@ -218,8 +206,6 @@
     font-size: 9px; font-weight: 500; text-transform: uppercase;
     letter-spacing: 0.6px; color: var(--text-dim);
   }
-
-  /* ── Tables ── */
   .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .data-table th {
     text-align: left; padding: 8px 6px;
@@ -240,8 +226,6 @@
   .data-table .pnl-neg { color: var(--danger); }
   .data-table .sym { font-weight: 600; color: var(--text); }
   .data-table .dim { color: var(--text-dim); }
-
-  /* ── Collapsible Sections ── */
   .collapse-card {
     background: var(--bg-card);
     border: 1px solid var(--border);
@@ -295,8 +279,6 @@
     margin: 0 8px 8px 8px;
     width: calc(100% - 16px);
   }
-
-  /* ── Progress Bar ── */
   .progress-wrap {
     width: 60px; height: 4px; background: var(--bg-elevated);
     border-radius: 2px; overflow: hidden;
@@ -306,8 +288,6 @@
     background: linear-gradient(90deg, var(--accent), var(--accent-dim));
     transition: width 0.5s ease;
   }
-
-  /* ── News ── */
   .news-day-header {
     font-size: 11px; font-weight: 700; text-transform: uppercase;
     letter-spacing: 0.8px; color: var(--text-muted);
@@ -353,8 +333,208 @@
     font-family: 'JetBrains Mono', monospace;
   }
   .news-forecast span { color: var(--text-muted); }
-
-  /* ── Bottom Tab Bar ── */
+  .nifty-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 16px;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .nifty-header .title-wrap { flex: 1; }
+  .nifty-header .card-title {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+    text-transform: none;
+    letter-spacing: 0;
+  }
+  .nifty-header .card-subtitle {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 3px;
+  }
+  .nifty-indices {
+    display: grid;
+    grid-template-columns: repeat(2, 1fr);
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .index-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 16px 12px;
+    text-align: center;
+    position: relative;
+    overflow: hidden;
+  }
+  .index-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: linear-gradient(90deg, var(--info), var(--info-dim));
+  }
+  .index-name {
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.8px;
+    margin-bottom: 6px;
+  }
+  .index-price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 24px;
+    font-weight: 700;
+    margin-bottom: 4px;
+  }
+  .index-change {
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .stock-grid {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 10px;
+  }
+  @media (min-width: 480px) {
+    .stock-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  .stock-card {
+    background: var(--bg-card);
+    border: 1px solid var(--border);
+    border-radius: 12px;
+    padding: 14px;
+    position: relative;
+    overflow: hidden;
+    transition: border-color 0.2s;
+  }
+  .stock-card:hover { border-color: var(--border-light); }
+  .stock-card::before {
+    content: '';
+    position: absolute;
+    top: 0; left: 0; right: 0;
+    height: 3px;
+    background: var(--border);
+  }
+  .stock-card.bullish::before { background: linear-gradient(90deg, var(--accent), var(--accent-dim)); }
+  .stock-card.bearish::before { background: linear-gradient(90deg, var(--danger), var(--danger-dim)); }
+  .stock-card.neutral::before { background: var(--text-dim); }
+  .sector-label {
+    position: absolute;
+    top: 8px;
+    right: 8px;
+    font-size: 9px;
+    font-weight: 600;
+    color: var(--text-muted);
+    background: var(--bg-elevated);
+    padding: 2px 8px;
+    border-radius: 4px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .stock-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 10px;
+    padding-right: 50px;
+  }
+  .stock-symbol {
+    font-size: 15px;
+    font-weight: 700;
+    color: var(--text);
+  }
+  .stock-name {
+    font-size: 11px;
+    color: var(--text-muted);
+    margin-top: 2px;
+  }
+  .stock-price-section { text-align: right; }
+  .stock-price {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 18px;
+    font-weight: 700;
+  }
+  .stock-change {
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .stock-metrics {
+    display: grid;
+    grid-template-columns: 1fr 1fr;
+    gap: 6px;
+    margin-top: 10px;
+    padding-top: 10px;
+    border-top: 1px solid var(--border);
+  }
+  .metric-label {
+    font-size: 9px;
+    color: var(--text-dim);
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .metric-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 11px;
+    font-weight: 600;
+    color: var(--text-secondary);
+    margin-top: 1px;
+  }
+  .stock-sweep-status {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .mini-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 4px;
+    padding: 3px 8px;
+    border-radius: 4px;
+    font-size: 10px;
+    font-weight: 600;
+  }
+  .mini-tag.pending { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+  .mini-tag.long { background: rgba(16, 185, 129, 0.15); color: var(--accent); }
+  .mini-tag.short { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
+  .mini-tag.closed { background: rgba(71, 85, 105, 0.15); color: var(--text-dim); }
+  .skeleton {
+    background: linear-gradient(90deg, var(--bg-elevated) 25%, var(--bg-card) 50%, var(--bg-elevated) 75%);
+    background-size: 200% 100%;
+    animation: shimmer 1.5s infinite;
+    border-radius: 4px;
+  }
+  @keyframes shimmer {
+    0% { background-position: 200% 0; }
+    100% { background-position: -200% 0; }
+  }
+  .refresh-btn {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text-muted);
+    padding: 6px 12px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 600;
+    cursor: pointer;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    transition: all 0.2s;
+    font-family: 'Inter', sans-serif;
+  }
+  .refresh-btn:hover {
+    background: var(--accent);
+    color: var(--bg);
+    border-color: var(--accent);
+  }
+  .refresh-btn.spinning .spin-icon { animation: spin 1s linear infinite; }
+  @keyframes spin { to { transform: rotate(360deg); } }
   .tab-bar {
     position: fixed; bottom: 0; left: 0; right: 0;
     background: var(--tab-bg);
@@ -398,8 +578,6 @@
     display: flex; align-items: center; justify-content: center;
     padding: 0 4px; border: 2px solid var(--tab-bg);
   }
-
-  /* ── Toast ── */
   .toast {
     position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px);
     background: var(--bg-card); border: 1px solid var(--border-light);
@@ -410,19 +588,20 @@
     pointer-events: none;
   }
   .toast.show { transform: translateX(-50%) translateY(0); }
-
-  /* ── Responsive ── */
   @media (min-width: 768px) {
     .accounts-grid { grid-template-columns: repeat(4, 1fr); }
     .main-content { padding: 20px 24px 100px 24px; max-width: 900px; margin: 0 auto; }
     .tab-bar { max-width: 900px; left: 50%; transform: translateX(-50%); border-radius: 16px 16px 0 0; border-left: 1px solid var(--border); border-right: 1px solid var(--border); }
+    .stock-grid { grid-template-columns: repeat(2, 1fr); }
+  }
+  @media (min-width: 1024px) {
+    .stock-grid { grid-template-columns: repeat(3, 1fr); }
   }
 </style>
 <base target="_blank">
 </head>
 <body>
 <div id="app">
-  <!-- Header -->
   <div class="header">
     <div class="header-left">
       <div class="logo-dot"></div>
@@ -432,10 +611,7 @@
     <div class="clock" id="clock">--:--:--</div>
   </div>
 
-  <!-- Main Content -->
   <div class="main-content" id="mainContent">
-
-    <!-- TAB: OVERVIEW -->
     <div class="tab-page active" id="tab-overview">
       <div class="accounts-grid" id="accountsGrid"></div>
       <div class="stats-row">
@@ -462,7 +638,6 @@
       </div>
     </div>
 
-    <!-- TAB: TRADES -->
     <div class="tab-page" id="tab-trades">
       <div class="collapse-card">
         <div class="collapse-header open" onclick="this.classList.toggle('open'); this.nextElementSibling.classList.toggle('open');">
@@ -486,7 +661,6 @@
       </div>
     </div>
 
-    <!-- TAB: SIGNALS -->
     <div class="tab-page" id="tab-signals">
       <div class="card">
         <div class="card-header">
@@ -499,7 +673,6 @@
       </div>
     </div>
 
-    <!-- TAB: HISTORY -->
     <div class="tab-page" id="tab-history">
       <div class="card">
         <div class="card-header">
@@ -512,16 +685,37 @@
       </div>
     </div>
 
-    <!-- TAB: NEWS -->
+    <div class="tab-page" id="tab-nifty">
+      <div class="nifty-header">
+        <div class="title-wrap">
+          <div class="card-title" style="font-size:15px;font-weight:700;color:var(--text);text-transform:none;letter-spacing:0;">📈 Nifty 50 Universe</div>
+          <div class="card-subtitle">15 stocks + 2 indices · 4H Sweep · NSE delayed 15 min</div>
+        </div>
+        <button class="refresh-btn" onclick="refreshNifty()" id="niftyRefreshBtn">
+          <svg class="spin-icon" width="14" height="14" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2.5" stroke-linecap="round" stroke-linejoin="round"><path d="M23 4v6h-6M1 20v-6h6M3.51 9a9 9 0 0114.85-3.36L23 10M1 14l4.64 4.36A9 9 0 0020.49 15"/></svg>
+          Refresh
+        </button>
+      </div>
+      <div class="nifty-indices" id="niftyIndices">
+        <div class="index-card">
+          <div class="index-name">Nifty 50</div>
+          <div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div>
+        </div>
+        <div class="index-card">
+          <div class="index-name">Bank Nifty</div>
+          <div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div>
+        </div>
+      </div>
+      <div class="stock-grid" id="stockGrid"></div>
+    </div>
+
     <div class="tab-page" id="tab-news">
       <div id="newsContainer">
         <div class="card-empty"><span class="emoji">📰</span>Loading economic calendar...</div>
       </div>
     </div>
-
   </div>
 
-  <!-- Bottom Tab Bar -->
   <div class="tab-bar">
     <button class="tab-btn active" data-tab="overview">
       <span class="tab-icon">🏠</span>
@@ -542,6 +736,11 @@
       <span class="tab-label">History</span>
       <span class="tab-badge" id="badgeHistory" style="display:none">0</span>
     </button>
+    <button class="tab-btn" data-tab="nifty">
+      <span class="tab-icon">📈</span>
+      <span class="tab-label">Nifty</span>
+      <span class="tab-badge" id="badgeNifty" style="display:none">0</span>
+    </button>
     <button class="tab-btn" data-tab="news">
       <span class="tab-icon">📰</span>
       <span class="tab-label">News</span>
@@ -549,17 +748,38 @@
     </button>
   </div>
 
-  <!-- Toast -->
   <div class="toast" id="toast"></div>
 </div>
 
 <script>
-// ── State ──
 let state = { accounts: {}, live_trades: [], today_signals: [], history: [], pending: [], news_raw: [] };
 let currentTab = 'overview';
-const IST_OFFSET = 330; // minutes
+const IST_OFFSET = 330;
 
-// ── Clock ──
+const NIFTY_STOCKS = [
+  { symbol: "RELIANCE.NS", name: "Reliance Industries", sector: "Energy" },
+  { symbol: "HDFCBANK.NS", name: "HDFC Bank", sector: "Banking" },
+  { symbol: "ICICIBANK.NS", name: "ICICI Bank", sector: "Banking" },
+  { symbol: "INFY.NS", name: "Infosys", sector: "IT" },
+  { symbol: "TCS.NS", name: "Tata Consultancy", sector: "IT" },
+  { symbol: "ITC.NS", name: "ITC Limited", sector: "FMCG" },
+  { symbol: "SBIN.NS", name: "State Bank of India", sector: "Banking" },
+  { symbol: "BHARTIARTL.NS", name: "Bharti Airtel", sector: "Telecom" },
+  { symbol: "LT.NS", name: "Larsen & Toubro", sector: "Infra" },
+  { symbol: "HINDUNILVR.NS", name: "Hindustan Unilever", sector: "FMCG" },
+  { symbol: "AXISBANK.NS", name: "Axis Bank", sector: "Banking" },
+  { symbol: "KOTAKBANK.NS", name: "Kotak Mahindra Bank", sector: "Banking" },
+  { symbol: "BAJFINANCE.NS", name: "Bajaj Finance", sector: "NBFC" },
+  { symbol: "MARUTI.NS", name: "Maruti Suzuki", sector: "Auto" },
+  { symbol: "SUNPHARMA.NS", name: "Sun Pharmaceutical", sector: "Pharma" },
+];
+const INDICES = [
+  { symbol: "^NSEI", name: "Nifty 50" },
+  { symbol: "^NSEBANK", name: "Bank Nifty" }
+];
+let niftyPrices = {};
+let niftyLoaded = false;
+
 function updateClock() {
   const now = new Date();
   const offset = now.getTimezoneOffset();
@@ -575,7 +795,6 @@ function updateClock() {
 updateClock();
 setInterval(updateClock, 1000);
 
-// ── Tab Switching ──
 document.querySelectorAll('.tab-btn').forEach(btn => {
   btn.addEventListener('click', () => {
     const tab = btn.dataset.tab;
@@ -588,10 +807,10 @@ document.querySelectorAll('.tab-btn').forEach(btn => {
     document.getElementById('mainContent').scrollTop = 0;
     setBadgeBaseline(tab, getTabCount(tab));
     updateBadges();
+    if (tab === 'nifty' && !niftyLoaded) refreshNifty();
   });
 });
 
-// ── Formatters ──
 function fmtMoney(n) {
   const v = parseFloat(n) || 0;
   return '₹' + v.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
@@ -639,26 +858,19 @@ function fmtDateHeader(dateStr) {
   return d.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
 }
 
-// ── Badge Daily Reset Logic ──
 function getBadgeState() {
   const today = new Date().toISOString().slice(0, 10);
   try {
     const raw = localStorage.getItem('mavis_badges');
     if (!raw) return { date: today, baseline: {} };
     const st = JSON.parse(raw);
-    if (st.date !== today) {
-      return { date: today, baseline: {} };
-    }
+    if (st.date !== today) return { date: today, baseline: {} };
     return st;
-  } catch {
-    return { date: today, baseline: {} };
-  }
+  } catch { return { date: today, baseline: {} }; }
 }
 function saveBadgeState(baseline) {
   const today = new Date().toISOString().slice(0, 10);
-  try {
-    localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline }));
-  } catch {}
+  try { localStorage.setItem('mavis_badges', JSON.stringify({ date: today, baseline })); } catch {}
 }
 function setBadgeBaseline(tab, count) {
   const st = getBadgeState();
@@ -670,12 +882,8 @@ function getTabCount(tab) {
   if (tab === 'signals') return (state.today_signals || []).length;
   if (tab === 'history') return (state.history || []).length;
   if (tab === 'news') return (state.news_raw || []).filter(n => (n.impact || '').toUpperCase() === 'HIGH').length;
+  if (tab === 'nifty') return (state.pending || []).filter(p => p.sym && p.sym.endsWith('.NS')).length;
   return 0;
-}
-function getBadgeCount(tab) {
-  const st = getBadgeState();
-  const baseline = st.baseline[tab] || 0;
-  return Math.max(0, getTabCount(tab) - baseline);
 }
 let badgeInitDone = false;
 function initBadges() {
@@ -686,6 +894,7 @@ function initBadges() {
     setBadgeBaseline('signals', getTabCount('signals'));
     setBadgeBaseline('history', getTabCount('history'));
     setBadgeBaseline('news', getTabCount('news'));
+    setBadgeBaseline('nifty', getTabCount('nifty'));
   }
   badgeInitDone = true;
 }
@@ -694,9 +903,9 @@ function updateBadges() {
   updateBadge('badgeSignals', getBadgeCount('signals'));
   updateBadge('badgeHistory', getBadgeCount('history'));
   updateBadge('badgeNews', getBadgeCount('news'));
+  updateBadge('badgeNifty', getBadgeCount('nifty'));
 }
 
-// ── Render: Overview ──
 function renderOverview() {
   const grid = document.getElementById('accountsGrid');
   const accs = state.accounts || {};
@@ -757,7 +966,6 @@ function renderOverview() {
     </div>`;
 }
 
-// ── Render: Live Trades ──
 function renderLiveTrades() {
   const trades = state.live_trades || [];
   document.getElementById('liveCountBadge').textContent = trades.length + ' open';
@@ -780,7 +988,7 @@ function renderLiveTrades() {
       <td class="${dirClass}">${t.direction || '—'}</td>
       <td>${(t.entry || 0).toFixed(4)}</td>
       <td>${(t.current || 0).toFixed(4)}</td>
-      <td class="${pnlClass}">${fmtPnl(t.pnl_inr)}</td>
+      <td class="${pnlClass}">${t.pnl ? (t.pnl >= 0 ? '+' : '') + t.pnl.toFixed(2) : '—'}</td>
       <td><div class="progress-wrap"><div class="progress-fill" style="width:${prog}%"></div></div></td>
       <td class="dim">${(t.account || '').slice(0,3)}</td>
     </tr>`;
@@ -789,7 +997,6 @@ function renderLiveTrades() {
   body.innerHTML = html;
 }
 
-// ── Render: Pending ──
 function renderPending() {
   const pending = state.pending || [];
   document.getElementById('pendingCountBadge').textContent = pending.length + ' pending';
@@ -812,7 +1019,6 @@ function renderPending() {
   body.innerHTML = html;
 }
 
-// ── Render: Signals (Collapsible by Date) ──
 function renderSignals() {
   const sigs = state.today_signals || [];
   document.getElementById('signalCount').textContent = sigs.length;
@@ -850,7 +1056,6 @@ function renderSignals() {
   body.innerHTML = html;
 }
 
-// ── Render: History (Collapsible by Date with Totals) ──
 function renderHistory() {
   const hist = state.history || [];
   document.getElementById('historyCount').textContent = hist.length;
@@ -905,7 +1110,6 @@ function buildCollapse(headerHtml, bodyHtml, openDefault) {
     </div>`;
 }
 
-// ── Render: News ──
 function renderNews() {
   const news = state.news_raw || [];
   const container = document.getElementById('newsContainer');
@@ -967,7 +1171,6 @@ function updateBadge(id, count) {
   else { el.style.display = 'none'; }
 }
 
-// ── Toast ──
 function showToast(msg) {
   const t = document.getElementById('toast');
   t.textContent = msg;
@@ -975,7 +1178,85 @@ function showToast(msg) {
   setTimeout(() => t.classList.remove('show'), 2500);
 }
 
-// ── Fetch Data ──
+async function refreshNifty() {
+  const btn = document.getElementById('niftyRefreshBtn');
+  btn.classList.add('spinning');
+  try {
+    const allSymbols = [...INDICES.map(i => i.symbol), ...NIFTY_STOCKS.map(s => s.symbol)];
+    const res = await fetch('/api/prices?symbols=' + encodeURIComponent(allSymbols.join(',')));
+    if (!res.ok) throw new Error('HTTP ' + res.status);
+    const data = await res.json();
+    const prices = data.prices || {};
+    niftyPrices = prices;
+    niftyLoaded = true;
+    renderNiftyIndices();
+    renderStockGrid();
+    showToast('Nifty prices updated');
+  } catch (err) {
+    console.error('[Nifty] refresh error:', err);
+    showToast('Failed to load Nifty prices');
+  } finally {
+    btn.classList.remove('spinning');
+  }
+}
+
+function renderNiftyIndices() {
+  const container = document.getElementById('niftyIndices');
+  container.innerHTML = INDICES.map(idx => {
+    const p = niftyPrices[idx.symbol];
+    if (!p) {
+      return `<div class="index-card"><div class="index-name">${idx.name}</div><div class="skeleton" style="height:36px;width:140px;margin:0 auto;"></div></div>`;
+    }
+    return `
+      <div class="index-card">
+        <div class="index-name">${idx.name}</div>
+        <div class="index-price">${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+      </div>`;
+  }).join('');
+}
+
+function renderStockGrid() {
+  const container = document.getElementById('stockGrid');
+  const pendingNS = (state.pending || []).filter(p => p.sym && p.sym.endsWith('.NS'));
+  container.innerHTML = NIFTY_STOCKS.map(stock => {
+    const p = niftyPrices[stock.symbol];
+    if (!p) {
+      return `
+        <div class="stock-card">
+          <span class="sector-label">${stock.sector}</span>
+          <div class="stock-header">
+            <div>
+              <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
+              <div class="stock-name">${stock.name}</div>
+            </div>
+          </div>
+          <div class="skeleton" style="height:20px;width:80px;"></div>
+        </div>`;
+    }
+    const sweep = pendingNS.find(s => s.sym === stock.symbol);
+    const sweepHtml = sweep
+      ? `<div class="stock-sweep-status">
+           <span class="mini-tag pending">⏳ Pending</span>
+           <span class="mini-tag ${sweep.dir === 'BULLISH' ? 'long' : 'short'}">${sweep.dir === 'BULLISH' ? '📈 Long' : '📉 Short'}</span>
+         </div>`
+      : `<div class="stock-sweep-status"><span class="mini-tag closed">No active setup</span></div>`;
+    return `
+      <div class="stock-card">
+        <span class="sector-label">${stock.sector}</span>
+        <div class="stock-header">
+          <div>
+            <div class="stock-symbol">${stock.symbol.replace('.NS','')}</div>
+            <div class="stock-name">${stock.name}</div>
+          </div>
+          <div class="stock-price-section">
+            <div class="stock-price">₹${p.toLocaleString('en-IN', {minimumFractionDigits: 2, maximumFractionDigits: 2})}</div>
+          </div>
+        </div>
+        ${sweepHtml}
+      </div>`;
+  }).join('');
+}
+
 async function fetchData() {
   try {
     const res = await fetch('/api/dashboard', { signal: AbortSignal.timeout(30000) });
@@ -988,7 +1269,7 @@ async function fetchData() {
     updateBadges();
   } catch (e) {
     console.error('[Dashboard] Fetch error:', e);
-    showToast('⚠️ Connection issue — retrying...');
+    showToast('Connection issue — retrying...');
   }
 }
 
@@ -999,14 +1280,16 @@ function renderAll() {
   renderSignals();
   renderHistory();
   renderNews();
+  if (currentTab === 'nifty' && niftyLoaded) {
+    renderNiftyIndices();
+    renderStockGrid();
+  }
 }
 
-// ── Boot ──
 console.log('[Dashboard] Starting bootstrap...');
 fetchData();
 setInterval(fetchData, 30000);
 
-// Error handlers
 window.onerror = (msg, src, line) => { console.error(`[Dashboard] ${msg} at ${src}:${line}`); };
 window.onunhandledrejection = e => { console.error('[Dashboard] Unhandled:', e.reason); };
 </script>
