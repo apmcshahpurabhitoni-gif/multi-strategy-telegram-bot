@@ -599,6 +599,7 @@
   }
 </style>
 <base target="_blank">
+<base target="_blank">
 </head>
 <body>
 <div id="app">
@@ -1259,10 +1260,7 @@ function renderStockGrid() {
 
 async function fetchData() {
   try {
-    const controller = new AbortController();
-    const timer = setTimeout(() => controller.abort(), 30000);
-    const res = await fetch('/api/dashboard', { signal: controller.signal });
-    clearTimeout(timer);
+    const res = await fetch('/api/dashboard');
     if (!res.ok) throw new Error('HTTP ' + res.status);
     const data = await res.json();
     if (data.error) throw new Error(data.error);
@@ -1272,8 +1270,6 @@ async function fetchData() {
     updateBadges();
   } catch (e) {
     console.error('[Dashboard] Fetch error:', e);
-    showToast('Connection issue — retrying...');
-    setTimeout(fetchData, 5000);
   }
 }
 
