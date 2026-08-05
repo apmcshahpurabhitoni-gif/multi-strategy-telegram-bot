@@ -1127,6 +1127,9 @@ function renderNews() {
   }
   let html = '';
   for (const d of Object.keys(grouped).sort()) {
+    // ── FILTER: Skip past dates ──
+    if (d < today) continue;
+    
     const dateObj = new Date(d + 'T00:00:00');
     const isToday = d === today;
     const label = isToday ? 'TODAY' : dateObj.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
@@ -1154,9 +1157,8 @@ function renderNews() {
         </div>`;
     }
   }
-  container.innerHTML = html;
+  container.innerHTML = html || '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
 }
-
 function getFlag(code) {
   const flags = {
     USD: '🇺🇸', EUR: '🇪🇺', GBP: '🇬🇧', JPY: '🇯🇵', AUD: '🇦🇺', CAD: '🇨🇦', CHF: '🇨🇭',
