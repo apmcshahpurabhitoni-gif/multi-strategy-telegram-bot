@@ -19,7 +19,6 @@ import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-import os
 os.makedirs("/workspace", exist_ok=True)
 matplotlib.use("Agg")
 plt.style.use("dark_background")
@@ -218,8 +217,6 @@ def run_web():
     srv = make_server("0.0.0.0", PORT, app)
     srv.serve_forever()
 
-threading.Thread(target=run_web, daemon=True).start()
-
 bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 
 def load_json(fp, default):
@@ -341,7 +338,14 @@ def is_market_open(symbol):
     if symbol in ("BTC-USD", "GC=F"):
         return True
     if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
-        return w < 5
+        # FIX 2026-08-05: Forex = Sun 17:00 ET (Mon 02:30 IST) to Fri 17:00 ET (Fri 23:30 IST)
+        if w == 5:  # Saturday
+            return False
+        if w == 6:  # Sunday
+            return tm >= 150  # 02:30 IST
+        if w == 4:  # Friday
+            return tm <= 1410  # 23:30 IST
+        return True
     if symbol in ("^NSEI", "^NSEBANK"):
         return w < 5 and 555 <= tm <= 930
     if symbol.endswith(".NS"):
@@ -576,8 +580,6 @@ def register_pending_sweep(symbol, mtype, sweep):
             "status": "waiting_fvg",
             "target_account": target_account,
         })
-        accounts[target_account]["daily_trades"] += 1
-        save_json(ACCOUNTS_FILE, accounts)
         save_json(PENDING_SWEEPS_FILE, pending_sweeps)
         
     sl_extreme = sweep_low if direction == "BULLISH" else sweep_high
@@ -600,8 +602,9 @@ def register_pending_sweep(symbol, mtype, sweep):
 
 def _refund_sweep_slot(account="sweep_4h"):
     with _lock:
-        accounts[account]["daily_trades"] = max(0, accounts[account]["daily_trades"] - 1)
-        save_json(ACCOUNTS_FILE, accounts)
+        if account in accounts:
+            accounts[account]["daily_trades"] = max(0, accounts[account]["daily_trades"] - 1)
+            save_json(ACCOUNTS_FILE, accounts)
 
 
 def manage_pending_sweeps():
@@ -622,7 +625,6 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "expired"
                     to_remove.append(p)
-                    _refund_sweep_slot()
                     safe_send(CHAT_ID, (
                         f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n"
                         f"`{sym}` {p['direction']} — no FVG fill in {FVG_EXPIRY_HOURS}h\n"
@@ -634,7 +636,6 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "invalidated"
                     to_remove.append(p)
-                    _refund_sweep_slot()
                     safe_send(CHAT_ID, (
                         f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
                         f"`{sym}` BULLISH — price broke sweep low `${p['sweep_low']:,.4f}`\n"
@@ -646,7 +647,6 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "invalidated"
                     to_remove.append(p)
-                    _refund_sweep_slot()
                     safe_send(CHAT_ID, (
                         f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
                         f"`{sym}` BEARISH — price broke sweep high `${p['sweep_high']:,.4f}`\n"
@@ -690,14 +690,21 @@ def manage_pending_sweeps():
                     }
                     with _lock:
                         p["status"] = "entered"
-                    to_remove.append(p)
-                    with _lock:
+                        p["filled_at"] = int(time.time() * 1000)
+                        to_remove.append(p)
                         if sym in muted_assets:
                             print(f"[MUTED] Skipping FVG fill for {sym} (muted)")
                             pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                             continue
-                    execute(sym, p["mtype"], "sweep_4h", "Sweep + Engulfing",
+                        # Atomic limit check before execute
+                        lim = ACCOUNT_LIMITS.get(p["target_account"], 3)
+                        if accounts[p["target_account"]]["daily_trades"] >= lim:
+                            print(f"[LIMIT] {p['target_account']} full, skipping FVG fill for {sym}")
+                            pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
+                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
+                            continue
+                    execute(sym, p["mtype"], p["target_account"], "Sweep + Engulfing",
                             p["direction"], live, fvg_entry["sl"], 0,
                             p["sweep_close_ts"], fvg_entry=fvg_entry)
                     print(f"[FVG FILL] {sym} {p['direction']} @ {live}")
@@ -808,7 +815,8 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         }
         save_json(SENT_SIGNALS_FILE, sent_signals)
         lim = ACCOUNT_LIMITS.get(account, 3)
-        if fvg_entry is None and accounts[account]["daily_trades"] >= lim:
+        if accounts[account]["daily_trades"] >= lim:
+            print(f"[LIMIT] {account} daily limit reached. Skipping {symbol}.")
             return
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
@@ -823,11 +831,12 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
             "entry": float(price), "sl": float(sl), "tp": float(tp),
             "qty": float(qty), "trail_sl": float(sl),
             "ts_trigger": ts,
+            "opened_at": datetime.now(IST).isoformat(),
             "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
         }
         active_trades.append(trade)
-        if fvg_entry is None:
-            accounts[account]["daily_trades"] += 1
+        # FIX 2026-08-05: count sweep-driven (FVG) trades too
+        accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
     risk = abs(price - sl) * qty
@@ -865,6 +874,19 @@ def monitor():
                 else:
                     pct = (t["entry"] - live) / t["entry"] * 100
                 if pct >= 1.0:
+                    # Breakeven at 1%
+                    if long:
+                        t["trail_sl"] = max(t["trail_sl"], t["entry"])
+                    else:
+                        t["trail_sl"] = min(t["trail_sl"], t["entry"])
+                if pct >= 3.0:
+                    # Lock 30% of profit at 3%
+                    if long:
+                        t["trail_sl"] = max(t["trail_sl"], t["entry"] + (live - t["entry"]) * 0.3)
+                    else:
+                        t["trail_sl"] = min(t["trail_sl"], t["entry"] - (t["entry"] - live) * 0.3)
+                if pct >= 5.0:
+                    # Lock 50% of profit at 5%
                     if long:
                         t["trail_sl"] = max(t["trail_sl"], t["entry"] + (live - t["entry"]) * 0.5)
                     else:
@@ -910,7 +932,7 @@ MONITORED = [
     ("USDJPY=X", "Forex"),
     ("^NSEI", "NIFTY 50"),
     ("^NSEBANK", "BANK NIFTY"),
-]
+] + [(sym, "NSE") for sym, _ in NIFTY_STOCKS]
 
 def get_acc(symbol):
     if "NSEI" in symbol or "BANK" in symbol or symbol.endswith(".NS"):
@@ -998,18 +1020,7 @@ def fetch_news():
     except Exception as e:
         print(f"[NEWS] HTTPS attempt failed: {e}")
 
-    # Attempt 2: Disable SSL verification (Render free-tier fix)
-    try:
-        response = requests.get(url, headers=headers, timeout=20, verify=False)
-        if response.status_code == 200 and response.text and response.text.strip():
-            data = response.json()
-            if isinstance(data, list) and len(data) > 0:
-                print(f"[NEWS] Fetched {len(data)} events (verify=False)")
-                return data
-    except Exception as e:
-        print(f"[NEWS] verify=False attempt failed: {e}")
-
-    # Attempt 3: Hardcoded backup — never let dashboard go blank
+    # Attempt 2: Hardcoded backup — never let dashboard go blank
     print("[NEWS] All API attempts failed. Using hardcoded backup.")
     return [
         {"title": "ISM Manufacturing PMI", "country": "USD", "date": "2026-08-03T10:00:00-04:00", "impact": "High", "forecast": "54.0", "previous": "53.3"},
@@ -1138,6 +1149,18 @@ def _extract_time_from_iso(date_str):
             return time_part[:5]  # HH:MM
         return ""
 
+def _iso_to_ist_dt(iso_str):
+    """Convert ISO datetime string to timezone-aware IST datetime. FIX 2026-08-05."""
+    if not iso_str:
+        return None
+    try:
+        dt = datetime.fromisoformat(str(iso_str).replace("Z", "+00:00"))
+        if dt.tzinfo is None:
+            dt = pytz.UTC.localize(dt)
+        return dt.astimezone(IST)
+    except Exception:
+        return None
+
 def format_news_message(events, title, filter_today_only=True, max_events=15):
     if not events:
         return f"📰 *{title}*\n{BR}\n⚪ No events found.\n{BR2}"
@@ -1264,19 +1287,10 @@ def news_alert_loop():
                     ev_id = f"{date}_{time_str}_{ev.get('title','')}"
                     if ev_id in alerted_events:
                         continue
-                    t_parts = time_str.split(":")
-                    if len(t_parts) != 2:
+                    # FIX 2026-08-05: use proper timezone conversion instead of "+9h hack"
+                    ev_dt = _iso_to_ist_dt(ev.get("date", ""))
+                    if ev_dt is None:
                         continue
-                    h = int(t_parts[0])
-                    m = int(t_parts[1])
-                    ist_h = (h + 9) % 24
-                    ist_m = m + 30
-                    if ist_m >= 60:
-                        ist_h = (ist_h + 1) % 24
-                        ist_m -= 60
-                    ev_dt = now.replace(hour=ist_h, minute=ist_m, second=0, microsecond=0)
-                    if ist_h < now.hour and h > 14:
-                        ev_dt = ev_dt + timedelta(days=1)
                     mins_until = (ev_dt - now).total_seconds() / 60
                     if 25 <= mins_until <= 35:
                         currency = ev.get("country", ev.get("currency", "???"))
@@ -1289,7 +1303,7 @@ def news_alert_loop():
                             f"⚠️ *HIGH IMPACT NEWS IN ~30 MIN*\n"
                             f"{BR}\n"
                             f"🔴 *{currency}* — `{title_ev}`\n"
-                            f"🕐 `{time_str} ET` → `{ist_h:02d}:{ist_m:02d} IST`\n"
+                            f"🕐 `{time_str} ET` → `{ev_dt.strftime('%H:%M')} IST`\n"
                         )
                         if forecast or previous:
                             msg += f"📊 Forecast: `{forecast}` | Previous: `{previous}`\n"
@@ -1777,6 +1791,7 @@ def gen_chart(symbol, tf="1h"):
 # ============================================================
 
 if __name__ == "__main__":
+    threading.Thread(target=run_web, daemon=True).start()
     init_accounts()
     muted_assets.update(load_json(MUTE_FILE, []))
     active_trades = load_json(ACTIVE_TRADES_FILE, [])
@@ -1811,9 +1826,7 @@ if __name__ == "__main__":
     print(f" Web server: :{os.environ.get('PORT', 10000)}/ping")
     print("=" * 50)
 
-# Force initial news fetch
-# Force initial news fetch on startup (wrapped safely)
-    # Force initial news fetch on startup
+    # Force initial news fetch on startup (wrapped safely)
     try:
         initial_news = fetch_news()
         if initial_news:
@@ -1825,7 +1838,7 @@ if __name__ == "__main__":
     except Exception as e:
         print(f"[NEWS] Startup fetch failed: {e}")
     # Continue anyway — bot should not crash
-    
+
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
 
     threading.Thread(target=scanner, daemon=True).start()
