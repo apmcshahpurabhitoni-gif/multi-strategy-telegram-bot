@@ -77,6 +77,11 @@ _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
 # ── Sweep cooldown tracker ──
 _sweep_cooldown = {}  # key: "SYMBOL_DIRECTION" → timestamp_ms
+_ut_15m_cache = {}  # symbol → ("BULLISH"|"BEARISH", timestamp) for flip exits
+
+def _currency(symbol):
+    """Return ₹ for Indian stocks/indices, $ for everything else."""
+    return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$" 
 _yf_session = requests.Session()
 _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
@@ -91,9 +96,10 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
     arrow = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
     label = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
     dir_ = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
+    curr = _currency(symbol)
     fvg_line = ""
     if fvg_zone and "Sweep" in strat:
-        fvg_line = f"🎯 *FVG Zone:* `${fvg_zone[0]:,.4f} — ${fvg_zone[1]:,.4f}`\n"
+        fvg_line = f"🎯 *FVG Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
     return (
         f"⚡ *ALERT — HIGH CONFLUENCE SIGNAL*\n"
         f"{BR}\n"
@@ -111,9 +117,9 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
         f"💼 *PAPER TRADE EXECUTED*\n"
         f"{BR}\n"
         f"🏢 *Account:* `{account.upper()}`\n"
-        f"📍 *Entry:* `${price:,.4f}`\n"
-        f"🛑 *Stop Loss:* `${actual_sl:,.4f}`\n"
-        f"🎯 *Take Profit:* `${actual_tp:,.4f}`\n"
+        f"📍 *Entry:* `{curr}{price:,.4f}`\n"
+        f"🛑 *Stop Loss:* `{curr}{actual_sl:,.4f}`\n"
+        f"🎯 *Take Profit:* `{curr}{actual_tp:,.4f}`\n"
         f"{fvg_line}"
         f"📦 *Quantity:* `{qty:.4f}`\n"
         f"💸 *Risk:* `₹{risk_amt:,.2f}`\n"
@@ -127,6 +133,7 @@ def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
     money = "💰" if hit_tp else "💸"
     dir_ = "LONG 🟢" if is_long else "SHORT 🔴"
     pnl_s = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
+    curr = _currency(trade['symbol'])
     return (
         f"{icon} *TRADE CLOSED — {result}*\n"
         f"{BR}\n"
@@ -134,10 +141,10 @@ def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
         f"🎯 *Strategy:* {trade['strat']}\n"
         f"🏢 *Account:* `{trade['account'].upper()}`\n"
         f"{BR}\n"
-        f"📍 *Entry:* `${trade['entry']:,.4f}`\n"
-        f"{arrow} *Exit:* `${live:,.4f}`\n"
-        f"🛑 *SL Hit:* `${trade['trail_sl']:,.4f}`\n"
-        f"🎯 *TP Target:* `${trade['tp']:,.4f}`\n"
+        f"📍 *Entry:* `{curr}{trade['entry']:,.4f}`\n"
+        f"{arrow} *Exit:* `{curr}{live:,.4f}`\n"
+        f"🛑 *SL Hit:* `{curr}{trade['trail_sl']:,.4f}`\n"
+        f"🎯 *TP Target:* `{curr}{trade['tp']:,.4f}`\n"
         f"{BR}\n"
         f"{money} *P/L:* `{pnl_s}`\n"
         f"🏦 *Balance:* `₹{bal:,.2f}`\n"
@@ -625,6 +632,7 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "expired"
                     to_remove.append(p)
+                    _refund_sweep_slot(p["target_account"])
                     safe_send(CHAT_ID, (
                         f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n"
                         f"`{sym}` {p['direction']} — no FVG fill in {FVG_EXPIRY_HOURS}h\n"
@@ -636,6 +644,7 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "invalidated"
                     to_remove.append(p)
+                    _refund_sweep_slot(p["target_account"])
                     safe_send(CHAT_ID, (
                         f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
                         f"`{sym}` BULLISH — price broke sweep low `${p['sweep_low']:,.4f}`\n"
@@ -647,6 +656,7 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "invalidated"
                     to_remove.append(p)
+                    _refund_sweep_slot(p["target_account"])
                     safe_send(CHAT_ID, (
                         f"❌ *PENDING SWEEP INVALIDATED*\n{BR}\n"
                         f"`{sym}` BEARISH — price broke sweep high `${p['sweep_high']:,.4f}`\n"
@@ -690,21 +700,14 @@ def manage_pending_sweeps():
                     }
                     with _lock:
                         p["status"] = "entered"
-                        p["filled_at"] = int(time.time() * 1000)
-                        to_remove.append(p)
+                    to_remove.append(p)
+                    with _lock:
                         if sym in muted_assets:
                             print(f"[MUTED] Skipping FVG fill for {sym} (muted)")
                             pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                             continue
-                        # Atomic limit check before execute
-                        lim = ACCOUNT_LIMITS.get(p["target_account"], 3)
-                        if accounts[p["target_account"]]["daily_trades"] >= lim:
-                            print(f"[LIMIT] {p['target_account']} full, skipping FVG fill for {sym}")
-                            pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
-                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-                            continue
-                    execute(sym, p["mtype"], p["target_account"], "Sweep + Engulfing",
+                    execute(sym, p["mtype"], "sweep_4h", "Sweep + Engulfing",
                             p["direction"], live, fvg_entry["sl"], 0,
                             p["sweep_close_ts"], fvg_entry=fvg_entry)
                     print(f"[FVG FILL] {sym} {p['direction']} @ {live}")
@@ -719,17 +722,20 @@ def manage_pending_sweeps():
 
 def check_ut(ticker, kv=2):
     try:
+        # PRIMARY: 1h (was 15m)
+        df1h = yf_download(ticker, "5d", "1h")
+        # CONFIRMATION: 15m (was 5m)
         df15 = yf_download(ticker, "3d", "15m")
-        df5 = yf_download(ticker, "1d", "5m")
-        if df15 is None or len(df15) < 20 or df5 is None or len(df5) < 40:
+        if df1h is None or len(df1h) < 20 or df15 is None or len(df15) < 40:
             print(f"[WARN] UT {ticker}: no data")
             return None
-        df15["xATR"] = calc_atr(df15, 1)
-        df15["nLoss"] = kv * df15["xATR"]
-        src = df15["Close"].values
-        nl = df15["nLoss"].values
-        ts_arr = np.zeros(len(df15))
-        for i in range(1, len(df15)):
+        # UT Bot on 1h
+        df1h["xATR"] = calc_atr(df1h, 1)
+        df1h["nLoss"] = kv * df1h["xATR"]
+        src = df1h["Close"].values
+        nl = df1h["nLoss"].values
+        ts_arr = np.zeros(len(df1h))
+        for i in range(1, len(df1h)):
             pts, ps = ts_arr[i-1], src[i-1]
             if src[i] > pts and ps > pts:
                 ts_arr[i] = max(pts, src[i] - nl[i])
@@ -739,26 +745,57 @@ def check_ut(ticker, kv=2):
                 ts_arr[i] = src[i] - nl[i]
             else:
                 ts_arr[i] = src[i] + nl[i]
-        i = len(df15) - 2
+        i = len(df1h) - 2
         buy = src[i] > ts_arr[i] and src[i-1] <= ts_arr[i-1]
         sell = src[i] < ts_arr[i] and src[i-1] >= ts_arr[i-1]
-        df5["EMA50"] = df5["Close"].ewm(span=50, adjust=False).mean()
-        df15["RSI"] = get_rsi(df15)
-        m5c = float(df5["Close"].iloc[-2])
-        m5e = float(df5["EMA50"].iloc[-2])
-        rsi = float(df15["RSI"].iloc[-2])
-        ts = int(df15.index[-2].timestamp() * 1000)
-        atr = float(df15["xATR"].iloc[i])
-        if buy and m5c > m5e and rsi < 70:
+        # 15m EMA50 confirmation (was 5m)
+        df15["EMA50"] = df15["Close"].ewm(span=50, adjust=False).mean()
+        m15c = float(df15["Close"].iloc[-2])
+        m15e = float(df15["EMA50"].iloc[-2])
+        ts = int(df1h.index[-2].timestamp() * 1000)
+        atr = float(df1h["xATR"].iloc[i])
+        # REMOVED RSI — only 1h UT Bot + 15m EMA50 alignment
+        if buy and m15c > m15e:
+            print(f"[UT] {ticker} BULLISH @ {float(src[i]):.4f} | 15m EMA50: {m15e:.4f}")
             return ("BULLISH", float(src[i]), atr, ts)
-        if sell and m5c < m5e and rsi > 30:
+        if sell and m15c < m15e:
+            print(f"[UT] {ticker} BEARISH @ {float(src[i]):.4f} | 15m EMA50: {m15e:.4f}")
             return ("BEARISH", float(src[i]), atr, ts)
     except Exception as e:
         print(f"[ERR] UT {ticker}: {e}")
     return None
 
 
-def calc_sl_tp(sig, entry, atr):
+def get_15m_ut_direction(ticker, kv=2):
+    """Returns 'BULLISH' or 'BEARISH' based on current 15m UT Bot direction."""
+    try:
+        df = yf_download(ticker, "1d", "15m")
+        if df is None or len(df) < 20:
+            return None
+        df["xATR"] = calc_atr(df, 1)
+        df["nLoss"] = kv * df["xATR"]
+        src = df["Close"].values
+        nl = df["nLoss"].values
+        ts_arr = np.zeros(len(df))
+        for i in range(1, len(df)):
+            pts, ps = ts_arr[i-1], src[i-1]
+            if src[i] > pts and ps > pts:
+                ts_arr[i] = max(pts, src[i] - nl[i])
+            elif src[i] < pts and ps < pts:
+                ts_arr[i] = min(pts, src[i] + nl[i])
+            elif src[i] > pts:
+                ts_arr[i] = src[i] - nl[i]
+            else:
+                ts_arr[i] = src[i] + nl[i]
+        i = len(df) - 2
+        if src[i] > ts_arr[i]:
+            return "BULLISH"
+        elif src[i] < ts_arr[i]:
+            return "BEARISH"
+        return None
+    except Exception as e:
+        print(f"[ERR] 15m UT direction {ticker}: {e}")
+        return None(sig, entry, atr):
     if "BULLISH" in sig:
         return entry - atr * 2, entry + atr * 4
     return entry + atr * 2, entry - atr * 4
@@ -815,15 +852,14 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         }
         save_json(SENT_SIGNALS_FILE, sent_signals)
         lim = ACCOUNT_LIMITS.get(account, 3)
-        if accounts[account]["daily_trades"] >= lim:
-            print(f"[LIMIT] {account} daily limit reached. Skipping {symbol}.")
+        if fvg_entry is None and accounts[account]["daily_trades"] >= lim:
             return
         if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
         qty = calc_qty(account, price, sl)
         if qty <= 0:
             return
-        tf = "1H" if ("Sweep" in strat and "^NSE" in symbol) else ("4H" if "Sweep" in strat else "15m")
+        tf = "1H" if ("Sweep" in strat and "^NSE" in symbol) else ("4H" if "Sweep" in strat else "1H")
         trade = {
             "id": f"{symbol}_{int(time.time())}",
             "symbol": symbol, "market": mtype, "account": account,
@@ -869,6 +905,35 @@ def monitor():
                 with _lock:
                     _price_cache[t["symbol"]] = (live, time.time())
                 long = t["type"] == "LONG"
+
+                # ── 15m FLIP EXIT (UT Bot trades only, checked every 60s) ──
+                if t["strat"] == "UT Bot Signals":
+                    now = time.time()
+                    last_check = _ut_15m_cache.get(t["symbol"], (None, 0))[1]
+                    if now - last_check >= 60:
+                        ut_dir = get_15m_ut_direction(t["symbol"])
+                        if ut_dir:
+                            _ut_15m_cache[t["symbol"]] = (ut_dir, now)
+                            # If 15m flipped against our position, close it
+                            if (long and ut_dir == "BEARISH") or (not long and ut_dir == "BULLISH"):
+                                pnl = (live - t["entry"]) * t["qty"] * (1 if long else -1)
+                                with _lock:
+                                    accounts[t["account"]]["balance"] += pnl
+                                    t["exit_price"] = live
+                                    t["pnl"] = float(pnl)
+                                    t["result"] = "FLIP EXIT"
+                                    t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
+                                    t["closed_at"] = datetime.now(IST).isoformat()
+                                    to_close.append(t)
+                                    save_json(ACCOUNTS_FILE, accounts)
+                                    global history
+                                    history.append(t)
+                                    save_json(HISTORY_FILE, history)
+                                with _lock:
+                                    bal = accounts[t["account"]]["balance"]
+                                safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, pnl > 0), parse_mode="Markdown")
+                                print(f"[FLIP EXIT] {t['symbol']} {t['type']} @ {live} P/L: {pnl:+.2f}")
+                                continue
                 if long:
                     pct = (live - t["entry"]) / t["entry"] * 100
                 else:
