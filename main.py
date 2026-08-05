@@ -793,10 +793,15 @@ def get_15m_ut_direction(ticker, kv=2):
         elif src[i] < ts_arr[i]:
             return "BEARISH"
         return None
-        except Exception as e:
-            print(f"[ERR] 15m UT direction {ticker}: {e}")
+    except Exception as e:
+        print(f"[ERR] 15m UT direction {ticker}: {e}")
         return None
 
+
+def calc_sl_tp(sig, entry, atr):
+    if "BULLISH" in sig:
+        return entry - atr * 2, entry + atr * 4
+    return entry + atr * 2, entry - atr * 4
 
 def calc_sl_tp(sig, entry, atr):
     if "BULLISH" in sig:
