@@ -53,7 +53,7 @@ def _batch_live_prices(symbols):
 
     _price_cache = getattr(main, "_price_cache", None)
     _lock        = getattr(main, "_lock", None)
-    fetch_price  = getattr(main, "fetch_price", None)  # FIXED: was "get_price"
+    get_price_fn = getattr(main, "get_price", None)  # FIX 2026-08-05: was "fetch_price"
     now = time.time()
     out = {}
 
@@ -101,14 +101,14 @@ def _batch_live_prices(symbols):
 
     # --- 3. Individual fallback for any still missing ---
     still_need = [s for s in symbols if s not in out]
-    if fetch_price and still_need:
+    if get_price_fn and still_need:
         for s in still_need:
             try:
-                p = fetch_price(s)
+                p = get_price_fn(s)
                 if p:
                     out[s] = float(p)
             except Exception as e:
-                print(f"[PRICE] fetch_price failed for {s}: {e}")
+                print(f"[PRICE] get_price failed for {s}: {e}")
             time.sleep(0.2)
 
     return out
