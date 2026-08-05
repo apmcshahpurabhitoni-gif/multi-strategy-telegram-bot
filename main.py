@@ -442,8 +442,7 @@ def check_sweep(ticker):
         is_nifty_index = "^NSE" in ticker
         is_nse_stock = ticker.endswith(".NS")
         
-        # FIX: Always fetch 1h — Yahoo's 4h interval is unreliable / not a real interval.
-        # Then resample to 4h ourselves. This gives clean, consistent candles.
+        # FIX: Always fetch 1h — Yahoo's 4h interval is unreliable
         df = yf_download(ticker, "15d", "1h")
         if df is None or df.empty or len(df) < 20:
             print(f"[WARN] Sweep {ticker}: insufficient 1h data")
@@ -457,19 +456,11 @@ def check_sweep(ticker):
         if len(df) < 4:
             return None
             
-        # ── CRITICAL: Drop the last candle if it's still forming ──
-        # A 4h candle needs ~4 hours to complete. If it's newer than 3.5h, skip it.
-        last_time = df.index[-1]
-        now_utc = datetime.now(pytz.UTC)
-        if last_time.tzinfo is None:
-            last_time = last_time.tz_localize("UTC")
-        else:
-            last_time = last_time.tz_convert("UTC")
-            
-        age_hours = (now_utc - last_time).total_seconds() / 3600
-        if age_hours < 3.5:
-            df = df.iloc[:-1]  # Drop incomplete forming candle
-            
+        # ── CRITICAL: Always drop the last candle — it's forming ──
+        # The last resampled 4h candle is ALWAYS incomplete because new 1h
+        # data is still arriving. Analyzing it causes false signals.
+        df = df.iloc[:-1]
+        
         if len(df) < 4:
             return None
             
@@ -481,11 +472,11 @@ def check_sweep(ticker):
         if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]:
             print(f"[SWEEP] {ticker} BULLISH — swept low {float(c['Low']):.4f}, closed {float(c['Close']):.4f}")
             return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-            
+
         if c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]:
             print(f"[SWEEP] {ticker} BEARISH — swept high {float(c['High']):.4f}, closed {float(c['Close']):.4f}")
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-            
+
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
     return None
