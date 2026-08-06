@@ -452,51 +452,41 @@ def check_sweep(ticker):
     try:
         is_nifty_index = "^NSE" in ticker
         is_nse_stock = ticker.endswith(".NS")
-
-        if is_nifty_index:
-            # 1h sweep for Nifty / BankNifty indices
-            df = yf_download(ticker, "5d", "1h")
-            if df is None or df.empty or len(df) < 5:
-                print(f"[WARN] Sweep {ticker}: insufficient 1h data")
-                return None
-            # Drop last forming 1h candle
-            df = df.iloc[:-1]
-            if len(df) < 4:
-                return None
-            c = df.iloc[-2]   # Last completed 1h candle
-            m = df.iloc[-3]   # Previous 1h candle
-            ts = int(df.index[-2].timestamp() * 1000)
-            candle_ms = 1 * 3600 * 1000
-
-        elif is_nse_stock:
-            # 4h sweep for Nifty stocks (resample 1h to 4h)
-            df = yf_download(ticker, "15d", "1h")
-            if df is None or df.empty or len(df) < 20:
-                print(f"[WARN] Sweep {ticker}: insufficient 1h data")
-                return None
-            df = df.resample("4h").agg({
-                "Open": "first", "High": "max", "Low": "min", "Close": "last"
-            }).dropna()
-            if len(df) < 4:
-                return None
-            # Drop last forming 4h candle
-            df = df.iloc[:-1]
-            if len(df) < 4:
-                return None
-            c = df.iloc[-2]   # Last completed 4h candle
-            m = df.iloc[-3]   # Previous 4h candle
-            ts = int(df.index[-2].timestamp() * 1000)
-            candle_ms = 4 * 3600 * 1000
-        else:
+        
+        # FIX: Always fetch 1h — Yahoo's 4h interval is unreliable
+        df = yf_download(ticker, "15d", "1h")
+        if df is None or df.empty or len(df) < 20:
+            print(f"[WARN] Sweep {ticker}: insufficient 1h data")
             return None
-
+            
+        # Build 4h candles from 1h data
+        df = df.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min", "Close": "last"
+        }).dropna()
+        
+        if len(df) < 4:
+            return None
+            
+        # ── CRITICAL: Always drop the last candle — it's forming ──
+        # The last resampled 4h candle is ALWAYS incomplete because new 1h
+        # data is still arriving. Analyzing it causes false signals.
+        df = df.iloc[:-1]
+        
+        if len(df) < 4:
+            return None
+            
+        c = df.iloc[-2]   # Last completed 4h candle
+        m = df.iloc[-3]   # Previous 4h candle
+        ts = int(df.index[-2].timestamp() * 1000)
+        
+        # ── YOUR ORIGINAL LOGIC — COMPLETELY UNCHANGED ──
         if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]:
             print(f"[SWEEP] {ticker} BULLISH — swept low {float(c['Low']):.4f}, closed {float(c['Close']):.4f}")
-            return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + candle_ms)
+            return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
 
         if c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]:
             print(f"[SWEEP] {ticker} BEARISH — swept high {float(c['High']):.4f}, closed {float(c['Close']):.4f}")
-            return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + candle_ms)
+            return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
 
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
@@ -809,6 +799,9 @@ def get_15m_ut_direction(ticker, kv=2):
 
 
 def calc_sl_tp(sig, entry, atr):
+    if "BULLISH" in sig:
+        return entry - atr * 2, entry + atr * 4
+    return entry + atr * 2, entry - atr * 4 
     if "BULLISH" in sig:
         return entry - atr * 2, entry + atr * 4
     return entry + atr * 2, entry - atr * 4
