@@ -1717,18 +1717,23 @@ def cb(c):
                 text = "🔥 *Live Trades*\n━━━━━━━━━━━━━━━━━━━━━━\n⚪ No open trades right now."
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
 
-        elif data == "menu_signals":
-            bot.answer_callback_query(c.id, "Loading signals...")
-            sigs = list(sent_signals.values())
-            today = datetime.now(IST).strftime("%Y-%m-%d")
-            today_sigs = [s for s in sigs if s.get("time_str", "").startswith(today) or s.get("ts_ms", 0) > (time.time() - 86400) * 1000]
-            if today_sigs:
+        elif data == "menu_live":
+            bot.answer_callback_query(c.id, "Loading live trades...")
+            copy = list(active_trades)
+            if copy:
                 lines = []
-                for s in sorted(today_sigs, key=lambda x: x.get("ts_ms", 0), reverse=True)[:5]:
-                    lines.append(f"• `{s.get('symbol','')}` {s.get('sig_type','')} @ {s.get('time_str','')}")
-                text = "📡 *Today's Signals*\n" + "━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines)
+                for t in copy[:5]:
+                    live_p = get_price(t['symbol'])
+                    if live_p:
+                        is_long = t['type'] == 'LONG'
+                        pnl = (live_p - t['entry']) * t['qty'] * (1 if is_long else -1)
+                    else:
+                        pnl = 0
+                    pnl_str = f"+₹{pnl:,.0f}" if pnl >= 0 else f"-₹{abs(pnl):,.0f}"
+                    lines.append(f"• `{t['symbol']}` {t['type']} @ {t['entry']:,.4f} → P/L: {pnl_str}")
+                text = "🔥 *Live Open Trades*\n" + "━━━━━━━━━━━━━━━━━━━━━━\n" + "\n".join(lines)
             else:
-                text = "📡 *Signals*\n━━━━━━━━━━━━━━━━━━━━━━\n⚪ No signals fired in the last 24h."
+                text = "🔥 *Live Trades*\n━━━━━━━━━━━━━━━━━━━━━━\n⚪ No open trades right now."
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
 
         elif data == "menu_history":
