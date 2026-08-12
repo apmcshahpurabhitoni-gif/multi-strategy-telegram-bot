@@ -19,7 +19,6 @@ import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-os.makedirs("/workspace", exist_ok=True)
 matplotlib.use("Agg")
 plt.style.use("dark_background")
 
@@ -37,7 +36,7 @@ NIFTY_STOCKS = [
     ("ITC.NS",       "ITC"),
     ("SBIN.NS",      "SBI"),
     ("BHARTIARTL.NS","Bharti Airtel"),
-    ("LT.NS",        "L&T"),
+    ("LT.NS",        "L&L"),
     ("HINDUNILVR.NS","HUL"),
     ("AXISBANK.NS",  "Axis Bank"),
     ("KOTAKBANK.NS", "Kotak Bank"),
@@ -51,12 +50,16 @@ if not TOKEN:
 if not CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID not set!")
 
-ACCOUNTS_FILE = "/workspace/accounts.json"
-ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
-HISTORY_FILE = "/workspace/trade_history.json"
-MUTE_FILE = "/workspace/muted_assets.json"
-SENT_SIGNALS_FILE = "/workspace/sent_signals.json"
-PENDING_SWEEPS_FILE = "/workspace/pending_sweeps.json"
+# Use current working directory (works on Render, local, anywhere)
+DATA_DIR = os.environ.get("DATA_DIR", os.getcwd())
+os.makedirs(DATA_DIR, exist_ok=True)
+
+ACCOUNTS_FILE = f"{DATA_DIR}/accounts.json"
+ACTIVE_TRADES_FILE = f"{DATA_DIR}/active_trades.json"
+HISTORY_FILE = f"{DATA_DIR}/trade_history.json"
+MUTE_FILE = f"{DATA_DIR}/muted_assets.json"
+SENT_SIGNALS_FILE = f"{DATA_DIR}/sent_signals.json"
+PENDING_SWEEPS_FILE = f"{DATA_DIR}/pending_sweeps.json"
 
 ACCOUNT_LIMITS = {
     "macro": 20,
