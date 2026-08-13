@@ -19,6 +19,7 @@ import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
+os.makedirs("/workspace", exist_ok=True)
 matplotlib.use("Agg")
 plt.style.use("dark_background")
 
@@ -36,7 +37,7 @@ NIFTY_STOCKS = [
     ("ITC.NS",       "ITC"),
     ("SBIN.NS",      "SBI"),
     ("BHARTIARTL.NS","Bharti Airtel"),
-    ("LT.NS",        "L&L"),
+    ("LT.NS",        "L&T"),
     ("HINDUNILVR.NS","HUL"),
     ("AXISBANK.NS",  "Axis Bank"),
     ("KOTAKBANK.NS", "Kotak Bank"),
@@ -50,16 +51,12 @@ if not TOKEN:
 if not CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID not set!")
 
-# Use current working directory (works on Render, local, anywhere)
-DATA_DIR = os.environ.get("DATA_DIR", os.getcwd())
-os.makedirs(DATA_DIR, exist_ok=True)
-
-ACCOUNTS_FILE = f"{DATA_DIR}/accounts.json"
-ACTIVE_TRADES_FILE = f"{DATA_DIR}/active_trades.json"
-HISTORY_FILE = f"{DATA_DIR}/trade_history.json"
-MUTE_FILE = f"{DATA_DIR}/muted_assets.json"
-SENT_SIGNALS_FILE = f"{DATA_DIR}/sent_signals.json"
-PENDING_SWEEPS_FILE = f"{DATA_DIR}/pending_sweeps.json"
+ACCOUNTS_FILE = "/workspace/accounts.json"
+ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
+HISTORY_FILE = "/workspace/trade_history.json"
+MUTE_FILE = "/workspace/muted_assets.json"
+SENT_SIGNALS_FILE = "/workspace/sent_signals.json"
+PENDING_SWEEPS_FILE = "/workspace/pending_sweeps.json"
 
 ACCOUNT_LIMITS = {
     "macro": 20,
@@ -96,24 +93,25 @@ BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_time_str, fvg_zone=None):
-    # Colored dot for notification preview (visible without opening)
-    dot = "🟢" if "BULLISH" in sig_type else "🔴"
-    # Strategy label — clean and readable
-    strat_label = "UT BOT" if "UT Bot" in strat else ("4H SWEEP" if "Sweep" in strat else strat.upper())
+    arrow = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
+    label = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
     dir_ = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
     curr = _currency(symbol)
     fvg_line = ""
     if fvg_zone and "Sweep" in strat:
         fvg_line = f"🎯 *FVG Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
     return (
-        f"{dot} *{strat_label}*\n"
+        f"⚡ *ALERT — HIGH CONFLUENCE SIGNAL*\n"
+        f"{BR}\n"
+        f"{arrow} *{label}*\n"
         f"{BR}\n"
         f"🪙 *Asset:* `{symbol}`\n"
-        f"📊 *Direction:* {dir_}\n"
         f"🌐 *Market:* {mtype}\n"
+        f"🎯 *Strategy:* {strat}\n"
+        f"📊 *Direction:* {dir_}\n"
         f"⏱ *Timeframe:* {tf}\n"
         f"{BR}\n"
-        f"⏰ *Signal Candle Closed:*\n"
+        f"⏰ *SIGNAL CANDLE CLOSED AT:*\n"
         f"🔔 `{signal_time_str}`\n"
         f"{BR}\n"
         f"💼 *PAPER TRADE EXECUTED*\n"
@@ -545,9 +543,14 @@ def register_pending_sweep(symbol, mtype, sweep):
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     target_account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
     
-    # ── COOLDOWN REMOVED 2026-08-12 ──
-    # Previous 4h cooldown was blocking legitimate BTC sweeps
-    # Dedup is still handled by exact candle timestamp match below
+    # ── COOLDOWN: Same symbol+direction cannot fire within 4 hours ──
+    # Prevents duplicate alerts if Yahoo sends stale/incomplete data twice
+    cooldown_key = f"{symbol}_{direction}"
+    now_ms = int(time.time() * 1000)
+    last_fired = _sweep_cooldown.get(cooldown_key, 0)
+    if now_ms - last_fired < 4 * 3600 * 1000:
+        print(f"[SWEEP COOLDOWN] {symbol} {direction} — last fired {(now_ms-last_fired)/3600000:.1f}h ago")
+        return
     
     with _lock:
         # Dedup: exact same candle timestamp
@@ -1020,14 +1023,18 @@ def scanner():
                         target = "ny_session" if is_ny_session() else "macro"
                         execute(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
 
-                # Sweep — ALL assets get 4h sweep detection (built from 1h data)
-                # NSE assets: still gated by market hours (is_nifty_open)
-                # Non-NSE (BTC, Gold, Forex): always run, no market hours gate
-                sweep = check_sweep(symbol)
-                if sweep:
-                    if is_nse and not is_nifty_open():
-                        continue
-                    register_pending_sweep(symbol, mtype, sweep)
+                # Sweep — ALL assets: NSE gets 1h, non-NSE (crypto/forex/gold) gets 4h
+                if not is_nse:
+                    # Non-NSE: check 4h sweep for crypto/forex/gold (no market hours gate needed)
+                    sweep = check_sweep(symbol)
+                    if sweep:
+                        register_pending_sweep(symbol, mtype, sweep)
+                else:
+                    # NSE assets: 1h sweep during market hours only
+                    if is_nifty_open():
+                        sweep = check_sweep(symbol)
+                        if sweep:
+                            register_pending_sweep(symbol, mtype, sweep)
 
                 time.sleep(2)
             gc.collect()
@@ -1937,4 +1944,3 @@ if __name__ == "__main__":
     print("[BOT] Main thread keeping process alive...")
     while True:
         time.sleep(3600)
- 
