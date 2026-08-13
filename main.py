@@ -19,7 +19,7 @@ import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
-os.makedirs("/workspace", exist_ok=True)
+os.makedirs("/tmp/workspace", exist_ok=True)
 matplotlib.use("Agg")
 plt.style.use("dark_background")
 
@@ -50,12 +50,12 @@ if not TOKEN:
 if not CHAT_ID:
     raise ValueError("TELEGRAM_CHAT_ID not set!")
 
-ACCOUNTS_FILE = "/workspace/accounts.json"
-ACTIVE_TRADES_FILE = "/workspace/active_trades.json"
-HISTORY_FILE = "/workspace/trade_history.json"
-MUTE_FILE = "/workspace/muted_assets.json"
-SENT_SIGNALS_FILE = "/workspace/sent_signals.json"
-PENDING_SWEEPS_FILE = "/workspace/pending_sweeps.json"
+ACCOUNTS_FILE = "/tmp/workspace/accounts.json"
+ACTIVE_TRADES_FILE = "/tmp/workspace/active_trades.json"
+HISTORY_FILE = "/tmp/workspace/trade_history.json"
+MUTE_FILE = "/tmp/workspace/muted_assets.json"
+SENT_SIGNALS_FILE = "/tmp/workspace/sent_signals.json"
+PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
 
 ACCOUNT_LIMITS = {
     "macro": 20,
