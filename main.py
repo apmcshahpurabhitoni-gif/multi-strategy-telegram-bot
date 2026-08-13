@@ -27,22 +27,21 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
-# Nifty 50 Stock Universe — 15 most liquid names
 NIFTY_STOCKS = [
-    ("RELIANCE.NS",  "Reliance"),
-    ("HDFCBANK.NS",  "HDFC Bank"),
+    ("RELIANCE.NS", "Reliance"),
+    ("HDFCBANK.NS", "HDFC Bank"),
     ("ICICIBANK.NS", "ICICI Bank"),
-    ("INFY.NS",      "Infosys"),
-    ("TCS.NS",       "TCS"),
-    ("ITC.NS",       "ITC"),
-    ("SBIN.NS",      "SBI"),
+    ("INFY.NS", "Infosys"),
+    ("TCS.NS", "TCS"),
+    ("ITC.NS", "ITC"),
+    ("SBIN.NS", "SBI"),
     ("BHARTIARTL.NS","Bharti Airtel"),
-    ("LT.NS",        "L&T"),
+    ("LT.NS", "L&T"),
     ("HINDUNILVR.NS","HUL"),
-    ("AXISBANK.NS",  "Axis Bank"),
+    ("AXISBANK.NS", "Axis Bank"),
     ("KOTAKBANK.NS", "Kotak Bank"),
     ("BAJFINANCE.NS","Bajaj Finance"),
-    ("MARUTI.NS",    "Maruti"),
+    ("MARUTI.NS", "Maruti"),
     ("SUNPHARMA.NS", "Sun Pharma"),
 ]
 
@@ -75,43 +74,44 @@ _lock = threading.RLock()
 _chart_lock = threading.RLock()
 _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
-# ── Sweep cooldown tracker ──
-_sweep_cooldown = {}  # key: "SYMBOL_DIRECTION" → timestamp_ms
-_ut_15m_cache = {}  # symbol → ("BULLISH"|"BEARISH", timestamp) for flip exits
+_sweep_cooldown = {}
+_ut_15m_cache = {}
 
 def _currency(symbol):
-    """Return ₹ for Indian stocks/indices, $ for everything else."""
-    return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$" 
+    return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$"
+
 _yf_session = requests.Session()
 _yf_session.headers.update({
     "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/120.0.0.0 Safari/537.36"
 })
 _yf_lock = threading.Lock()
 
-
 BR = "━━━━━━━━━━━━━━━━━━━━━━"
 BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━━━━━━━"
 
 def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_time_str, fvg_zone=None):
-    arrow = "🟢🟢🟢" if "BULLISH" in sig_type else "🔴🔴🔴"
-    label = "🚀 STRONG BULLISH" if "BULLISH" in sig_type else "💥 STRONG BEARISH"
-    dir_ = "LONG 📈" if "BULLISH" in sig_type else "SHORT 📉"
+    is_bullish = "BULLISH" in sig_type
+    dot = "🟢" if is_bullish else "🔴"
+    dir_label = "LONG 📈" if is_bullish else "SHORT 📉"
+    if "Sweep" in strat and fvg_zone:
+        header = f"{dot} *FVG FILL — {strat}*"
+    elif "Sweep" in strat:
+        header = f"{dot} *SWEEP SIGNAL — {strat}*"
+    else:
+        header = f"{dot} *UT BOT SIGNAL — {strat}*"
     curr = _currency(symbol)
     fvg_line = ""
     if fvg_zone and "Sweep" in strat:
         fvg_line = f"🎯 *FVG Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
     return (
-        f"⚡ *ALERT — HIGH CONFLUENCE SIGNAL*\n"
-        f"{BR}\n"
-        f"{arrow} *{label}*\n"
+        f"{header}\n"
         f"{BR}\n"
         f"🪙 *Asset:* `{symbol}`\n"
         f"🌐 *Market:* {mtype}\n"
-        f"🎯 *Strategy:* {strat}\n"
-        f"📊 *Direction:* {dir_}\n"
+        f"📊 *Direction:* {dir_label}\n"
         f"⏱ *Timeframe:* {tf}\n"
         f"{BR}\n"
-        f"⏰ *SIGNAL CANDLE CLOSED AT:*\n"
+        f"⏰ *Signal Candle Closed At:*\n"
         f"🔔 `{signal_time_str}`\n"
         f"{BR}\n"
         f"💼 *PAPER TRADE EXECUTED*\n"
@@ -128,21 +128,19 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
 
 def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
     result = "🎉 WIN" if hit_tp else "💀 LOSS"
-    icon = "✅" if hit_tp else "❌"
-    arrow = "📈" if hit_tp else "📉"
+    dot = "🟢" if is_long else "🔴"
     money = "💰" if hit_tp else "💸"
-    dir_ = "LONG 🟢" if is_long else "SHORT 🔴"
     pnl_s = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
     curr = _currency(trade['symbol'])
     return (
-        f"{icon} *TRADE CLOSED — {result}*\n"
+        f"{dot} *TRADE CLOSED — {result}*\n"
         f"{BR}\n"
-        f"{'🟢' if is_long else '🔴'} *{trade['symbol']}* | {dir_}\n"
+        f"`{trade['symbol']}` | {'LONG' if is_long else 'SHORT'}\n"
         f"🎯 *Strategy:* {trade['strat']}\n"
         f"🏢 *Account:* `{trade['account'].upper()}`\n"
         f"{BR}\n"
         f"📍 *Entry:* `{curr}{trade['entry']:,.4f}`\n"
-        f"{arrow} *Exit:* `{curr}{live:,.4f}`\n"
+        f"{'📈' if hit_tp else '📉'} *Exit:* `{curr}{live:,.4f}`\n"
         f"🛑 *SL Hit:* `{curr}{trade['trail_sl']:,.4f}`\n"
         f"🎯 *TP Target:* `{curr}{trade['tp']:,.4f}`\n"
         f"{BR}\n"
@@ -194,12 +192,10 @@ def msg_guide():
 def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
-# WEB SERVER + WEBHOOK
 def run_web():
     def app(environ, start_response):
         path = environ.get("PATH_INFO", "")
         method = environ.get("REQUEST_METHOD", "GET")
-# Dashboard API routes (additive, does not touch trading logic)
         _resp = dashboard_api.register_routes(path, start_response, environ)
         if _resp is not None:
             return _resp
@@ -230,22 +226,16 @@ def load_json(fp, default):
     key = os.path.basename(fp)
     sup_url = os.environ.get("SUPABASE_URL")
     sup_key = os.environ.get("SUPABASE_KEY")
-
-    # 1. Try Supabase first (survives redeploys)
     if sup_url and sup_key:
         try:
             r = requests.get(
                 f"{sup_url}/rest/v1/bot_data?id=eq.{key}",
-                headers={
-                    "apikey": sup_key,
-                    "Authorization": f"Bearer {sup_key}"
-                },
+                headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}"},
                 timeout=15
             )
             if r.status_code == 200:
                 rows = r.json()
                 if rows and len(rows) > 0:
-                    # Write locally for fast loads next time
                     try:
                         with open(fp, "w") as f:
                             json.dump(rows[0]["data"], f, indent=4)
@@ -254,8 +244,6 @@ def load_json(fp, default):
                     return rows[0]["data"]
         except Exception as e:
             print(f"[ERR] Supabase load {key}: {e}")
-
-    # 2. Fallback to local file (if Supabase is down or not configured)
     try:
         if os.path.exists(fp):
             with open(fp) as f:
@@ -266,7 +254,6 @@ def load_json(fp, default):
 
 def save_json(fp, data):
     key = os.path.basename(fp)
-    # 1. Always save locally too (fast, works if Supabase is down)
     try:
         tmp = fp + ".tmp"
         with open(tmp, "w") as f:
@@ -274,8 +261,6 @@ def save_json(fp, data):
         os.replace(tmp, fp)
     except Exception as e:
         print(f"[ERR] local save {fp}: {e}")
-
-    # 2. Sync to Supabase so data survives redeploys
     sup_url = os.environ.get("SUPABASE_URL")
     sup_key = os.environ.get("SUPABASE_KEY")
     if sup_url and sup_key:
@@ -295,8 +280,6 @@ def save_json(fp, data):
                 print(f"[ERR] Supabase save {key}: HTTP {r.status_code}")
         except Exception as e:
             print(f"[ERR] Supabase save {key}: {e}")
-
-
 
 def safe_send(chat_id, text, **kwargs):
     try:
@@ -326,7 +309,7 @@ def init_accounts():
         for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
             accounts[acc]["daily_trades"] = 0
         accounts["last_reset_date"] = today
-        save_json(ACCOUNTS_FILE, accounts)
+    save_json(ACCOUNTS_FILE, accounts)
 
 def is_ny_session():
     h = datetime.now(IST).hour
@@ -345,13 +328,12 @@ def is_market_open(symbol):
     if symbol in ("BTC-USD", "GC=F"):
         return True
     if symbol in ("EURUSD=X", "GBPUSD=X", "USDJPY=X"):
-        # FIX 2026-08-05: Forex = Sun 17:00 ET (Mon 02:30 IST) to Fri 17:00 ET (Fri 23:30 IST)
-        if w == 5:  # Saturday
+        if w == 5:
             return False
-        if w == 6:  # Sunday
-            return tm >= 150  # 02:30 IST
-        if w == 4:  # Friday
-            return tm <= 1410  # 23:30 IST
+        if w == 6:
+            return tm >= 150
+        if w == 4:
+            return tm <= 1410
         return True
     if symbol in ("^NSEI", "^NSEBANK"):
         return w < 5 and 555 <= tm <= 930
@@ -360,49 +342,40 @@ def is_market_open(symbol):
     return False
 
 _last_yf_call = 0
-_yf_min_delay = 8.0  # seconds between yf.download calls
+_yf_min_delay = 8.0
 
 def yf_download(symbol, period, interval):
     global _last_yf_call
     try:
         with _yf_lock:
-            # Wait at least 3 seconds between yf.download calls (prevents rate limit)
             elapsed = time.time() - _last_yf_call
             if elapsed < _yf_min_delay:
                 time.sleep(_yf_min_delay - elapsed)
             _last_yf_call = time.time()
-            
-            df = yf.download(
-                symbol,
-                period=period,
-                interval=interval,
-                progress=False,
-                auto_adjust=True,
-                threads=False,
-                session=_yf_session,
-            )
-            if df is None or df.empty:
-                return None
-            if isinstance(df.columns, pd.MultiIndex):
-                df.columns = df.columns.get_level_values(0)
-            return df
+        df = yf.download(
+            symbol, period=period, interval=interval,
+            progress=False, auto_adjust=True, threads=False, session=_yf_session,
+        )
+        if df is None or df.empty:
+            return None
+        if isinstance(df.columns, pd.MultiIndex):
+            df.columns = df.columns.get_level_values(0)
+        return df
     except Exception as e:
         print(f"[ERR] yf_download {symbol} {interval}: {e}")
         return None
+
 def get_price(symbol):
     now = time.time()
     if symbol in _price_cache:
         p, ts = _price_cache[symbol]
         if now - ts < 60:
             return p
-    
-    # Use CoinGecko for BTC (avoids Yahoo rate limits completely)
     if symbol == "BTC-USD":
         try:
             r = requests.get(
                 "https://api.coingecko.com/api/v3/simple/price?ids=bitcoin&vs_currencies=usd",
-                timeout=10,
-                headers={"User-Agent": "Mozilla/5.0"}
+                timeout=10, headers={"User-Agent": "Mozilla/5.0"}
             )
             if r.status_code == 200:
                 p = float(r.json()["bitcoin"]["usd"])
@@ -411,8 +384,6 @@ def get_price(symbol):
                 return p
         except Exception as e:
             print(f"[CRYPTO] CoinGecko error: {e}")
-    
-    # Use fallback for Gold (GC=F sometimes fails on Yahoo)
     if symbol == "GC=F":
         for gold_sym in ["GC=F", "GLD"]:
             try:
@@ -426,14 +397,13 @@ def get_price(symbol):
                 continue
         print("[PRICE] All gold symbols failed")
         return None
-    
-    # Normal Yahoo Finance for everything else
     df = yf_download(symbol, "1d", "1m")
     if df is None or df.empty:
         return None
     p = float(df["Close"].iloc[-1])
     _price_cache[symbol] = (p, now)
     return p
+
 def calc_atr(df, period=10):
     hl = df["High"] - df["Low"]
     hc = np.abs(df["High"] - df["Close"].shift(1))
@@ -450,48 +420,30 @@ def get_rsi(df, period=14):
 
 def check_sweep(ticker):
     try:
-        is_nifty_index = "^NSE" in ticker
-        is_nse_stock = ticker.endswith(".NS")
-        
-        # FIX: Always fetch 1h — Yahoo's 4h interval is unreliable
         df = yf_download(ticker, "15d", "1h")
         if df is None or df.empty or len(df) < 20:
             print(f"[WARN] Sweep {ticker}: insufficient 1h data")
             return None
-            
-        # Build 4h candles from 1h data
         df = df.resample("4h").agg({
             "Open": "first", "High": "max", "Low": "min", "Close": "last"
         }).dropna()
-        
         if len(df) < 4:
             return None
-            
-        # ── CRITICAL: Always drop the last candle — it's forming ──
-        # The last resampled 4h candle is ALWAYS incomplete because new 1h
-        # data is still arriving. Analyzing it causes false signals.
         df = df.iloc[:-1]
-        
         if len(df) < 4:
             return None
-            
-        c = df.iloc[-2]   # Last completed 4h candle
-        m = df.iloc[-3]   # Previous 4h candle
+        c = df.iloc[-2]
+        m = df.iloc[-3]
         ts = int(df.index[-2].timestamp() * 1000)
-        
-        # ── YOUR ORIGINAL LOGIC — COMPLETELY UNCHANGED ──
         if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]:
             print(f"[SWEEP] {ticker} BULLISH — swept low {float(c['Low']):.4f}, closed {float(c['Close']):.4f}")
             return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-
         if c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]:
             print(f"[SWEEP] {ticker} BEARISH — swept high {float(c['High']):.4f}, closed {float(c['Close']):.4f}")
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-
     except Exception as e:
         print(f"[ERR] Sweep {ticker}: {e}")
-    return None
-
+        return None
 
 def find_fvg(df_1h, direction, sweep_open_ts_ms):
     try:
@@ -533,8 +485,7 @@ def find_fvg(df_1h, direction, sweep_open_ts_ms):
                     return (zone_low, zone_high)
     except Exception as e:
         print(f"[ERR] find_fvg: {e}")
-    return None
-
+        return None
 
 FVG_EXPIRY_HOURS = 24
 
@@ -542,59 +493,44 @@ def register_pending_sweep(symbol, mtype, sweep):
     global pending_sweeps, _sweep_cooldown
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     target_account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
-    
-    # ── COOLDOWN: Same symbol+direction cannot fire within 4 hours ──
-    # Prevents duplicate alerts if Yahoo sends stale/incomplete data twice
     cooldown_key = f"{symbol}_{direction}"
-    now_ms = int(time.time() * 1000)
+    now_ts = int(time.time() * 1000)
     last_fired = _sweep_cooldown.get(cooldown_key, 0)
-    if now_ms - last_fired < 4 * 3600 * 1000:
-        print(f"[SWEEP COOLDOWN] {symbol} {direction} — last fired {(now_ms-last_fired)/3600000:.1f}h ago")
+    if now_ts - last_fired < 4 * 3600 * 1000:
+        print(f"[SWEEP COOLDOWN] {symbol} {direction} — last fired {(now_ts-last_fired)/3600000:.1f}h ago")
         return
-    
     with _lock:
-        # Dedup: exact same candle timestamp
         for p in pending_sweeps:
             if (p["symbol"] == symbol and p["direction"] == direction
                     and p["sweep_close_ts"] == sweep_close_ts):
                 return
-                
         lim = ACCOUNT_LIMITS.get(target_account, 3)
         if accounts[target_account]["daily_trades"] >= lim:
             return
-            
         if any(t["symbol"] == symbol and t["account"] == target_account for t in active_trades):
             return
-            
         if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill")
                for p in pending_sweeps):
             return
-            
-        # Passed all checks — record cooldown and register
-        _sweep_cooldown[cooldown_key] = now_ms
-        
+        _sweep_cooldown[cooldown_key] = now_ts
         pending_sweeps.append({
-            "symbol": symbol,
-            "mtype": mtype,
-            "direction": direction,
-            "sweep_high": float(sweep_high),
-            "sweep_low": float(sweep_low),
-            "sweep_open_ts": int(sweep_open_ts),
-            "sweep_close_ts": int(sweep_close_ts),
+            "symbol": symbol, "mtype": mtype, "direction": direction,
+            "sweep_high": float(sweep_high), "sweep_low": float(sweep_low),
+            "sweep_open_ts": int(sweep_open_ts), "sweep_close_ts": int(sweep_close_ts),
             "created_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
-            "fvg_zone": None,
-            "fvg_found_at": None,
-            "status": "waiting_fvg",
+            "fvg_zone": None, "fvg_found_at": None, "status": "waiting_fvg",
             "target_account": target_account,
         })
         save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-        
-    sl_extreme = sweep_low if direction == "BULLISH" else sweep_high
+    is_bullish = direction == "BULLISH"
+    dot = "🟢" if is_bullish else "🔴"
+    dir_label = "LONG 📈" if is_bullish else "SHORT 📉"
+    sl_extreme = sweep_low if is_bullish else sweep_high
     msg = (
-        f"🔵 *SWEEP DETECTED — WAITING FOR FVG*\n"
+        f"{dot} *SWEEP — WAITING FOR FVG*\n"
         f"{BR}\n"
         f"🪙 *Asset:* `{symbol}` ({mtype})\n"
-        f"📊 *Direction:* {'LONG 📈' if direction == 'BULLISH' else 'SHORT 📉'}\n"
+        f"📊 *Direction:* {dir_label}\n"
         f"📏 *Sweep Candle:* `${sweep_low:,.4f} — ${sweep_high:,.4f}`\n"
         f"🛑 *SL Extreme:* `${sl_extreme:,.4f}`\n"
         f"⏱ *Sweep closed at:* `{format_signal_time(sweep_close_ts)}`\n"
@@ -606,13 +542,11 @@ def register_pending_sweep(symbol, mtype, sweep):
     safe_send(CHAT_ID, msg, parse_mode="Markdown")
     print(f"[PENDING] Sweep {direction} {symbol} @ sweep_close_ts={sweep_close_ts}")
 
-
 def _refund_sweep_slot(account="sweep_4h"):
     with _lock:
         if account in accounts:
             accounts[account]["daily_trades"] = max(0, accounts[account]["daily_trades"] - 1)
             save_json(ACCOUNTS_FILE, accounts)
-
 
 def manage_pending_sweeps():
     global pending_sweeps
@@ -716,20 +650,18 @@ def manage_pending_sweeps():
                     pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
                     save_json(PENDING_SWEEPS_FILE, pending_sweeps)
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"[ERR] manage_pending_sweeps: {e}")
         time.sleep(90)
 
-
 def check_ut(ticker, kv=2):
     try:
-        # PRIMARY: 1h (was 15m)
         df1h = yf_download(ticker, "5d", "1h")
-        # CONFIRMATION: 15m (was 5m)
         df15 = yf_download(ticker, "3d", "15m")
         if df1h is None or len(df1h) < 20 or df15 is None or len(df15) < 40:
             print(f"[WARN] UT {ticker}: no data")
             return None
-        # UT Bot on 1h
         df1h["xATR"] = calc_atr(df1h, 1)
         df1h["nLoss"] = kv * df1h["xATR"]
         src = df1h["Close"].values
@@ -748,13 +680,11 @@ def check_ut(ticker, kv=2):
         i = len(df1h) - 2
         buy = src[i] > ts_arr[i] and src[i-1] <= ts_arr[i-1]
         sell = src[i] < ts_arr[i] and src[i-1] >= ts_arr[i-1]
-        # 15m EMA50 confirmation (was 5m)
         df15["EMA50"] = df15["Close"].ewm(span=50, adjust=False).mean()
         m15c = float(df15["Close"].iloc[-2])
         m15e = float(df15["EMA50"].iloc[-2])
         ts = int(df1h.index[-2].timestamp() * 1000)
         atr = float(df1h["xATR"].iloc[i])
-        # REMOVED RSI — only 1h UT Bot + 15m EMA50 alignment
         if buy and m15c > m15e:
             print(f"[UT] {ticker} BULLISH @ {float(src[i]):.4f} | 15m EMA50: {m15e:.4f}")
             return ("BULLISH", float(src[i]), atr, ts)
@@ -763,11 +693,9 @@ def check_ut(ticker, kv=2):
             return ("BEARISH", float(src[i]), atr, ts)
     except Exception as e:
         print(f"[ERR] UT {ticker}: {e}")
-    return None
-
+        return None
 
 def get_15m_ut_direction(ticker, kv=2):
-    """Returns 'BULLISH' or 'BEARISH' based on current 15m UT Bot direction."""
     try:
         df = yf_download(ticker, "1d", "15m")
         if df is None or len(df) < 20:
@@ -797,7 +725,6 @@ def get_15m_ut_direction(ticker, kv=2):
         print(f"[ERR] 15m UT direction {ticker}: {e}")
         return None
 
-
 def calc_sl_tp(sig, entry, atr):
     if "BULLISH" in sig:
         return entry - atr * 2, entry + atr * 4
@@ -806,9 +733,9 @@ def calc_sl_tp(sig, entry, atr):
 def calc_qty(account, entry, sl):
     with _lock:
         bal = accounts[account]["balance"]
-    risk = bal * 0.02
-    dist = abs(entry - sl)
-    return 0.0 if dist == 0 else float(risk / dist)
+        risk = bal * 0.02
+        dist = abs(entry - sl)
+        return 0.0 if dist == 0 else float(risk / dist)
 
 def format_signal_time(ts_ms):
     try:
@@ -844,14 +771,9 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
                 return
         sent_signals[key] = {
             "ts_ms": int(time.time() * 1000),
-            "symbol": symbol,
-            "sig_type": sig_type,
-            "strat": strat,
-            "account": account,
-            "status": "open",
-            "pnl": 0,
-            "hint": "",
-            "time_str": datetime.now(IST).strftime("%H:%M"),
+            "symbol": symbol, "sig_type": sig_type, "strat": strat,
+            "account": account, "status": "open", "pnl": 0,
+            "hint": "", "time_str": datetime.now(IST).strftime("%H:%M"),
         }
         save_json(SENT_SIGNALS_FILE, sent_signals)
         lim = ACCOUNT_LIMITS.get(account, 3)
@@ -874,20 +796,18 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
             "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
         }
         active_trades.append(trade)
-        # FIX 2026-08-05: count sweep-driven (FVG) trades too
         accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
-    risk = abs(price - sl) * qty
-    signal_time_str = format_signal_time(ts)
-    fvg_zone = fvg_entry.get("zone") if fvg_entry else None
-    msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account, signal_time_str, fvg_zone=fvg_zone)
-    markup = InlineKeyboardMarkup()
-    markup.add(InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"),
-               InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
-    safe_send(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
-    print(f"[TRADE] {trade['type']} {symbol} @ {price} | Signal: {signal_time_str}")
-
+        risk = abs(price - sl) * qty
+        signal_time_str = format_signal_time(ts)
+        fvg_zone = fvg_entry.get("zone") if fvg_entry else None
+        msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk, account, signal_time_str, fvg_zone=fvg_zone)
+        markup = InlineKeyboardMarkup()
+        markup.add(InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"),
+                   InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}"))
+        safe_send(CHAT_ID, msg, parse_mode="Markdown", reply_markup=markup)
+        print(f"[TRADE] {trade['type']} {symbol} @ {price} | Signal: {signal_time_str}")
 
 def monitor():
     global active_trades
@@ -904,12 +824,9 @@ def monitor():
                 if df is None or df.empty:
                     continue
                 live = float(df["Close"].iloc[-1])
-                # Cache the live price so the dashboard API can read it without hitting Yahoo
                 with _lock:
                     _price_cache[t["symbol"]] = (live, time.time())
                 long = t["type"] == "LONG"
-
-                # ── 15m FLIP EXIT (UT Bot trades only, checked every 60s) ──
                 if t["strat"] == "UT Bot Signals":
                     now = time.time()
                     last_check = _ut_15m_cache.get(t["symbol"], (None, 0))[1]
@@ -917,7 +834,6 @@ def monitor():
                         ut_dir = get_15m_ut_direction(t["symbol"])
                         if ut_dir:
                             _ut_15m_cache[t["symbol"]] = (ut_dir, now)
-                            # If 15m flipped against our position, close it
                             if (long and ut_dir == "BEARISH") or (not long and ut_dir == "BULLISH"):
                                 pnl = (live - t["entry"]) * t["qty"] * (1 if long else -1)
                                 with _lock:
@@ -931,7 +847,6 @@ def monitor():
                                     save_json(ACCOUNTS_FILE, accounts)
                                     history.append(t)
                                     save_json(HISTORY_FILE, history)
-                                with _lock:
                                     bal = accounts[t["account"]]["balance"]
                                 safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, pnl > 0), parse_mode="Markdown")
                                 print(f"[FLIP EXIT] {t['symbol']} {t['type']} @ {live} P/L: {pnl:+.2f}")
@@ -941,19 +856,16 @@ def monitor():
                 else:
                     pct = (t["entry"] - live) / t["entry"] * 100
                 if pct >= 1.0:
-                    # Breakeven at 1%
                     if long:
                         t["trail_sl"] = max(t["trail_sl"], t["entry"])
                     else:
                         t["trail_sl"] = min(t["trail_sl"], t["entry"])
                 if pct >= 3.0:
-                    # Lock 30% of profit at 3%
                     if long:
                         t["trail_sl"] = max(t["trail_sl"], t["entry"] + (live - t["entry"]) * 0.3)
                     else:
                         t["trail_sl"] = min(t["trail_sl"], t["entry"] - (t["entry"] - live) * 0.3)
                 if pct >= 5.0:
-                    # Lock 50% of profit at 5%
                     if long:
                         t["trail_sl"] = max(t["trail_sl"], t["entry"] + (live - t["entry"]) * 0.5)
                     else:
@@ -969,12 +881,11 @@ def monitor():
                     t["pnl"] = float(pnl)
                     t["result"] = "WIN" if hit_tp else "LOSS"
                     t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
-                    t["closed_at"] = datetime.now(IST).isoformat()  # 2026-08-03T13:52:00+05:30
+                    t["closed_at"] = datetime.now(IST).isoformat()
                     to_close.append(t)
                     save_json(ACCOUNTS_FILE, accounts)
                     history.append(t)
                     save_json(HISTORY_FILE, history)
-                with _lock:
                     bal = accounts[t["account"]]["balance"]
                 safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, hit_tp), parse_mode="Markdown")
                 print(f"[CLOSE] {t['symbol']} {t['result']} {pnl:+.2f}")
@@ -1013,35 +924,29 @@ def scanner():
                 with _lock:
                     if symbol in muted_assets or not is_market_open(symbol):
                         continue
-
                 is_nse = "^NSE" in symbol or symbol.endswith(".NS")
-
-                # UT Bot Signals — ONLY for non-NSE assets (Forex, Crypto, Gold)
                 if not is_nse:
                     ut = check_ut(symbol)
                     if ut:
                         target = "ny_session" if is_ny_session() else "macro"
                         execute(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
-
-                # Sweep — ALL assets: NSE gets 1h, non-NSE (crypto/forex/gold) gets 4h
                 if not is_nse:
-                    # Non-NSE: check 4h sweep for crypto/forex/gold (no market hours gate needed)
                     sweep = check_sweep(symbol)
                     if sweep:
                         register_pending_sweep(symbol, mtype, sweep)
                 else:
-                    # NSE assets: 1h sweep during market hours only
                     if is_nifty_open():
                         sweep = check_sweep(symbol)
                         if sweep:
                             register_pending_sweep(symbol, mtype, sweep)
-
                 time.sleep(2)
-            gc.collect()
+                gc.collect()
         except Exception as e:
+            import traceback
+            traceback.print_exc()
             print(f"[ERR] Scanner: {e}")
             safe_send(CHAT_ID, msg_error("Scanner", str(e)), parse_mode="Markdown")
-        time.sleep(300)
+            time.sleep(300)
 
 def daily_reset():
     global sent_signals, history
@@ -1070,14 +975,11 @@ def daily_reset():
                 ), parse_mode="Markdown")
                 if len(history) > 500:
                     history = history[-500:]
-                    save_json(HISTORY_FILE, history)
+                save_json(HISTORY_FILE, history)
             last = today
             gc.collect()
         time.sleep(60)
 
-# ============================================================
-# NEWS MODULE
-# ============================================================
 NEWS_CACHE = {"data": [], "last_fetch": 0}
 
 def fetch_news():
@@ -1086,8 +988,6 @@ def fetch_news():
         "Accept": "application/json",
     }
     url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-
-    # Attempt 1: Normal HTTPS
     try:
         response = requests.get(url, headers=headers, timeout=20)
         if response.status_code == 200 and response.text and response.text.strip():
@@ -1097,8 +997,6 @@ def fetch_news():
                 return data
     except Exception as e:
         print(f"[NEWS] HTTPS attempt failed: {e}")
-
-    # Attempt 2: Hardcoded backup — never let dashboard go blank
     print("[NEWS] All API attempts failed. Using hardcoded backup.")
     return [
         {"title": "ISM Manufacturing PMI", "country": "USD", "date": "2026-08-03T10:00:00-04:00", "impact": "High", "forecast": "54.0", "previous": "53.3"},
@@ -1124,13 +1022,11 @@ def get_cached_news():
                 print(f"[NEWS CACHE] Updated: {len(fresh)} events")
             else:
                 print("[NEWS CACHE] Fetch returned empty, keeping old data")
-                # If we have NO data at all, force a re-fetch sooner
                 if len(NEWS_CACHE["data"]) == 0:
-                    NEWS_CACHE["last_fetch"] = now - 30  # Retry in 30s instead of 60s
+                    NEWS_CACHE["last_fetch"] = now - 30
         except Exception as e:
             print(f"[NEWS CACHE] Error: {e}")
     return NEWS_CACHE["data"]
-
 
 def impact_emoji(impact):
     impact = str(impact).upper()
@@ -1157,7 +1053,6 @@ def news_impact_hint(title, currency):
     is_ecb = "ECB" in t or "EUROPEAN CENTRAL" in t
     is_boe = "BOE" in t or "BANK OF ENGLAND" in t
     is_boj = "BOJ" in t or "BANK OF JAPAN" in t
-
     if is_nfp:
         hints.append("💥 NFP → Volatile USD | Better jobs = Strong USD")
         affected = ["EUR/USD", "GBP/USD", "USD/JPY", "Gold", "BTC"]
@@ -1191,7 +1086,6 @@ def news_impact_hint(title, currency):
     else:
         hints.append("📊 Monitor price action around release")
         affected = [f"{c} pairs"]
-
     if c == "USD" and not hints:
         hints.append("🇺🇸 USD news → Moves all dollar pairs + Gold + BTC")
         affected = ["EUR/USD", "GBP/USD", "USD/JPY", "Gold", "BTC"]
@@ -1204,31 +1098,22 @@ def news_impact_hint(title, currency):
     elif c == "JPY":
         hints.append("🇯🇵 JPY news → Safe haven flows possible")
         affected = ["USD/JPY", "Gold"]
-
     return " | ".join(hints), affected
 
-
 def _extract_time_from_iso(date_str):
-    """Extract HH:MM ET from ISO datetime like 2026-08-03T10:00:00-04:00."""
     if not date_str:
         return ""
     try:
-        # Parse ISO string
         dt = datetime.fromisoformat(date_str.replace("Z", "+00:00"))
-        # Convert to ET (UTC-4 or UTC-5 depending on DST — approximate)
-        et_offset = timedelta(hours=-4)  # EDT
         et_dt = dt.astimezone(pytz.timezone("US/Eastern"))
         return et_dt.strftime("%H:%M")
     except Exception:
-        # Fallback: manual extraction
         s = str(date_str)
         if "T" in s:
-            time_part = s.split("T")[1]
-            return time_part[:5]  # HH:MM
+            return s.split("T")[1][:5]
         return ""
 
 def _iso_to_ist_dt(iso_str):
-    """Convert ISO datetime string to timezone-aware IST datetime. FIX 2026-08-05."""
     if not iso_str:
         return None
     try:
@@ -1251,7 +1136,6 @@ def format_news_message(events, title, filter_today_only=True, max_events=15):
             break
         try:
             date = _extract_date(ev.get("date", ""))
-            # FIX: Extract time from ISO date string, not from "time" field
             raw_date = ev.get("date", "")
             time_str = _extract_time_from_iso(raw_date)
             impact = str(ev.get("impact", "")).upper()
@@ -1261,8 +1145,6 @@ def format_news_message(events, title, filter_today_only=True, max_events=15):
             previous = ev.get("previous", "")
             if filter_today_only and date != today_str:
                 continue
-
-            # Convert ET time to IST
             ts_ist = ""
             try:
                 if time_str and time_str != "All Day":
@@ -1278,7 +1160,6 @@ def format_news_message(events, title, filter_today_only=True, max_events=15):
                         ts_ist = f" | `{ist_h:02d}:{ist_m:02d} IST`"
             except Exception:
                 pass
-
             emoji = impact_emoji(impact)
             hint, affected = news_impact_hint(title_ev, currency)
             affected_str = ", ".join(affected) if affected else ""
@@ -1296,12 +1177,10 @@ def format_news_message(events, title, filter_today_only=True, max_events=15):
             continue
     if len(lines) == 1:
         lines.append("⚪ No high-impact events for today.\n")
-    lines.append(BR2)
-    return "\n".join(lines) 
-
+        lines.append(BR2)
+    return "\n".join(lines)
 
 def _extract_date(date_str):
-    """Extract YYYY-MM-DD from ISO datetime string."""
     if not date_str:
         return ""
     s = str(date_str)
@@ -1322,18 +1201,15 @@ def get_today_high_impact_news():
     return filtered
 
 def get_weekly_news():
-    """Return all upcoming events for the week, grouped by day."""
     news = get_cached_news()
     now = datetime.now(IST)
     today_str = now.strftime("%Y-%m-%d")
-    # Filter: only today and future dates
     filtered = []
     for ev in news:
         date = _extract_date(ev.get("date", ""))
         if date >= today_str:
             filtered.append(ev)
     return filtered
-
 
 def news_alert_loop():
     alerted_events = set()
@@ -1342,7 +1218,6 @@ def news_alert_loop():
         try:
             now = datetime.now(IST)
             today_str = now.strftime("%Y-%m-%d")
-            # Morning digest at 9:00 AM IST
             if now.hour == 9 and now.minute < 5 and morning_sent_today != today_str:
                 events = get_today_high_impact_news()
                 if events:
@@ -1351,7 +1226,6 @@ def news_alert_loop():
                 else:
                     safe_send(CHAT_ID, f"📰 *MORNING NEWS DIGEST*\n{BR}\n🟢 No high-impact news today. Relax.\n{BR2}", parse_mode="Markdown")
                 morning_sent_today = today_str
-            # Pre-news alerts (30 min before)
             news = get_cached_news()
             for ev in news:
                 try:
@@ -1365,7 +1239,6 @@ def news_alert_loop():
                     ev_id = f"{date}_{time_str}_{ev.get('title','')}"
                     if ev_id in alerted_events:
                         continue
-                    # FIX 2026-08-05: use proper timezone conversion instead of "+9h hack"
                     ev_dt = _iso_to_ist_dt(ev.get("date", ""))
                     if ev_dt is None:
                         continue
@@ -1408,11 +1281,6 @@ def news_alert_loop():
             print(f"[ERR] news_alert_loop: {e}")
         time.sleep(60)
 
-# ============================================================
-# TELEGRAM HANDLERS
-# ============================================================
-# ========== BUTTON MENU HELPERS ==========
-
 def build_menu():
     markup = InlineKeyboardMarkup()
     markup.add(
@@ -1428,11 +1296,10 @@ def build_menu():
         InlineKeyboardButton("📰 News", callback_data="menu_news"),
     )
     markup.add(
-        InlineKeyboardButton("📈 Nifty", callback_data="menu_nifty"),     # ← ADD THIS
+        InlineKeyboardButton("📈 Nifty", callback_data="menu_nifty"),
         InlineKeyboardButton("🔄 Refresh", callback_data="menu_refresh"),
     )
     return markup
-
 
 @bot.message_handler(commands=["start", "help"])
 def cmd_start(m):
@@ -1445,10 +1312,8 @@ def cmd_start(m):
     )
     safe_send(m.chat.id, welcome, parse_mode="Markdown", reply_markup=build_menu())
 
-
 @bot.message_handler(commands=["menu"])
 def cmd_menu(m):
-    """Resend the button menu anytime."""
     safe_send(m.chat.id, "📋 *Control Menu*", parse_mode="Markdown", reply_markup=build_menu())
 
 @bot.message_handler(commands=["test"])
@@ -1464,7 +1329,7 @@ def cmd_test(m):
                     results.append(f"❌ `{symbol}` — NO DATA (blocked/empty)")
                 else:
                     price = float(df["Close"].iloc[-1])
-                    results.append(f"✅ `{symbol}` — `${price:,.4f}`")
+                    results.append(f"✅ `{symbol}` — ${price:,.4f}")
             except Exception as e:
                 results.append(f"❌ `{symbol}` — ERROR: {str(e)[:50]}")
             time.sleep(1)
@@ -1544,31 +1409,32 @@ def cmd_balance(m):
         nd = accounts["nifty"]["daily_trades"]
         nyd = accounts["ny_session"]["daily_trades"]
         sd = accounts.get("sweep_4h", {"daily_trades": 0})["daily_trades"]
-    ny = is_ny_session()
+        ny = is_ny_session()
     text = (
         f"🏦 *BALANCES*\n{BR}\n"
         f"🌐 *Macro* — `₹{mb:,.2f}` · Trades: `{md}/{ACCOUNT_LIMITS['macro']}`\n"
         f"🇮🇳 *Nifty* — `₹{nb:,.2f}` · Trades: `{nd}/{ACCOUNT_LIMITS['nifty']}`\n"
         f"🇺🇸 *NY* — `₹{nyb:,.2f}` · Trades: `{nyd}/{ACCOUNT_LIMITS['ny_session']}`\n"
         f"🔵 *Sweep* — `₹{sb:,.2f}` · Trades: `{sd}/{ACCOUNT_LIMITS['sweep_4h']}`\n"
-        f"{BR}\n{'🟢' if ny else '🔴'} *NY Session:* `{'ACTIVE' if ny else 'INACTIVE'}`\n"
+        f"{BR}\n"
+        f"{'🟢' if ny else '🔴'} *NY Session:* `{'ACTIVE' if ny else 'INACTIVE'}`\n"
         f"🕐 `{datetime.now(IST).strftime('%H:%M:%S IST (+5:30)')}`\n{BR2}"
     )
     safe_send(m.chat.id, text, parse_mode="Markdown")
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
-    global active_trades, history, sent_signals   # ← ADD sent_signals
+    global active_trades, history, sent_signals
     with _lock:
         active_trades = []
         history = []
-        sent_signals = {}                          # ← ADD THIS
+        sent_signals = {}
         for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
             accounts[acc] = {"balance": 100000.0, "daily_trades": 0}
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, [])
         save_json(HISTORY_FILE, [])
-        save_json(SENT_SIGNALS_FILE, {})           # ← ADD THIS
+        save_json(SENT_SIGNALS_FILE, {})
     safe_send(m.chat.id, f"🗑 *RESET DONE*\n{BR}\n✅ All balances → `₹1,00,000`\n✅ Trades closed\n✅ History wiped\n✅ Signals wiped\n✅ Counters reset\n{BR2}", parse_mode="Markdown")
 
 @bot.message_handler(commands=["indi1"])
@@ -1624,7 +1490,7 @@ def cmd_pending(m):
             fvg_info = f" | FVG: `${zl:,.2f}-{zh:,.2f}`"
         lines.append(
             f"{status_emoji} `{sym}` {direction} — {status.replace('_',' ').title()}{fvg_info}\n"
-            f"   ⏰ Expires in `{mins_left}m`\n"
+            f" ⏰ Expires in `{mins_left}m`\n"
         )
     lines.append(BR2)
     safe_send(m.chat.id, "\n".join(lines), parse_mode="Markdown")
@@ -1659,30 +1525,22 @@ def cmd_news(m):
         if not events:
             safe_send(chat_id, "📰 *ECONOMIC CALENDAR*\n" + BR + "\n⚪ No upcoming events found.\n" + BR2, parse_mode="Markdown")
             return
-        
-        # Split into chunks of 10 events max to stay under Telegram 4096 char limit
         chunk_size = 10
         total = len(events)
         for i in range(0, total, chunk_size):
             chunk = events[i:i+chunk_size]
             is_first = (i == 0)
             is_last = (i + chunk_size >= total)
-            
             if is_first and is_last:
                 title = "📅 UPCOMING WEEK'S ECONOMIC CALENDAR"
             elif is_first:
                 title = f"📅 UPCOMING WEEK'S CALENDAR (1–{min(chunk_size, total)} of {total})"
             else:
                 title = f"📅 CALENDAR CONTINUED ({i+1}–{min(i+chunk_size, total)} of {total})"
-            
             msg = format_news_message(chunk, title, filter_today_only=False, max_events=chunk_size)
             safe_send(chat_id, msg, parse_mode="Markdown")
-            time.sleep(0.5)  # Small delay between messages
-        
+            time.sleep(0.5)
     threading.Thread(target=run, daemon=True).start()
-
-
-
 
 @bot.message_handler(func=lambda m: True)
 def fallback(m):
@@ -1696,8 +1554,6 @@ def cb(c):
         data = c.data
         chat_id = c.message.chat.id
         msg_id = c.message.message_id
-
-        # ── MENU BUTTONS ──
         if data == "menu_live":
             bot.answer_callback_query(c.id, "Loading live trades...")
             copy = list(active_trades)
@@ -1711,7 +1567,6 @@ def cb(c):
             else:
                 text = "🔥 *Live Trades*\n━━━━━━━━━━━━━━━━━━━━━━\n⚪ No open trades right now."
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_signals":
             bot.answer_callback_query(c.id, "Loading signals...")
             sigs = list(sent_signals.values())
@@ -1725,7 +1580,6 @@ def cb(c):
             else:
                 text = "📡 *Signals*\n━━━━━━━━━━━━━━━━━━━━━━\n⚪ No signals fired in the last 24h."
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_history":
             bot.answer_callback_query(c.id, "Loading history...")
             hist = load_json(HISTORY_FILE, [])
@@ -1737,12 +1591,11 @@ def cb(c):
                 "📜 *Trade History*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
                 f"📊 Total trades: `{len(hist)}`\n"
-                f"✅ Wins: `{wins}`  |  ❌ Losses: `{losses}`\n"
+                f"✅ Wins: `{wins}` | ❌ Losses: `{losses}`\n"
                 f"💰 Total P/L: `{sign}₹{total_pnl:,.2f}`\n"
                 "━━━━━━━━━━━━━━━━━━━━━━"
             )
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_balance":
             bot.answer_callback_query(c.id, "Loading balances...")
             with _lock:
@@ -1750,7 +1603,7 @@ def cb(c):
                 nb = accounts["nifty"]["balance"]
                 nyb = accounts["ny_session"]["balance"]
                 sb = accounts.get("sweep_4h", {"balance": 100000.0})["balance"]
-            total = mb + nb + nyb + sb
+                total = mb + nb + nyb + sb
             text = (
                 "💰 *Account Balances*\n"
                 "━━━━━━━━━━━━━━━━━━━━━━\n"
@@ -1762,7 +1615,6 @@ def cb(c):
                 f"🏦 Total: `₹{total:,.2f}`"
             )
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_news":
             bot.answer_callback_query(c.id, "Loading news...")
             events = get_cached_news()
@@ -1773,7 +1625,6 @@ def cb(c):
             else:
                 msg = "📰 *Economic Calendar*\n━━━━━━━━━━━━━━━━━━━━━━\n🟢 No high-impact news today.\n━━━━━━━━━━━━━━━━━━━━━━"
             bot.edit_message_text(msg, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_nifty":
             bot.answer_callback_query(c.id, "Loading Nifty stocks...")
             lines = []
@@ -1790,14 +1641,11 @@ def cb(c):
                 "🎯 Signals routed to *Nifty* account"
             )
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
         elif data == "menu_refresh":
             bot.answer_callback_query(c.id, "Refreshing...")
             bot.edit_message_text("🔄 *Refreshing data...*", chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
             _price_cache.clear()
             bot.edit_message_text("✅ *Data refreshed!*", chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
-
-        # ── EXISTING BUTTONS (Chart / Mute) ──
         elif data.startswith("chart_"):
             sym = data.split("_", 1)[1]
             bot.answer_callback_query(c.id, "Generating chart...")
@@ -1823,9 +1671,6 @@ def cb(c):
     except Exception as e:
         print(f"[ERR] CB: {e}")
 
-# ============================================================
-# CHART
-# ============================================================
 def gen_chart(symbol, tf="1h"):
     with _chart_lock:
         try:
@@ -1860,14 +1705,6 @@ def gen_chart(symbol, tf="1h"):
             plt.close()
             return None
 
-
-# ============================================================
-
-
-# ============================================================
-# BOOT
-# ============================================================
-
 if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
     init_accounts()
@@ -1877,7 +1714,6 @@ if __name__ == "__main__":
     pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
     history = load_json(HISTORY_FILE, [])
 
-    # MOVE THIS ENTIRE BLOCK INSIDE — with 4 spaces indent:
     def auto_save_loop():
         while True:
             try:
@@ -1887,7 +1723,7 @@ if __name__ == "__main__":
                     save_json(SENT_SIGNALS_FILE, sent_signals)
                     save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                     save_json(ACCOUNTS_FILE, accounts)
-                    print(f"[AUTO-SAVE] OK — trades:{len(active_trades)} hist:{len(history)} sigs:{len(sent_signals)}")
+                print(f"[AUTO-SAVE] OK — trades:{len(active_trades)} hist:{len(history)} sigs:{len(sent_signals)}")
             except Exception as e:
                 print(f"[AUTO-SAVE] Error: {e}")
             time.sleep(30)
@@ -1895,8 +1731,6 @@ if __name__ == "__main__":
     threading.Thread(target=auto_save_loop, daemon=True).start()
 
     print("=" * 50)
-    # ... rest stays the same
-
     print(" Trading Bot Starting...")
     print(f" Macro: ₹{accounts['macro']['balance']:,.2f}")
     print(f" Nifty: ₹{accounts['nifty']['balance']:,.2f}")
@@ -1904,7 +1738,6 @@ if __name__ == "__main__":
     print(f" Web server: :{os.environ.get('PORT', 10000)}/ping")
     print("=" * 50)
 
-    # Force initial news fetch on startup (wrapped safely)
     try:
         initial_news = fetch_news()
         if initial_news:
@@ -1915,7 +1748,6 @@ if __name__ == "__main__":
             print("[NEWS] No events loaded on startup, will retry later")
     except Exception as e:
         print(f"[NEWS] Startup fetch failed: {e}")
-    # Continue anyway — bot should not crash
 
     safe_send(CHAT_ID, "🤖 *Bot started on Render!*\nUse `/test` to check if data fetching works.", parse_mode="Markdown")
 
