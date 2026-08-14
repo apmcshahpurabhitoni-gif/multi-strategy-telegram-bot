@@ -113,6 +113,100 @@ def _batch_live_prices(symbols):
 
     return out
 # ----------------------------------------------------------------
+# 1b. Equity curve + risk (derived from existing accounts/history — no new storage)
+# ----------------------------------------------------------------
+DEFAULT_STARTING_EQUITY = 400000.0  # 4 accounts x default Rs 1,00,000 — change if your defaults differ
+
+
+def _build_equity_curve(history, starting_equity=DEFAULT_STARTING_EQUITY, days=60):
+    """Reconstruct a daily equity curve purely from closed trade_history.
+    No extra writes/storage — this is derived data computed on read."""
+    if not history:
+        return {"points": [], "current_equity": starting_equity,
+                "max_drawdown_inr": 0.0, "max_drawdown_pct": 0.0}
+
+    def _closed_key(t):
+        return str(t.get("closed_at", t.get("close_time", t.get("time", t.get("timestamp", "")))))
+
+    daily_pnl = {}
+    for t in history:
+        date_part = _closed_key(t)[:10]
+        if not date_part:
+            continue
+        try:
+            pnl = float(t.get("pnl", 0))
+        except Exception:
+            pnl = 0.0
+        daily_pnl[date_part] = daily_pnl.get(date_part, 0.0) + pnl
+
+    running = starting_equity
+    peak = starting_equity
+    max_dd_inr = 0.0
+    max_dd_pct = 0.0
+    points = []
+    for date in sorted(daily_pnl.keys()):
+        running += daily_pnl[date]
+        peak = max(peak, running)
+        dd = peak - running
+        dd_pct = (dd / peak * 100.0) if peak > 0 else 0.0
+        if dd > max_dd_inr:
+            max_dd_inr = dd
+            max_dd_pct = dd_pct
+        points.append({"date": date, "equity": round(running, 2)})
+
+    points = points[-days:]
+
+    return {
+        "points": points,
+        "current_equity": points[-1]["equity"] if points else starting_equity,
+        "max_drawdown_inr": round(max_dd_inr, 2),
+        "max_drawdown_pct": round(max_dd_pct, 2),
+    }
+
+
+def _build_risk(live_trades_view, equity_curve):
+    """Current exposure, at-risk capital, and R-multiple per open trade."""
+    total_exposure = 0.0
+    total_risk_inr = 0.0
+    trades_risk = []
+    for t in live_trades_view:
+        entry = float(t.get("entry", 0) or 0)
+        sl = float(t.get("sl", 0) or 0)
+        cur = float(t.get("current", entry) or entry)
+        qty = float(t.get("qty", 0) or 0)
+        is_long = t.get("direction") == "LONG"
+
+        exposure = abs(entry * qty)
+        total_exposure += exposure
+
+        risk_per_unit = abs(entry - sl) if sl else 0.0
+        initial_risk = risk_per_unit * qty
+        total_risk_inr += initial_risk
+
+        if risk_per_unit > 0:
+            move = (cur - entry) if is_long else (entry - cur)
+            r_multiple = round(move / risk_per_unit, 2)
+        else:
+            r_multiple = 0.0
+
+        trades_risk.append({
+            "symbol": t.get("symbol"),
+            "account": t.get("account"),
+            "direction": t.get("direction"),
+            "r_multiple": r_multiple,
+            "risk_inr": round(initial_risk, 2),
+        })
+
+    return {
+        "total_exposure_inr": round(total_exposure, 2),
+        "total_risk_inr": round(total_risk_inr, 2),
+        "open_trades_risk": trades_risk,
+        "max_drawdown_inr": equity_curve.get("max_drawdown_inr", 0.0),
+        "max_drawdown_pct": equity_curve.get("max_drawdown_pct", 0.0),
+    }
+
+
+# ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
 def _build_snapshot():
@@ -316,6 +410,9 @@ def _build_snapshot():
         except Exception:
             news = []
 
+    equity_curve = _build_equity_curve(history)
+    risk = _build_risk(live_trades_view, equity_curve)
+
     return {
         "generated_at": now.strftime("%Y-%m-%d %H:%M:%S IST"),
         "accounts": accounts_view,
@@ -324,6 +421,8 @@ def _build_snapshot():
         "history": last_history,
         "pending": pending_view,
         "news_raw": news,
+        "equity_curve": equity_curve,
+        "risk": risk,
     }
 
 

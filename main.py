@@ -56,6 +56,7 @@ HISTORY_FILE = "/tmp/workspace/trade_history.json"
 MUTE_FILE = "/tmp/workspace/muted_assets.json"
 SENT_SIGNALS_FILE = "/tmp/workspace/sent_signals.json"
 PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
+WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
 
 ACCOUNT_LIMITS = {
     "macro": 20,
@@ -168,6 +169,26 @@ def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal, sweep_bal):
         f"{BR2}"
     )
 
+def msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity):
+    total_trades = wins + losses
+    win_rate = (wins / total_trades * 100.0) if total_trades else 0.0
+    pnl_icon = "📈" if week_pnl >= 0 else "📉"
+    pnl_sign = "+" if week_pnl >= 0 else ""
+    best_str = f"`{best_sym}` (`{'+' if best_pnl >= 0 else ''}₹{best_pnl:,.2f}`)" if best_sym else "—"
+    worst_str = f"`{worst_sym}` (`{'+' if worst_pnl >= 0 else ''}₹{worst_pnl:,.2f}`)" if worst_sym else "—"
+    return (
+        f"🗓️ *WEEKLY DIGEST*\n"
+        f"{BR}\n"
+        f"{pnl_icon} *Week P/L:* `{pnl_sign}₹{week_pnl:,.2f}`\n"
+        f"📊 *Trades:* `{total_trades}` · ✅ `{wins}W` · ❌ `{losses}L` · 🎯 `{win_rate:.1f}%`\n"
+        f"{BR}\n"
+        f"🏆 *Best Symbol:* {best_str}\n"
+        f"💔 *Worst Symbol:* {worst_str}\n"
+        f"{BR}\n"
+        f"🏦 *Total Equity:* `₹{total_equity:,.2f}`\n"
+        f"{BR2}"
+    )
+
 def msg_guide():
     return (
         f"🤖 *TRADING BOT — COMMAND CENTER*\n"
@@ -185,12 +206,36 @@ def msg_guide():
         f"├ `/indi1` — Diagnose Strategy 1 (Sweep)\n"
         f"├ `/indi2` — Diagnose Strategy 2 (UT Bot)\n"
         f"├ `/pending` — Show sweep setups waiting for FVG\n"
+        f"├ `/risk` — Exposure, capital at risk & R-multiples\n"
+        f"├ `/weekly` — Preview the weekly performance digest\n"
         f"└ `/news` — Today's economic calendar & impact\n"
         f"{BR2}"
     )
 
 def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
+
+# ----------------------------------------------------------------
+# Error alerting — DM yourself when a background loop throws.
+# Rate-limited per context so a repeating error doesn't spam Telegram.
+# ----------------------------------------------------------------
+_error_alert_lock = threading.Lock()
+_error_alert_last_sent = {}
+ERROR_ALERT_COOLDOWN_S = 900  # 15 min — same context won't re-alert faster than this
+
+def alert_error(context, error, cooldown_s=ERROR_ALERT_COOLDOWN_S):
+    """Print to console always; DM CHAT_ID at most once per cooldown per context."""
+    print(f"[ERR] {context}: {error}")
+    now = time.time()
+    with _error_alert_lock:
+        last = _error_alert_last_sent.get(context, 0)
+        if now - last < cooldown_s:
+            return
+        _error_alert_last_sent[context] = now
+    try:
+        safe_send(CHAT_ID, msg_error(context, error), parse_mode="Markdown")
+    except Exception as e:
+        print(f"[ERR] alert_error failed to send: {e}")
 
 def run_web():
     def app(environ, start_response):
@@ -652,7 +697,7 @@ def manage_pending_sweeps():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"[ERR] manage_pending_sweeps: {e}")
+            alert_error("Pending Sweeps Manager", e)
         time.sleep(90)
 
 def check_ut(ticker, kv=2):
@@ -890,7 +935,7 @@ def monitor():
                 safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, hit_tp), parse_mode="Markdown")
                 print(f"[CLOSE] {t['symbol']} {t['result']} {pnl:+.2f}")
             except Exception as e:
-                print(f"[ERR] Monitor {t['symbol']}: {e}")
+                alert_error(f"Monitor: {t.get('symbol','?')}", e)
         if to_close:
             with _lock:
                 for x in to_close:
@@ -944,41 +989,107 @@ def scanner():
         except Exception as e:
             import traceback
             traceback.print_exc()
-            print(f"[ERR] Scanner: {e}")
-            safe_send(CHAT_ID, msg_error("Scanner", str(e)), parse_mode="Markdown")
+            alert_error("Scanner", e)
             time.sleep(300)
 
 def daily_reset():
     global sent_signals, history
     last = datetime.now(IST).strftime("%Y-%m-%d")
     while True:
-        now = datetime.now(IST)
-        today = now.strftime("%Y-%m-%d")
-        if last != today:
-            with _lock:
-                for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
-                    accounts[acc]["daily_trades"] = 0
-                accounts["last_reset_date"] = today
-                save_json(ACCOUNTS_FILE, accounts)
-                if len(sent_signals) > 500:
-                    sent_signals = {k: sent_signals[k] for k in list(sent_signals.keys())[-500:]}
-                save_json(SENT_SIGNALS_FILE, sent_signals)
-                history = load_json(HISTORY_FILE, [])
-                day_trades = [t for t in history if t.get("close_time", "").startswith(last)]
-                day_pnl = sum(float(t["pnl"]) for t in day_trades)
-                safe_send(CHAT_ID, msg_midnight_reset(
-                    day_pnl,
-                    accounts["macro"]["balance"],
-                    accounts["nifty"]["balance"],
-                    accounts["ny_session"]["balance"],
-                    accounts["sweep_4h"]["balance"]
-                ), parse_mode="Markdown")
-                if len(history) > 500:
-                    history = history[-500:]
-                save_json(HISTORY_FILE, history)
-            last = today
-            gc.collect()
+        try:
+            now = datetime.now(IST)
+            today = now.strftime("%Y-%m-%d")
+            if last != today:
+                with _lock:
+                    for acc in ["macro", "nifty", "ny_session", "sweep_4h"]:
+                        accounts[acc]["daily_trades"] = 0
+                    accounts["last_reset_date"] = today
+                    save_json(ACCOUNTS_FILE, accounts)
+                    if len(sent_signals) > 500:
+                        sent_signals = {k: sent_signals[k] for k in list(sent_signals.keys())[-500:]}
+                    save_json(SENT_SIGNALS_FILE, sent_signals)
+                    history = load_json(HISTORY_FILE, [])
+                    day_trades = [t for t in history if t.get("close_time", "").startswith(last)]
+                    day_pnl = sum(float(t["pnl"]) for t in day_trades)
+                    safe_send(CHAT_ID, msg_midnight_reset(
+                        day_pnl,
+                        accounts["macro"]["balance"],
+                        accounts["nifty"]["balance"],
+                        accounts["ny_session"]["balance"],
+                        accounts["sweep_4h"]["balance"]
+                    ), parse_mode="Markdown")
+                    if len(history) > 500:
+                        history = history[-500:]
+                    save_json(HISTORY_FILE, history)
+                last = today
+                gc.collect()
+        except Exception as e:
+            alert_error("Daily Reset", e)
         time.sleep(60)
+
+
+def build_weekly_digest_text(days=7):
+    """Compute win rate, P/L, best/worst symbol for the trailing N days from trade_history."""
+    hist = load_json(HISTORY_FILE, [])
+    cutoff = (datetime.now(IST) - timedelta(days=days)).strftime("%Y-%m-%d")
+
+    def _closed_date(t):
+        return str(t.get("closed_at", t.get("close_time", t.get("time", "")))).strip()[:10]
+
+    week_trades = [t for t in hist if _closed_date(t) >= cutoff]
+
+    week_pnl = 0.0
+    wins = 0
+    losses = 0
+    per_symbol = {}
+    for t in week_trades:
+        try:
+            pnl = float(t.get("pnl", 0))
+        except Exception:
+            pnl = 0.0
+        week_pnl += pnl
+        if t.get("result") == "WIN":
+            wins += 1
+        elif t.get("result") == "LOSS":
+            losses += 1
+        sym = t.get("symbol", "?")
+        per_symbol[sym] = per_symbol.get(sym, 0.0) + pnl
+
+    best_sym = worst_sym = None
+    best_pnl = worst_pnl = 0.0
+    if per_symbol:
+        best_sym, best_pnl = max(per_symbol.items(), key=lambda kv: kv[1])
+        worst_sym, worst_pnl = min(per_symbol.items(), key=lambda kv: kv[1])
+
+    with _lock:
+        total_equity = sum(
+            float(accounts.get(a, {}).get("balance", 0))
+            for a in ["macro", "nifty", "ny_session", "sweep_4h"]
+        )
+
+    return msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity)
+
+
+def weekly_digest_loop():
+    """Sends a weekly performance digest once per week (Sunday ~21:00 IST by default)."""
+    print("[WEEKLY DIGEST] Started")
+    while True:
+        try:
+            now = datetime.now(IST)
+            iso_year, iso_week, _ = now.isocalendar()
+            week_label = f"{iso_year}-W{iso_week:02d}"
+            state = load_json(WEEKLY_DIGEST_FILE, {"last_sent_week": None})
+
+            is_digest_time = now.weekday() == 6 and now.hour >= 21  # Sunday, 21:00+ IST
+            if is_digest_time and state.get("last_sent_week") != week_label:
+                text = build_weekly_digest_text(days=7)
+                safe_send(CHAT_ID, text, parse_mode="Markdown")
+                state["last_sent_week"] = week_label
+                save_json(WEEKLY_DIGEST_FILE, state)
+        except Exception as e:
+            alert_error("Weekly Digest", e)
+        time.sleep(600)  # check every 10 min — cheap, and the week-label guard prevents dupes
+
 
 NEWS_CACHE = {"data": [], "last_fetch": 0}
 
@@ -1278,7 +1389,7 @@ def news_alert_loop():
             cutoff = (now - timedelta(days=3)).strftime("%Y-%m-%d")
             alerted_events = {e for e in alerted_events if not e.startswith(cutoff)}
         except Exception as e:
-            print(f"[ERR] news_alert_loop: {e}")
+            alert_error("News Alert Loop", e)
         time.sleep(60)
 
 def build_menu():
@@ -1293,7 +1404,11 @@ def build_menu():
     )
     markup.add(
         InlineKeyboardButton("💰 Balances", callback_data="menu_balance"),
+        InlineKeyboardButton("⚠️ Risk", callback_data="menu_risk"),
+    )
+    markup.add(
         InlineKeyboardButton("📰 News", callback_data="menu_news"),
+        InlineKeyboardButton("🗓️ Weekly", callback_data="menu_weekly"),
     )
     markup.add(
         InlineKeyboardButton("📈 Nifty", callback_data="menu_nifty"),
@@ -1421,6 +1536,91 @@ def cmd_balance(m):
         f"🕐 `{datetime.now(IST).strftime('%H:%M:%S IST (+5:30)')}`\n{BR2}"
     )
     safe_send(m.chat.id, text, parse_mode="Markdown")
+
+def build_risk_report_text():
+    """Shared by /risk command and the inline 'Risk' menu button."""
+    with _lock:
+        trades_snapshot = list(active_trades)
+
+    total_exposure = 0.0
+    total_risk = 0.0
+    lines = []
+    for t in trades_snapshot:
+        sym = t.get("symbol", "?")
+        entry = float(t.get("entry", 0) or 0)
+        sl = float(t.get("sl", 0) or 0)
+        qty = float(t.get("qty", 0) or 0)
+        direction = str(t.get("type", t.get("direction", "LONG"))).upper()
+        is_long = "BULL" in direction or "LONG" in direction
+        try:
+            cur = get_price(sym) or entry
+        except Exception:
+            cur = entry
+
+        exposure = abs(entry * qty)
+        risk_per_unit = abs(entry - sl) if sl else 0.0
+        initial_risk = risk_per_unit * qty
+        total_exposure += exposure
+        total_risk += initial_risk
+
+        if risk_per_unit > 0:
+            move = (cur - entry) if is_long else (entry - cur)
+            r_mult = round(move / risk_per_unit, 2)
+        else:
+            r_mult = 0.0
+        lines.append(f"• `{sym}` ({t.get('account','')}) — `{r_mult:+.2f}R`")
+
+    # All-time max drawdown, derived from closed trade history (no extra storage)
+    history_data = load_json(HISTORY_FILE, [])
+    starting_equity = 400000.0  # 4 accounts x default Rs 1,00,000
+    daily_pnl = {}
+    for t in history_data:
+        ts = str(t.get("closed_at", t.get("close_time", t.get("time", ""))))
+        d = ts[:10]
+        if not d:
+            continue
+        try:
+            pnl = float(t.get("pnl", 0))
+        except Exception:
+            pnl = 0.0
+        daily_pnl[d] = daily_pnl.get(d, 0.0) + pnl
+
+    running = starting_equity
+    peak = starting_equity
+    max_dd = 0.0
+    for d in sorted(daily_pnl.keys()):
+        running += daily_pnl[d]
+        peak = max(peak, running)
+        max_dd = max(max_dd, peak - running)
+    max_dd_pct = (max_dd / peak * 100.0) if peak > 0 else 0.0
+
+    text = (
+        f"⚠️ *RISK SNAPSHOT*\n{BR}\n"
+        f"Open trades: `{len(trades_snapshot)}`\n"
+        f"Total exposure: `₹{total_exposure:,.0f}`\n"
+        f"Capital at risk (to SL): `₹{total_risk:,.0f}`\n"
+        f"Max drawdown (all-time): `₹{max_dd:,.0f}` (`{max_dd_pct:.1f}%`)\n"
+    )
+    if lines:
+        text += f"{BR}\n*Open R-multiples:*\n" + "\n".join(lines) + f"\n{BR2}"
+    else:
+        text += BR2
+    return text
+
+
+@bot.message_handler(commands=["weekly"])
+def cmd_weekly(m):
+    try:
+        safe_send(m.chat.id, build_weekly_digest_text(days=7), parse_mode="Markdown")
+    except Exception as e:
+        safe_send(m.chat.id, f"⚠️ /weekly failed: {e}")
+
+@bot.message_handler(commands=["risk"])
+def cmd_risk(m):
+    try:
+        safe_send(m.chat.id, build_risk_report_text(), parse_mode="Markdown")
+    except Exception as e:
+        safe_send(m.chat.id, f"⚠️ /risk failed: {e}")
 
 @bot.message_handler(commands=["clear"])
 def cmd_clear(m):
@@ -1596,6 +1796,20 @@ def cb(c):
                 "━━━━━━━━━━━━━━━━━━━━━━"
             )
             bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+        elif data == "menu_weekly":
+            bot.answer_callback_query(c.id, "Loading weekly digest...")
+            try:
+                text = build_weekly_digest_text(days=7)
+            except Exception as e:
+                text = f"⚠️ /weekly failed: {e}"
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
+        elif data == "menu_risk":
+            bot.answer_callback_query(c.id, "Loading risk snapshot...")
+            try:
+                text = build_risk_report_text()
+            except Exception as e:
+                text = f"⚠️ /risk failed: {e}"
+            bot.edit_message_text(text, chat_id, msg_id, parse_mode="Markdown", reply_markup=build_menu())
         elif data == "menu_balance":
             bot.answer_callback_query(c.id, "Loading balances...")
             with _lock:
@@ -1725,7 +1939,7 @@ if __name__ == "__main__":
                     save_json(ACCOUNTS_FILE, accounts)
                 print(f"[AUTO-SAVE] OK — trades:{len(active_trades)} hist:{len(history)} sigs:{len(sent_signals)}")
             except Exception as e:
-                print(f"[AUTO-SAVE] Error: {e}")
+                alert_error("Auto-Save", e, cooldown_s=1800)
             time.sleep(30)
 
     threading.Thread(target=auto_save_loop, daemon=True).start()
@@ -1756,6 +1970,7 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=manage_pending_sweeps, daemon=True).start()
     threading.Thread(target=news_alert_loop, daemon=True).start()
+    threading.Thread(target=weekly_digest_loop, daemon=True).start()
 
     if WEBHOOK_URL:
         print(f"[BOT] Setting webhook to: {WEBHOOK_URL}")
