@@ -4,42 +4,87 @@
 <meta charset="UTF-8">
 <meta name="viewport" content="width=device-width, initial-scale=1.0, maximum-scale=1.0, user-scalable=no">
 <title>Mavis · Trade Command Center</title>
-<link href="https://fonts.googleapis.com/css2?family=Inter:wght@300;400;500;600;700;800&family=JetBrains+Mono:wght@400;500;600&display=swap" rel="stylesheet">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link href="https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&family=JetBrains+Mono:wght@500;600&display=swap" rel="stylesheet">
+<script>
+  // Apply saved theme before paint to avoid a flash of the wrong theme
+  try {
+    var t = localStorage.getItem('mavis_theme');
+    if (t === 'light') document.documentElement.setAttribute('data-theme', 'light');
+  } catch (e) {}
+</script>
 <style>
   :root {
-    --bg: #0a0e17;
-    --bg-elevated: #111827;
-    --bg-card: #1a2233;
-    --bg-card-hover: #1f2937;
-    --border: #1e293b;
-    --border-light: #334155;
-    --text: #e2e8f0;
-    --text-muted: #64748b;
-    --text-dim: #475569;
-    --accent: #10b981;
-    --accent-dim: #059669;
-    --accent-glow: rgba(16, 185, 129, 0.15);
-    --danger: #ef4444;
-    --danger-dim: #dc2626;
-    --warning: #f59e0b;
-    --warning-dim: #d97706;
-    --info: #3b82f6;
-    --info-dim: #2563eb;
-    --long: #10b981;
-    --short: #ef4444;
-    --tab-bg: #0f172a;
-    --tab-active: #1e293b;
-    --tab-icon: #475569;
-    --tab-icon-active: #10b981;
+    /* Indigo Nova — deep space navy base, violet-indigo brand accent, amber/teal semantic pops */
+    --bg: #05060c;
+    --bg-elevated: #0d1020;
+    --bg-card: #131730;
+    --bg-card-hover: #191e3d;
+    --border: #21273f;
+    --border-light: #363e5f;
+    --text: #eef0fb;
+    --text-muted: #8991b8;
+    --text-dim: #565f85;
+    --accent: #7c6cff;
+    --accent-2: #22d3ee;
+    --accent-dim: #6152e0;
+    --accent-glow: rgba(124, 108, 255, 0.22);
+    --danger: #f5566a;
+    --danger-dim: #dc2f47;
+    --warning: #f5b942;
+    --warning-dim: #d99a1f;
+    --info: #22d3ee;
+    --info-dim: #0ea5c4;
+    --long: #34d399;
+    --short: #f5566a;
+    --tab-bg: #0a0c1a;
+    --tab-active: #191e3d;
+    --tab-icon: #565f85;
+    --tab-icon-active: #7c6cff;
+    --radius: 14px;
+    --radius-sm: 10px;
+    --shadow-card: 0 2px 10px rgba(0,0,0,0.35);
+    color-scheme: dark;
+  }
+  [data-theme="light"] {
+    --bg: #f4f5fb;
+    --bg-elevated: #ffffff;
+    --bg-card: #ffffff;
+    --bg-card-hover: #f7f8fd;
+    --border: #e4e6f3;
+    --border-light: #cdd1ea;
+    --text: #191d3a;
+    --text-muted: #6b7195;
+    --text-dim: #9297b8;
+    --accent: #6152e0;
+    --accent-2: #0891a8;
+    --accent-dim: #4c3fc4;
+    --accent-glow: rgba(97, 82, 224, 0.14);
+    --danger: #dc2f47;
+    --danger-dim: #b91c3c;
+    --warning: #b8860f;
+    --warning-dim: #96700c;
+    --info: #0891a8;
+    --info-dim: #0e7490;
+    --long: #0d9668;
+    --short: #dc2f47;
+    --tab-bg: #ffffff;
+    --tab-active: #eeeffb;
+    --tab-icon: #9297b8;
+    --tab-icon-active: #6152e0;
+    --shadow-card: 0 2px 10px rgba(25,29,58,0.06);
+    color-scheme: light;
   }
   * { margin: 0; padding: 0; box-sizing: border-box; }
   html, body {
     font-family: 'Inter', -apple-system, BlinkMacSystemFont, sans-serif;
     background: var(--bg);
+    background-image: radial-gradient(circle at 20% -10%, var(--accent-glow), transparent 40%);
     color: var(--text);
     height: 100%;
     overflow: hidden;
     -webkit-font-smoothing: antialiased;
+    transition: background-color 0.25s ease, color 0.25s ease;
   }
   #app {
     height: 100vh;
@@ -55,12 +100,20 @@
     justify-content: space-between;
     flex-shrink: 0;
     z-index: 10;
+    position: relative;
+  }
+  .header::after {
+    content: '';
+    position: absolute; left: 0; right: 0; bottom: -1px; height: 1px;
+    background: linear-gradient(90deg, var(--accent) 0%, transparent 35%);
+    opacity: 0.6;
   }
   .header-left { display: flex; align-items: center; gap: 10px; }
+  .header-right { display: flex; align-items: center; gap: 8px; }
   .logo-dot {
     width: 10px; height: 10px; border-radius: 50%;
-    background: var(--accent);
-    box-shadow: 0 0 8px var(--accent-glow);
+    background: linear-gradient(135deg, var(--accent), var(--accent-2));
+    box-shadow: 0 0 10px var(--accent-glow);
     animation: pulse 2s infinite;
   }
   @keyframes pulse {
@@ -68,8 +121,8 @@
     50% { opacity: 0.4; }
   }
   .header h1 {
-    font-size: 15px; font-weight: 700; letter-spacing: -0.3px;
-    background: linear-gradient(135deg, #e2e8f0 0%, #94a3b8 100%);
+    font-size: 15px; font-weight: 800; letter-spacing: -0.3px;
+    background: linear-gradient(135deg, var(--accent) 0%, var(--accent-2) 100%);
     -webkit-background-clip: text; -webkit-text-fill-color: transparent;
   }
   .header .badge {
@@ -85,6 +138,17 @@
     border-radius: 6px; border: 1px solid var(--border);
     letter-spacing: 0.5px;
   }
+  .theme-toggle {
+    width: 30px; height: 30px;
+    display: flex; align-items: center; justify-content: center;
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: 8px; cursor: pointer; font-size: 14px;
+    color: var(--text-muted);
+    transition: all 0.2s;
+    -webkit-tap-highlight-color: transparent;
+  }
+  .theme-toggle:hover { border-color: var(--accent); color: var(--accent); }
+  .theme-toggle:active { transform: scale(0.92); }
   .main-content {
     flex: 1;
     overflow-y: auto;
@@ -107,10 +171,11 @@
   .card {
     background: var(--bg-card);
     border: 1px solid var(--border);
-    border-radius: 12px;
+    border-radius: var(--radius);
     margin-bottom: 12px;
     overflow: hidden;
-    transition: border-color 0.2s;
+    box-shadow: var(--shadow-card);
+    transition: border-color 0.2s, box-shadow 0.2s;
   }
   .card:hover { border-color: var(--border-light); }
   .card-header {
@@ -153,10 +218,10 @@
   .account-card::before {
     content: ''; position: absolute; top: 0; left: 0; right: 0; height: 3px;
   }
-  .account-card.macro::before { background: linear-gradient(90deg, #10b981, #059669); }
-  .account-card.nifty::before { background: linear-gradient(90deg, #f59e0b, #d97706); }
-  .account-card.ny::before { background: linear-gradient(90deg, #3b82f6, #2563eb); }
-  .account-card.sweep::before { background: linear-gradient(90deg, #8b5cf6, #7c3aed); }
+  .account-card.macro::before { background: linear-gradient(90deg, #34d399, #0d9668); }
+  .account-card.nifty::before { background: linear-gradient(90deg, #f5b942, #d99a1f); }
+  .account-card.ny::before { background: linear-gradient(90deg, #22d3ee, #0ea5c4); }
+  .account-card.sweep::before { background: linear-gradient(90deg, #7c6cff, #6152e0); }
   .account-name {
     font-size: 11px; font-weight: 600; text-transform: uppercase;
     letter-spacing: 0.8px; color: var(--text-muted); margin-bottom: 6px;
@@ -205,6 +270,28 @@
   .stat-label {
     font-size: 9px; font-weight: 500; text-transform: uppercase;
     letter-spacing: 0.6px; color: var(--text-dim);
+  }
+  #equityChartWrap svg { display: block; width: 100%; }
+  .equity-range {
+    display: flex; justify-content: space-between;
+    font-size: 10px; color: var(--text-dim); margin-top: 6px;
+    font-family: 'JetBrains Mono', monospace;
+  }
+  .risk-strip {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+    margin-bottom: 16px;
+  }
+  .risk-box {
+    background: var(--bg-card); border: 1px solid var(--border);
+    border-radius: var(--radius-sm); padding: 10px 6px; text-align: center;
+  }
+  .risk-label {
+    font-size: 9px; font-weight: 600; text-transform: uppercase;
+    letter-spacing: 0.6px; color: var(--text-dim); margin-bottom: 4px;
+  }
+  .risk-value {
+    font-family: 'JetBrains Mono', monospace;
+    font-size: 13px; font-weight: 700; color: var(--text);
   }
   .data-table { width: 100%; border-collapse: collapse; font-size: 12px; }
   .data-table th {
@@ -325,8 +412,8 @@
     letter-spacing: 0.5px; padding: 1px 6px; border-radius: 3px;
   }
   .news-tag.high { background: rgba(239,68,68,0.15); color: var(--danger); }
-  .news-tag.medium { background: rgba(245,158,11,0.15); color: var(--warning); }
-  .news-tag.low { background: rgba(16,185,129,0.15); color: var(--accent); }
+  .news-tag.medium { background: rgba(245,185,66,0.15); color: var(--warning); }
+  .news-tag.low { background: rgba(52,211,153,0.15); color: var(--long); }
   .news-tag.holiday { background: rgba(100,116,139,0.15); color: var(--text-muted); }
   .news-forecast {
     font-size: 11px; color: var(--text-dim); margin-top: 6px;
@@ -499,7 +586,7 @@
     font-size: 10px;
     font-weight: 600;
   }
-  .mini-tag.pending { background: rgba(139, 92, 246, 0.15); color: #a78bfa; }
+  .mini-tag.pending { background: rgba(124, 108, 255, 0.15); color: var(--accent); }
   .mini-tag.long { background: rgba(16, 185, 129, 0.15); color: var(--accent); }
   .mini-tag.short { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
   .mini-tag.closed { background: rgba(71, 85, 105, 0.15); color: var(--text-dim); }
@@ -609,7 +696,10 @@
       <h1>Mavis</h1>
       <span class="badge">Paper · Multi-Account</span>
     </div>
-    <div class="clock" id="clock">--:--:--</div>
+    <div class="header-right">
+      <div class="clock" id="clock">--:--:--</div>
+      <button class="theme-toggle" id="themeToggle" onclick="toggleTheme()" aria-label="Toggle light/dark mode">🌙</button>
+    </div>
   </div>
 
   <div class="main-content" id="mainContent">
@@ -629,6 +719,31 @@
           <div class="stat-label">Week P/L</div>
         </div>
       </div>
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">📈</span> Equity Curve</div>
+          <div class="card-badge" id="equityDD">DD 0%</div>
+        </div>
+        <div class="card-body" id="equityChartWrap">
+          <div class="card-empty"><span class="emoji">📈</span>Not enough closed trades yet</div>
+        </div>
+      </div>
+
+      <div class="risk-strip" id="riskStrip">
+        <div class="risk-box">
+          <div class="risk-label">Exposure</div>
+          <div class="risk-value" id="riskExposure">₹0</div>
+        </div>
+        <div class="risk-box">
+          <div class="risk-label">At Risk</div>
+          <div class="risk-value" id="riskAtRisk">₹0</div>
+        </div>
+        <div class="risk-box">
+          <div class="risk-label">Max DD</div>
+          <div class="risk-value" id="riskMaxDD">₹0</div>
+        </div>
+      </div>
+
       <div class="card">
         <div class="card-header">
           <div class="card-title"><span class="icon">📊</span> Quick Status</div>
@@ -793,6 +908,23 @@ function updateClock() {
   document.getElementById('clock').textContent =
     `${String(h12).padStart(2,'0')}:${String(m).padStart(2,'0')}:${String(s).padStart(2,'0')} ${ampm}`;
 }
+function toggleTheme() {
+  const isLight = document.documentElement.getAttribute('data-theme') === 'light';
+  if (isLight) {
+    document.documentElement.removeAttribute('data-theme');
+    document.getElementById('themeToggle').textContent = '🌙';
+    try { localStorage.setItem('mavis_theme', 'dark'); } catch {}
+  } else {
+    document.documentElement.setAttribute('data-theme', 'light');
+    document.getElementById('themeToggle').textContent = '☀️';
+    try { localStorage.setItem('mavis_theme', 'light'); } catch {}
+  }
+}
+(function initTheme() {
+  const btn = document.getElementById('themeToggle');
+  if (document.documentElement.getAttribute('data-theme') === 'light') btn.textContent = '☀️';
+})();
+
 updateClock();
 setInterval(updateClock, 1000);
 
@@ -1277,6 +1409,8 @@ async function fetchData() {
 
 function renderAll() {
   renderOverview();
+  renderEquityCurve();
+  renderRisk();
   renderLiveTrades();
   renderPending();
   renderSignals();
@@ -1286,6 +1420,75 @@ function renderAll() {
     renderNiftyIndices();
     renderStockGrid();
   }
+}
+
+function renderEquityCurve() {
+  const wrap = document.getElementById('equityChartWrap');
+  const ddBadge = document.getElementById('equityDD');
+  const ec = state.equity_curve;
+  if (!wrap) return;
+
+  if (!ec || !Array.isArray(ec.points) || ec.points.length < 2) {
+    wrap.innerHTML = '<div class="card-empty"><span class="emoji">📈</span>Not enough closed trades yet</div>';
+    if (ddBadge) ddBadge.textContent = 'DD 0%';
+    return;
+  }
+
+  const pts = ec.points;
+  const w = Math.max(280, wrap.clientWidth || 300);
+  const h = 130;
+  const pad = 6;
+  const values = pts.map(p => p.equity);
+  const min = Math.min(...values);
+  const max = Math.max(...values);
+  const range = (max - min) || 1;
+  const stepX = pts.length > 1 ? (w - pad * 2) / (pts.length - 1) : 0;
+
+  const coords = values.map((v, i) => {
+    const x = pad + i * stepX;
+    const y = pad + (h - pad * 2) * (1 - (v - min) / range);
+    return [x, y];
+  });
+  const linePath = coords.map((c, i) => (i === 0 ? 'M' : 'L') + c[0].toFixed(1) + ',' + c[1].toFixed(1)).join(' ');
+  const areaPath = linePath +
+    ` L${coords[coords.length - 1][0].toFixed(1)},${(h - pad).toFixed(1)}` +
+    ` L${coords[0][0].toFixed(1)},${(h - pad).toFixed(1)} Z`;
+
+  const up = values[values.length - 1] >= values[0];
+  const strokeVar = up ? 'var(--accent)' : 'var(--danger)';
+
+  wrap.innerHTML = `
+    <svg viewBox="0 0 ${w} ${h}" preserveAspectRatio="none" height="${h}">
+      <defs>
+        <linearGradient id="eqFillGrad" x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0%" stop-color="${strokeVar}" stop-opacity="0.25"/>
+          <stop offset="100%" stop-color="${strokeVar}" stop-opacity="0"/>
+        </linearGradient>
+      </defs>
+      <path d="${areaPath}" fill="url(#eqFillGrad)" stroke="none"/>
+      <path d="${linePath}" fill="none" stroke="${strokeVar}" stroke-width="2" stroke-linejoin="round" stroke-linecap="round"/>
+    </svg>
+    <div class="equity-range">
+      <span>${pts[0].date} · ${fmtMoney(min)}</span>
+      <span>${pts[pts.length - 1].date} · ${fmtMoney(ec.current_equity ?? max)}</span>
+    </div>`;
+
+  if (ddBadge) ddBadge.textContent = 'DD ' + (ec.max_drawdown_pct || 0).toFixed(1) + '%';
+}
+
+function renderRisk() {
+  const risk = state.risk;
+  const exEl = document.getElementById('riskExposure');
+  const arEl = document.getElementById('riskAtRisk');
+  const ddEl = document.getElementById('riskMaxDD');
+  if (!exEl || !arEl || !ddEl) return;
+  if (!risk) {
+    exEl.textContent = '₹0'; arEl.textContent = '₹0'; ddEl.textContent = '₹0';
+    return;
+  }
+  exEl.textContent = fmtMoney(risk.total_exposure_inr || 0);
+  arEl.textContent = fmtMoney(risk.total_risk_inr || 0);
+  ddEl.textContent = fmtMoney(risk.max_drawdown_inr || 0);
 }
 
 console.log('[Dashboard] Starting bootstrap...');
