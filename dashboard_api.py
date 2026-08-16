@@ -28,7 +28,6 @@ _snapshot_lock = threading.RLock()
 _HERE = os.path.dirname(os.path.abspath(__file__))
 _HTML_PATH = os.path.join(_HERE, "dashboard", "index.html")
 
-
 def _get_main_module():
     """Get the main module - handles both 'main' and '__main__' module names."""
     # Try '__main__' first (when running with `python main.py`)
@@ -37,7 +36,6 @@ def _get_main_module():
         return main
     # Fallback to 'main' (for direct imports)
     return sys.modules.get("main")
-
 
 # ----------------------------------------------------------------
 # 1. Batch live prices
@@ -52,8 +50,8 @@ def _batch_live_prices(symbols):
         return {}
 
     _price_cache = getattr(main, "_price_cache", None)
-    _lock        = getattr(main, "_lock", None)
-    get_price_fn = getattr(main, "get_price", None)  # FIX 2026-08-05: was "fetch_price"
+    _lock = getattr(main, "_lock", None)
+    get_price_fn = getattr(main, "get_price", None)
     now = time.time()
     out = {}
 
@@ -66,14 +64,17 @@ def _batch_live_prices(symbols):
                     if now - ts < 120:
                         out[s] = p
 
-    # --- 2. yfinance batch download (FAST: one request for all symbols) ---
+    # --- 2. Separate index symbols (^) from regular symbols ---
     need = [s for s in symbols if s not in out]
-    if need:
+    indices = [s for s in need if s.startswith("^")]
+    regular = [s for s in need if not s.startswith("^")]
+
+    # --- 3. Batch download regular symbols only ---
+    if regular:
         try:
             import yfinance as yf
-            # Batch download all missing symbols in ONE HTTP request
             df = yf.download(
-                tickers=",".join(need),
+                tickers=",".join(regular),
                 period="1d",
                 interval="1d",
                 progress=False,
@@ -81,14 +82,12 @@ def _batch_live_prices(symbols):
                 timeout=15
             )
             if df is not None and not df.empty:
-                if len(need) == 1:
-                    # Single symbol: df["Close"] is a Series
+                if len(regular) == 1:
                     close = df["Close"].dropna()
                     if not close.empty:
-                        out[need[0]] = float(close.iloc[-1])
+                        out[regular[0]] = float(close.iloc[-1])
                 else:
-                    # Multiple symbols: df["Close"] is DataFrame with symbol columns
-                    for s in need:
+                    for s in regular:
                         try:
                             if s in df["Close"].columns:
                                 val = df["Close"][s].dropna()
@@ -99,7 +98,18 @@ def _batch_live_prices(symbols):
         except Exception as e:
             print(f"[PRICE] batch yf.download failed: {e}")
 
-    # --- 3. Individual fallback for any still missing ---
+    # --- 4. Individual fetch for index symbols (^NSEI, ^NSEBANK) ---
+    for s in indices:
+        if get_price_fn:
+            try:
+                p = get_price_fn(s)
+                if p:
+                    out[s] = float(p)
+            except Exception as e:
+                print(f"[PRICE] get_price failed for index {s}: {e}")
+        time.sleep(0.2)
+
+    # --- 5. Individual fallback for any still missing ---
     still_need = [s for s in symbols if s not in out]
     if get_price_fn and still_need:
         for s in still_need:
@@ -112,15 +122,13 @@ def _batch_live_prices(symbols):
             time.sleep(0.2)
 
     return out
+
 # ----------------------------------------------------------------
 # 1b. Equity curve + risk (derived from existing accounts/history — no new storage)
 # ----------------------------------------------------------------
-DEFAULT_STARTING_EQUITY = 400000.0  # 4 accounts x default Rs 1,00,000 — change if your defaults differ
-
+DEFAULT_STARTING_EQUITY = 400000.0
 
 def _build_equity_curve(history, starting_equity=DEFAULT_STARTING_EQUITY, days=60):
-    """Reconstruct a daily equity curve purely from closed trade_history.
-    No extra writes/storage — this is derived data computed on read."""
     if not history:
         return {"points": [], "current_equity": starting_equity,
                 "max_drawdown_inr": 0.0, "max_drawdown_pct": 0.0}
@@ -163,9 +171,7 @@ def _build_equity_curve(history, starting_equity=DEFAULT_STARTING_EQUITY, days=6
         "max_drawdown_pct": round(max_dd_pct, 2),
     }
 
-
 def _build_risk(live_trades_view, equity_curve):
-    """Current exposure, at-risk capital, and R-multiple per open trade."""
     total_exposure = 0.0
     total_risk_inr = 0.0
     trades_risk = []
@@ -205,7 +211,6 @@ def _build_risk(live_trades_view, equity_curve):
         "max_drawdown_pct": equity_curve.get("max_drawdown_pct", 0.0),
     }
 
-
 # ----------------------------------------------------------------
 # 2. Build the snapshot the dashboard renders
 # ----------------------------------------------------------------
@@ -239,13 +244,12 @@ def _build_snapshot():
     today_str = now.strftime("%Y-%m-%d")
     week_start = (now - timedelta(days=7)).strftime("%Y-%m-%d")
     history = load_json(HISTORY_FILE, []) if load_json else []
-    # Read sent_signals from file, fallback to in-memory dict
     sent = load_json(SENT_SIGNALS_FILE, {}) if load_json else {}
     sent_memory = getattr(main, "sent_signals", {})
     if isinstance(sent_memory, dict) and len(sent_memory) > len(sent):
         print(f"[API] Using in-memory sent_signals ({len(sent_memory)}) vs file ({len(sent)})")
         sent = sent_memory
-    
+
     pending = list(pending_sweeps) if pending_sweeps else (load_json(PENDING_SWEEPS_FILE, []) if load_json else [])
 
     # Per-account today/week P/L
@@ -333,7 +337,6 @@ def _build_snapshot():
         time_str = ""
 
         if isinstance(sig, dict):
-            # New format: {key: {ts_ms, symbol, ...}}
             ts_ms = sig.get("ts_ms", 0)
             sym = sig.get("symbol", "")
             sig_type = sig.get("sig_type", "")
@@ -343,7 +346,6 @@ def _build_snapshot():
             hint = sig.get("hint", "")
             time_str = sig.get("time_str", "")
         else:
-            # Old format: {key: True} — parse key like "BTC-USD_1234567890123_BULLISH_macro"
             parts = str(key).split("_")
             if len(parts) >= 3:
                 sym = parts[0]
@@ -353,7 +355,7 @@ def _build_snapshot():
                     ts_ms = 0
                 sig_type = parts[2]
                 strat = parts[3] if len(parts) > 3 else ""
-            time_str = datetime.fromtimestamp(ts_ms / 1000).strftime("%H:%M") if ts_ms else ""
+                time_str = datetime.fromtimestamp(ts_ms / 1000).strftime("%H:%M") if ts_ms else ""
 
         if ts_ms < cutoff:
             continue
@@ -425,7 +427,6 @@ def _build_snapshot():
         "risk": risk,
     }
 
-
 def _get_snapshot_cached():
     now = time.time()
     with _snapshot_lock:
@@ -435,11 +436,10 @@ def _get_snapshot_cached():
                 "cache_age_s": int(now - _snapshot_cache["ts"]),
                 **_snapshot_cache["data"],
             }
-        snap = _build_snapshot()
-        _snapshot_cache["data"] = snap
-        _snapshot_cache["ts"] = now
-        return {"cached": False, **snap}
-
+    snap = _build_snapshot()
+    _snapshot_cache["data"] = snap
+    _snapshot_cache["ts"] = now
+    return {"cached": False, **snap}
 
 # ----------------------------------------------------------------
 # 3. Response helpers
@@ -453,7 +453,6 @@ def _json_response(start_response, payload, status="200 OK"):
     ])
     return [body]
 
-
 def _html_response(start_response, body, status="200 OK"):
     if isinstance(body, str):
         body = body.encode("utf-8")
@@ -463,7 +462,6 @@ def _html_response(start_response, body, status="200 OK"):
         ("Cache-Control", "no-store"),
     ])
     return [body]
-
 
 # ----------------------------------------------------------------
 # 4. Route handlers
@@ -475,7 +473,6 @@ def _route_dashboard(start_response):
     except Exception as e:
         return _json_response(start_response, {"error": str(e)}, status="500 Internal Server Error")
 
-
 def _route_prices(start_response, query):
     params = parse_qs(query or "")
     syms = params.get("symbols", [""])[0].split(",")
@@ -483,16 +480,14 @@ def _route_prices(start_response, query):
     prices = _batch_live_prices(syms)
     return _json_response(start_response, {"prices": prices, "ts": int(time.time())})
 
-
 def _route_health(start_response):
     return _json_response(start_response, {"ok": True, "ts": int(time.time())})
-
 
 def _route_dashboard_html(start_response):
     if not os.path.exists(_HTML_PATH):
         return _html_response(
             start_response,
-            "<h1>Dashboard not found</h1><p>Expected at: " + _HTML_PATH + "</p>",
+            "<h2>Dashboard not found</h2><p>Expected at: " + _HTML_PATH + "</p>",
             status="404 Not Found",
         )
     try:
@@ -500,8 +495,7 @@ def _route_dashboard_html(start_response):
             body = f.read()
         return _html_response(start_response, body)
     except Exception as e:
-        return _html_response(start_response, f"<h1>Error</h1><pre>{e}</pre>", status="500 Internal Server Error")
-
+        return _html_response(start_response, f"<h2>Error</h2><pre>{e}</pre>", status="500 Internal Server Error")
 
 # ----------------------------------------------------------------
 # 5. Mount helper
