@@ -95,11 +95,11 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
     dot = "🟢" if is_bullish else "🔴"
     dir_label = "LONG 📈" if is_bullish else "SHORT 📉"
     if "Sweep" in strat and fvg_zone:
-        header = f"{dot} *FVG FILL — {strat}*"
+        header = f"{dot} *FVG Fill · {symbol}*"
     elif "Sweep" in strat:
-        header = f"{dot} *SWEEP SIGNAL — {strat}*"
+        header = f"{dot} *4H Sweep · {symbol}*"
     else:
-        header = f"{dot} *UT BOT SIGNAL — {strat}*"
+        header = f"{dot} *{strat} · {symbol}*"
     curr = _currency(symbol)
     fvg_line = ""
     if fvg_zone and "Sweep" in strat:
@@ -204,7 +204,7 @@ def msg_guide():
         f"├ `/balance` — Virtual account balances\n"
         f"├ `/clear` — Reset all to ₹1,00,000\n"
         f"├ `/indi1` — Diagnose Strategy 1 (Sweep)\n"
-        f"├ `/indi2` — Diagnose Strategy 2 (UT Bot)\n"
+        f"├ `/indi2` — Diagnose Strategy 2 (TrendPulse)\n"
         f"├ `/pending` — Show sweep setups waiting for FVG\n"
         f"├ `/risk` — Exposure, capital at risk & R-multiples\n"
         f"├ `/weekly` — Preview the weekly performance digest\n"
@@ -425,12 +425,11 @@ def get_price(symbol):
             if r.status_code == 200:
                 p = float(r.json()["bitcoin"]["usd"])
                 _price_cache[symbol] = (p, now)
-                print(f"[PRICE] BTC via CoinGecko: ${p:,.2f}")
                 return p
         except Exception as e:
             print(f"[CRYPTO] CoinGecko error: {e}")
     if symbol == "GC=F":
-        for gold_sym in ["GC=F", "GLD"]:
+        for gold_sym in ["GC=F", "GLD", "IAU"]:
             try:
                 df = yf_download(gold_sym, "1d", "1m")
                 if df is not None and not df.empty:
@@ -442,12 +441,24 @@ def get_price(symbol):
                 continue
         print("[PRICE] All gold symbols failed")
         return None
-    df = yf_download(symbol, "1d", "1m")
-    if df is None or df.empty:
-        return None
-    p = float(df["Close"].iloc[-1])
-    _price_cache[symbol] = (p, now)
-    return p
+    if symbol.endswith(".NS") or "NSE" in symbol:
+        try:
+            df = yf_download(symbol, "1d", "1m")
+            if df is not None and not df.empty:
+                p = float(df["Close"].iloc[-1])
+                _price_cache[symbol] = (p, now)
+                return p
+        except Exception:
+            return None
+    try:
+        df = yf_download(symbol, "1d", "1m")
+        if df is not None and not df.empty:
+            p = float(df["Close"].iloc[-1])
+            _price_cache[symbol] = (p, now)
+            return p
+    except Exception:
+        pass
+    return None
 
 def calc_atr(df, period=10):
     hl = df["High"] - df["Low"]
@@ -462,6 +473,25 @@ def get_rsi(df, period=14):
     l = (-d.clip(upper=0)).rolling(period).mean()
     rs = g / l.replace(0, np.nan)
     return 100 - (100 / (1 + rs))
+
+def fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=200):
+    """Fallback OHLCV fetch for BTC when Yahoo blocks Render."""
+    try:
+        url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
+        r = requests.get(url, timeout=15)
+        data = r.json()
+        df = pd.DataFrame(data, columns=[
+            "Open time", "Open", "High", "Low", "Close", "Volume",
+            "Close time", "Quote asset volume", "Number of trades",
+            "Taker buy base asset volume", "Taker buy quote asset volume", "Ignore"
+        ])
+        df["Open time"] = pd.to_datetime(df["Open time"], unit="ms")
+        df.set_index("Open time", inplace=True)
+        df = df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        return df
+    except Exception as e:
+        print(f"[BINANCE] Error: {e}")
+        return None
 
 def check_sweep(ticker):
     try:
@@ -686,7 +716,7 @@ def manage_pending_sweeps():
                             pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                             continue
-                    execute(sym, p["mtype"], p.get("target_account", "sweep_4h"), "Sweep + Engulfing",
+                    execute(sym, p["mtype"], p.get("target_account", "sweep_4h"), "4H Sweep",
                             p["direction"], live, fvg_entry["sl"], 0,
                             p["sweep_close_ts"], fvg_entry=fvg_entry)
                     print(f"[FVG FILL] {sym} {p['direction']} @ {live}")
@@ -700,80 +730,122 @@ def manage_pending_sweeps():
             alert_error("Pending Sweeps Manager", e)
         time.sleep(90)
 
-def check_ut(ticker, kv=2):
+def calc_macd(series, fast=12, slow=26, signal=9):
+    ema_fast = series.ewm(span=fast, adjust=False).mean()
+    ema_slow = series.ewm(span=slow, adjust=False).mean()
+    macd_line = ema_fast - ema_slow
+    signal_line = macd_line.ewm(span=signal, adjust=False).mean()
+    return macd_line, signal_line
+
+
+def check_trendpulse(ticker, mtype):
     try:
-        df1h = yf_download(ticker, "5d", "1h")
-        df15 = yf_download(ticker, "3d", "15m")
-        if df1h is None or len(df1h) < 20 or df15 is None or len(df15) < 40:
-            print(f"[WARN] UT {ticker}: no data")
+        df_1h = yf_download(ticker, "10d", "1h")
+        if df_1h is None and ticker == "BTC-USD":
+            df_1h = fetch_binance_klines("BTCUSDT", "1h", 200)
+        if df_1h is None or len(df_1h) < 50:
+            print(f"[TRENDPULSE] {ticker}: insufficient 1H data")
             return None
-        df1h["xATR"] = calc_atr(df1h, 1)
-        df1h["nLoss"] = kv * df1h["xATR"]
-        src = df1h["Close"].values
-        nl = df1h["nLoss"].values
-        ts_arr = np.zeros(len(df1h))
-        for i in range(1, len(df1h)):
-            pts, ps = ts_arr[i-1], src[i-1]
-            if src[i] > pts and ps > pts:
-                ts_arr[i] = max(pts, src[i] - nl[i])
-            elif src[i] < pts and ps < pts:
-                ts_arr[i] = min(pts, src[i] + nl[i])
-            elif src[i] > pts:
-                ts_arr[i] = src[i] - nl[i]
-            else:
-                ts_arr[i] = src[i] + nl[i]
-        i = len(df1h) - 2
-        buy = src[i] > ts_arr[i] and src[i-1] <= ts_arr[i-1]
-        sell = src[i] < ts_arr[i] and src[i-1] >= ts_arr[i-1]
-        df15["EMA50"] = df15["Close"].ewm(span=50, adjust=False).mean()
-        m15c = float(df15["Close"].iloc[-2])
-        m15e = float(df15["EMA50"].iloc[-2])
-        ts = int(df1h.index[-2].timestamp() * 1000)
-        atr = float(df1h["xATR"].iloc[i])
-        if buy and m15c > m15e:
-            print(f"[UT] {ticker} BULLISH @ {float(src[i]):.4f} | 15m EMA50: {m15e:.4f}")
-            return ("BULLISH", float(src[i]), atr, ts)
-        if sell and m15c < m15e:
-            print(f"[UT] {ticker} BEARISH @ {float(src[i]):.4f} | 15m EMA50: {m15e:.4f}")
-            return ("BEARISH", float(src[i]), atr, ts)
+        
+        df_4h = df_1h.resample("4h").agg({
+            "Open": "first", "High": "max", "Low": "min", "Close": "last"
+        }).dropna()
+        if len(df_4h) < 15:
+            return None
+        
+        df_4h["EMA50"] = df_4h["Close"].ewm(span=50, adjust=False).mean()
+        df_4h["ATR"] = calc_atr(df_4h, 14)
+        
+        htf_close = float(df_4h["Close"].iloc[-2])
+        htf_ema50 = float(df_4h["EMA50"].iloc[-2])
+        htf_atr = float(df_4h["ATR"].iloc[-2])
+        
+        atr_pct = (htf_atr / htf_close) * 100
+        min_atr_pct = 0.05 if mtype == "Crypto" else 0.03
+        if atr_pct < min_atr_pct:
+            print(f"[TRENDPULSE] {ticker}: ATR too low ({atr_pct:.3f}%), skipping")
+            return None
+        
+        df_1h["EMA20"] = df_1h["Close"].ewm(span=20, adjust=False).mean()
+        df_1h["RSI"] = get_rsi(df_1h, 14)
+        df_1h["ATR"] = calc_atr(df_1h, 14)
+        
+        macd_line, signal_line = calc_macd(df_1h["Close"])
+        
+        m1_close = float(df_1h["Close"].iloc[-2])
+        m1_ema20 = float(df_1h["EMA20"].iloc[-2])
+        m1_rsi = float(df_1h["RSI"].iloc[-2])
+        m1_atr = float(df_1h["ATR"].iloc[-2])
+        
+        macd_curr = float(macd_line.iloc[-2])
+        macd_prev = float(macd_line.iloc[-3])
+        signal_curr = float(signal_line.iloc[-2])
+        signal_prev = float(signal_line.iloc[-3])
+        
+        ts = int(df_1h.index[-2].timestamp() * 1000)
+        
+        if htf_close > htf_ema50:
+            macd_cross_up = (macd_prev <= signal_prev) and (macd_curr > signal_curr)
+            rsi_ok = m1_rsi > 50
+            price_ok = m1_close > m1_ema20
+            if macd_cross_up and rsi_ok and price_ok:
+                entry = m1_close
+                sl = entry - m1_atr * 1.5
+                tp = entry + m1_atr * 3.0
+                print(f"[TRENDPULSE] {ticker} BULLISH @ {entry:.4f} | 4H EMA: {htf_ema50:.4f} | RSI: {m1_rsi:.1f}")
+                return ("BULLISH", entry, m1_atr, ts)
+        
+        if htf_close < htf_ema50:
+            macd_cross_down = (macd_prev >= signal_prev) and (macd_curr < signal_curr)
+            rsi_ok = m1_rsi < 50
+            price_ok = m1_close < m1_ema20
+            if macd_cross_down and rsi_ok and price_ok:
+                entry = m1_close
+                sl = entry + m1_atr * 1.5
+                tp = entry - m1_atr * 3.0
+                print(f"[TRENDPULSE] {ticker} BEARISH @ {entry:.4f} | 4H EMA: {htf_ema50:.4f} | RSI: {m1_rsi:.1f}")
+                return ("BEARISH", entry, m1_atr, ts)
+        
+        return None
+        
     except Exception as e:
-        print(f"[ERR] UT {ticker}: {e}")
+        print(f"[ERR] TrendPulse {ticker}: {e}")
+        import traceback
+        traceback.print_exc()
         return None
 
-def get_15m_ut_direction(ticker, kv=2):
+def get_trendpulse_exit(ticker, trade_type):
     try:
-        df = yf_download(ticker, "1d", "15m")
-        if df is None or len(df) < 20:
+        df = yf_download(ticker, "2d", "1h")
+        if df is None and ticker == "BTC-USD":
+            df = fetch_binance_klines("BTCUSDT", "1h", 100)
+        if df is None or len(df) < 30:
             return None
-        df["xATR"] = calc_atr(df, 1)
-        df["nLoss"] = kv * df["xATR"]
-        src = df["Close"].values
-        nl = df["nLoss"].values
-        ts_arr = np.zeros(len(df))
-        for i in range(1, len(df)):
-            pts, ps = ts_arr[i-1], src[i-1]
-            if src[i] > pts and ps > pts:
-                ts_arr[i] = max(pts, src[i] - nl[i])
-            elif src[i] < pts and ps < pts:
-                ts_arr[i] = min(pts, src[i] + nl[i])
-            elif src[i] > pts:
-                ts_arr[i] = src[i] - nl[i]
-            else:
-                ts_arr[i] = src[i] + nl[i]
-        i = len(df) - 2
-        if src[i] > ts_arr[i]:
-            return "BULLISH"
-        elif src[i] < ts_arr[i]:
-            return "BEARISH"
+        
+        macd_line, signal_line = calc_macd(df["Close"])
+        
+        macd_curr = float(macd_line.iloc[-2])
+        signal_curr = float(signal_line.iloc[-2])
+        macd_prev = float(macd_line.iloc[-3])
+        signal_prev = float(signal_line.iloc[-3])
+        
+        if trade_type == "LONG":
+            if macd_prev >= signal_prev and macd_curr < signal_curr:
+                return "EXIT"
+        else:
+            if macd_prev <= signal_prev and macd_curr > signal_curr:
+                return "EXIT"
+        
         return None
+        
     except Exception as e:
-        print(f"[ERR] 15m UT direction {ticker}: {e}")
+        print(f"[ERR] TrendPulse exit {ticker}: {e}")
         return None
 
 def calc_sl_tp(sig, entry, atr):
     if "BULLISH" in sig:
-        return entry - atr * 2, entry + atr * 4
-    return entry + atr * 2, entry - atr * 4
+        return entry - atr * 1.5, entry + atr * 3.0
+    return entry + atr * 1.5, entry - atr * 3.0
 
 def calc_qty(account, entry, sl):
     with _lock:
@@ -872,30 +944,29 @@ def monitor():
                 with _lock:
                     _price_cache[t["symbol"]] = (live, time.time())
                 long = t["type"] == "LONG"
-                if t["strat"] == "UT Bot Signals":
+                if t["strat"] == "TrendPulse 1H":
                     now = time.time()
                     last_check = _ut_15m_cache.get(t["symbol"], (None, 0))[1]
-                    if now - last_check >= 60:
-                        ut_dir = get_15m_ut_direction(t["symbol"])
-                        if ut_dir:
-                            _ut_15m_cache[t["symbol"]] = (ut_dir, now)
-                            if (long and ut_dir == "BEARISH") or (not long and ut_dir == "BULLISH"):
-                                pnl = (live - t["entry"]) * t["qty"] * (1 if long else -1)
-                                with _lock:
-                                    accounts[t["account"]]["balance"] += pnl
-                                    t["exit_price"] = live
-                                    t["pnl"] = float(pnl)
-                                    t["result"] = "FLIP EXIT"
-                                    t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
-                                    t["closed_at"] = datetime.now(IST).isoformat()
-                                    to_close.append(t)
-                                    save_json(ACCOUNTS_FILE, accounts)
-                                    history.append(t)
-                                    save_json(HISTORY_FILE, history)
-                                    bal = accounts[t["account"]]["balance"]
+                    if now - last_check >= 120:
+                        exit_sig = get_trendpulse_exit(t["symbol"], t["type"])
+                        _ut_15m_cache[t["symbol"]] = (exit_sig, now)
+                        if exit_sig == "EXIT":
+                            pnl = (live - t["entry"]) * t["qty"] * (1 if long else -1)
+                            with _lock:
+                                accounts[t["account"]]["balance"] += pnl
+                                t["exit_price"] = live
+                                t["pnl"] = float(pnl)
+                                t["result"] = "MACD EXIT"
+                                t["close_time"] = datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
+                                t["closed_at"] = datetime.now(IST).isoformat()
+                                to_close.append(t)
+                                save_json(ACCOUNTS_FILE, accounts)
+                                history.append(t)
+                                save_json(HISTORY_FILE, history)
+                                bal = accounts[t["account"]]["balance"]
                                 safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, pnl > 0), parse_mode="Markdown")
-                                print(f"[FLIP EXIT] {t['symbol']} {t['type']} @ {live} P/L: {pnl:+.2f}")
-                                continue
+                                print(f"[TRENDPULSE EXIT] {t['symbol']} {t['type']} @ {live} P/L: {pnl:+.2f}")
+                            continue
                 if long:
                     pct = (live - t["entry"]) / t["entry"] * 100
                 else:
@@ -971,10 +1042,10 @@ def scanner():
                         continue
                 is_nse = "^NSE" in symbol or symbol.endswith(".NS")
                 if not is_nse:
-                    ut = check_ut(symbol)
-                    if ut:
+                    tp = check_trendpulse(symbol, mtype)
+                    if tp:
                         target = "ny_session" if is_ny_session() else "macro"
-                        execute(symbol, mtype, target, "UT Bot Signals", ut[0], ut[1], ut[2], ut[3])
+                        execute(symbol, mtype, target, "TrendPulse 1H", tp[0], tp[1], tp[2], tp[3])
                 if not is_nse:
                     sweep = check_sweep(symbol)
                     if sweep:
@@ -1459,10 +1530,10 @@ def cmd_check(m):
     def run():
         signals, neutral = [], []
         for symbol, mtype in MONITORED:
-            ut = check_ut(symbol)
+            tp = check_trendpulse(symbol, mtype)
             sw = check_sweep(symbol)
-            if ut:
-                signals.append(f"🟢 `{symbol}` ➔ UT Bot *{ut[0]}*")
+            if tp:
+                signals.append(f"🟢 `{symbol}` ➔ TrendPulse 1H *{tp[0]}*")
             elif sw:
                 signals.append(f"⏳ `{symbol}` ➔ Sweep detected (waiting for FVG)")
             else:
@@ -1655,13 +1726,13 @@ def cmd_indi1(m):
 @bot.message_handler(commands=["indi2"])
 def cmd_indi2(m):
     chat_id = m.chat.id
-    safe_send(chat_id, "🟣 *Diagnosing Strategy 2 (UT Bot)...*")
+    safe_send(chat_id, "🟣 *Diagnosing Strategy 2 (TrendPulse 1H)...*")
     def run():
         out = []
-        for symbol, _ in MONITORED:
+        for symbol, mtype in MONITORED:
             if not is_market_open(symbol):
                 continue
-            r = check_ut(symbol)
+            r = check_trendpulse(symbol, mtype)
             out.append(f"{'🟢' if r else '⚪'} `{symbol}` → {r[0] if r else 'No Setup'}")
             time.sleep(1)
         safe_send(chat_id, "🟣 *STRATEGY 2 RESULTS*\n" + "\n".join(out), parse_mode="Markdown")
