@@ -1031,6 +1031,12 @@ function initBadges() {
   }
   badgeInitDone = true;
 }
+function getBadgeCount(tab) {
+  const current = getTabCount(tab);
+  const st = getBadgeState();
+  const baseline = st.baseline[tab] || 0;
+  return Math.max(0, current - baseline);
+}
 function updateBadges() {
   updateBadge('badgeTrades', getBadgeCount('trades'));
   updateBadge('badgeSignals', getBadgeCount('signals'));
@@ -1400,12 +1406,17 @@ async function fetchData() {
     if (data.error) throw new Error(data.error);
     state = data;
     renderAll();
-    initBadges();
-    updateBadges();
+    try {
+      initBadges();
+      updateBadges();
+    } catch (badgeErr) {
+      console.error('[Dashboard] Badge error (non-critical):', badgeErr);
+    }
   } catch (e) {
     console.error('[Dashboard] Fetch error:', e);
   }
 }
+
 
 function renderAll() {
   renderOverview();
