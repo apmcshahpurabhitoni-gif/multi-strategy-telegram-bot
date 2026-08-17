@@ -152,6 +152,15 @@ The MOCK fallback is intentional - it lets you see the dashboard layout even whe
 - Verify `/api/dashboard` returns valid JSON (not an error)
 - Clear browser cache
 
+### `/api/dashboard` returns 500 when a trade is open
+- Fixed in the latest `dashboard_api.py` — `_build_risk()` previously used `entry` before assignment inside a one-line tuple unpack. If you still see this, re-copy `dashboard_api.py` from this repo and restart.
+
+### Live P/L column shows "—"
+- Fixed in the latest `dashboard/index.html` — the frontend was reading `t.pnl` but the API returns `pnl_inr`. Redeploy the updated dashboard file.
+
+### "📈 Chart" Telegram button does nothing
+- Fixed in the latest `main.py` — the callback handler now handles `chart_{symbol}` and sends a 5-day 1H chart image.
+
 ### Server is sleeping (Render Free Tier)
 - Visit https://multi-strategy-telegram-bot-1.onrender.com/ping
 - Wait 30 seconds for the server to wake up

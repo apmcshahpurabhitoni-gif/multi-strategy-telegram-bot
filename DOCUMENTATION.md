@@ -319,9 +319,24 @@ def calc_qty(account, entry, sl):
 
 | Callback | Action |
 |----------|--------|
-| `chart_{symbol}` | Generate price chart |
-| `mute_{symbol}` | Mute symbol |
+| `chart_{symbol}` | Generate and send a 5-day 1H price chart (`send_chart()` — matplotlib, runs in a daemon thread, guarded by `_chart_lock`) |
+| `mute_{symbol}` | Mute symbol (confirms via callback toast) |
 | `unmute_{symbol}` | Unmute symbol |
+
+---
+
+## 6.1 Web Dashboard
+
+Served from `/dashboard` (static `dashboard/index.html`) with JSON APIs:
+
+| Endpoint | Method | Description |
+|----------|--------|-------------|
+| `/api/dashboard` | GET | Full snapshot: accounts, live trades (incl. `id`, `pnl_inr`, `market`, `opened`), today's signals, last 15 history records + `history_total`, pending sweeps (with FVG zone), news, equity curve, risk (incl. per-trade `open_trades_risk`), `strategy_stats` |
+| `/api/prices?symbols=a,b,c` | GET | Batch live prices |
+| `/api/close-trade` | POST | Body `{"trade_id": "..."}` → calls `force_close_trade(trade_id, reason="Dashboard")` |
+| `/api/health` | GET | Liveness probe |
+
+The dashboard renders every field above: live trades have a per-row **Close** button, Overview includes **Strategy Performance** and **Open Trade Risk (R-multiples)** cards, signals show running P/L, pending setups show the FVG zone, and a last-updated timestamp (with cache age) is shown on Overview.
 
 ---
 

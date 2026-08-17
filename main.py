@@ -5,6 +5,7 @@ import threading
 import gc
 from datetime import datetime, timedelta
 from io import BytesIO
+import io
 from wsgiref.simple_server import make_server, WSGIServer
 from socketserver import ThreadingMixIn
 
@@ -739,12 +740,44 @@ def cmd_newspause(m):
     elif len(parts) > 1 and parts[1].lower() in ("on", "1"): _news_pause_enabled = True; safe_send(m.chat.id, "▶️ News Pause ENABLED", parse_mode="Markdown")
     else: safe_send(m.chat.id, f"News Pause: {'ON ✅' if _news_pause_enabled else 'OFF 🛑'}", parse_mode="Markdown")
 
+def send_chart(symbol, chat_id):
+    """Generate and send a 5-day 1H price chart for a symbol."""
+    with _chart_lock:
+        try:
+            df = yf_download(symbol, "5d", "1h")
+            if df is None or df.empty:
+                safe_send(chat_id, f"⚠️ No chart data available for `{symbol}`", parse_mode="Markdown"); return
+            close = df["Close"]
+            if hasattr(close, "columns"): close = close.iloc[:, 0]
+            close = close.dropna()
+            if close.empty:
+                safe_send(chat_id, f"⚠️ No chart data available for `{symbol}`", parse_mode="Markdown"); return
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.plot(close.index, close.values, color="#7c6cff", linewidth=1.4)
+            ax.set_title(f"{symbol} — 5D / 1H", fontsize=12)
+            ax.grid(alpha=0.2)
+            ax.tick_params(labelsize=8)
+            fig.tight_layout()
+            buf = io.BytesIO()
+            fig.savefig(buf, format="png", dpi=110)
+            plt.close(fig)
+            buf.seek(0)
+            bot.send_photo(chat_id, buf, caption=f"📈 `{symbol}` — last 5 days (1H)", parse_mode="Markdown")
+        except Exception as e:
+            print(f"[ERR] send_chart {symbol}: {e}")
+            safe_send(chat_id, f"⚠️ Failed to generate chart for `{symbol}`", parse_mode="Markdown")
+
 @bot.callback_query_handler(func=lambda call: True)
 def on_callback(call):
     try:
         if call.data.startswith("mute_"):
             with _lock: muted_assets.add(call.data.split("_", 1)[1])
-        bot.answer_callback_query(call.id)
+            bot.answer_callback_query(call.id, text=f"🔇 {call.data.split('_', 1)[1]} muted")
+        elif call.data.startswith("chart_"):
+            bot.answer_callback_query(call.id, text="📈 Generating chart...")
+            threading.Thread(target=send_chart, args=(call.data.split("_", 1)[1], call.message.chat.id), daemon=True).start()
+        else:
+            bot.answer_callback_query(call.id)
     except Exception: pass
 
 if __name__ == "__main__":

@@ -106,7 +106,10 @@ def _build_equity_curve(history, starting_equity=DEFAULT_STARTING_EQUITY, days=6
 def _build_risk(live_trades_view, equity_curve):
     total_exposure, total_risk_inr, trades_risk = 0.0, 0.0, []
     for t in live_trades_view:
-        entry, sl, cur, qty = float(t.get("entry", 0) or 0), float(t.get("sl", 0) or 0), float(t.get("current", entry) or entry), float(t.get("qty", 0) or 0)
+        entry = float(t.get("entry", 0) or 0)
+        sl = float(t.get("sl", 0) or 0)
+        cur = float(t.get("current", 0) or entry)
+        qty = float(t.get("qty", 0) or 0)
         is_long = t.get("direction") == "LONG"
         exposure = abs(entry * qty); total_exposure += exposure
         risk_per_unit = abs(entry - sl) if sl else 0.0
@@ -218,7 +221,7 @@ def _build_snapshot():
         data["win_rate"] = round((data["wins"] / total * 100), 1) if total > 0 else 0
         data["avg_pnl"] = round((data["pnl"] / total), 2) if total > 0 else 0
 
-    return {"generated_at": now.strftime("%Y-%m-%d %H:%M:%S IST"), "accounts": accounts_view, "live_trades": live_trades_view, "today_signals": today_signals, "history": last_history, "pending": pending_view, "news_raw": news, "equity_curve": _build_equity_curve(history), "risk": _build_risk(live_trades_view, _build_equity_curve(history)), "strategy_stats": strategy_stats}
+    return {"generated_at": now.strftime("%Y-%m-%d %H:%M:%S IST"), "accounts": accounts_view, "live_trades": live_trades_view, "today_signals": today_signals, "history": last_history, "history_total": len(history), "pending": pending_view, "news_raw": news, "equity_curve": _build_equity_curve(history), "risk": _build_risk(live_trades_view, _build_equity_curve(history)), "strategy_stats": strategy_stats}
 
 def _get_snapshot_cached():
     now = time.time()

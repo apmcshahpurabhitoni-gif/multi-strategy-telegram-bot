@@ -16,7 +16,7 @@
 | 📊 **TrendPulse 1H** | Multi-timeframe momentum strategy (4H trend + 1H MACD/RSI entry) |
 | 🧹 **4H Sweep + FVG** | Smart Money Concepts — liquidity sweep detection with Fair Value Gap fills |
 | 📡 **Telegram Alerts** | Instant signal, entry, exit, and news notifications |
-| 🌐 **Web Dashboard** | Live trades, balances, P&L, and performance charts |
+| 🌐 **Web Dashboard** | Live trades (with one-tap force close), balances, P&L, strategy stats, R-multiples, and equity charts |
 | 📰 **Economic Calendar** | Auto-fetches high-impact news + 30-min pre-release warnings |
 | 💰 **4 Virtual Accounts** | Macro, Nifty, NY Session, Sweep 4H — each with independent risk |
 | 🛡️ **Risk Management** | 2% risk per trade, trailing stops, max drawdown tracking |
@@ -106,6 +106,23 @@ SL:         Sweep extreme
 TP:         2× risk
 Expiry:     24 hours if no fill
 ```
+
+---
+
+## 🌐 Web Dashboard
+
+Open `/dashboard` on your deployed URL. Six tabs:
+
+| Tab | What You Get |
+|-----|--------------|
+| 🏠 **Overview** | Account balances, equity curve, exposure/risk/max drawdown, **Strategy Performance** (win rate, W/L, avg P/L per strategy), **Open Trade Risk** (per-trade R-multiples), quick status, last-updated timestamp |
+| 🔥 **Trades** | Live open trades with entry/current price, live P/L (₹), progress to TP, market, opened time, and a **Close button** (force-closes at market via `/api/close-trade`) + pending sweep setups with FVG zones and expiry |
+| 📡 **Signals** | Last 24h signals grouped by day, with strategy, status, and running P/L |
+| 📜 **History** | Closed trades grouped by day with daily totals and W/L — badge shows "15 of N" total |
+| 📈 **Nifty** | Nifty 50 + Bank Nifty and 15 NSE stocks (lazy-loaded, error state with retry) |
+| 📰 **News** | Economic calendar grouped by day with ET → IST times and impact tags |
+
+**API endpoints:** `/api/dashboard` (snapshot), `/api/prices?symbols=...`, `/api/close-trade` (POST), `/api/health`
 
 ---
 
