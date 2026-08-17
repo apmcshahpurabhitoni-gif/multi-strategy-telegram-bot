@@ -121,8 +121,9 @@ Open `/dashboard` on your deployed URL. Six tabs:
 | 📜 **History** | Closed trades grouped by day with daily totals and W/L — badge shows "15 of N" total |
 | 📈 **Nifty** | Nifty 50 + Bank Nifty and 15 NSE stocks (lazy-loaded, error state with retry) |
 | 📰 **News** | Economic calendar grouped by day with ET → IST times and impact tags |
+| 🧪 **Backtest** | Run **TrendPulse 1H** or **4H Sweep + FVG** on any symbol over 30–180 days — win rate, profit factor, Sharpe, max drawdown, and a full trade list |
 
-**API endpoints:** `/api/dashboard` (snapshot), `/api/prices?symbols=...`, `/api/close-trade` (POST), `/api/health`
+**API endpoints:** `/api/dashboard` (snapshot), `/api/prices?symbols=...`, `/api/close-trade` (POST), `/api/backtest?symbol=BTC-USD&strategy=trendpulse&days=60`, `/api/health`
 
 ---
 

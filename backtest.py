@@ -125,7 +125,9 @@ class BacktestEngine:
                 mc, mp, sc, sp = self._safe_float(df_1h["MACD"].iloc[i-1]), self._safe_float(df_1h["MACD"].iloc[i-2]), self._safe_float(df_1h["MACD_SIGNAL"].iloc[i-1]), self._safe_float(df_1h["MACD_SIGNAL"].iloc[i-2])
 
                 if htf_close > htf_ema50 and mp <= sp and mc > sc and 50 < m1_rsi < 80 and m1_close > m1_ema20:
-                    sl, tp, qty = m1_close - m1_atr * 1.5, m1_close + m1_atr * 3.0, self._calc_qty(balance, m1_close, sl)
+                    sl = m1_close - m1_atr * 1.5
+                    tp = m1_close + m1_atr * 3.0
+                    qty = self._calc_qty(balance, m1_close, sl)
                     if qty > 0: in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = True, m1_close, sl, tp, qty, "LONG", i
                 elif htf_close < htf_ema50 and mp >= sp and mc < sc and 20 < m1_rsi < 50 and m1_close < m1_ema20:
                     sl, tp, qty = m1_close + m1_atr * 1.5, m1_close - m1_atr * 3.0, self._calc_qty(balance, m1_close, sl)

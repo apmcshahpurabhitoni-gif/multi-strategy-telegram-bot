@@ -334,7 +334,10 @@ Served from `/dashboard` (static `dashboard/index.html`) with JSON APIs:
 | `/api/dashboard` | GET | Full snapshot: accounts, live trades (incl. `id`, `pnl_inr`, `market`, `opened`), today's signals, last 15 history records + `history_total`, pending sweeps (with FVG zone), news, equity curve, risk (incl. per-trade `open_trades_risk`), `strategy_stats` |
 | `/api/prices?symbols=a,b,c` | GET | Batch live prices |
 | `/api/close-trade` | POST | Body `{"trade_id": "..."}` → calls `force_close_trade(trade_id, reason="Dashboard")` |
+| `/api/backtest` | GET | `?symbol=BTC-USD&strategy=trendpulse\|sweep&days=60` → runs `backtest.BacktestEngine` server-side and returns metrics + trade list |
 | `/api/health` | GET | Liveness probe |
+
+The **Backtest tab** in the dashboard lets you run both strategies against historical 1H data directly from the browser — symbol, strategy, and lookback period are selectable, and results show total P/L, return %, win rate, profit factor, Sharpe, max drawdown, average win/loss, and up to 50 individual trades.
 
 The dashboard renders every field above: live trades have a per-row **Close** button, Overview includes **Strategy Performance** and **Open Trade Risk (R-multiples)** cards, signals show running P/L, pending setups show the FVG zone, and a last-updated timestamp (with cache age) is shown on Overview.
 

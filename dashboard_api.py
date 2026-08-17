@@ -258,10 +258,33 @@ def _route_close_trade(start_response, environ):
         return _json_response(start_response, {"success": success, "message": message})
     except Exception as e: return _json_response(start_response, {"success": False, "error": str(e)}, status="500 Internal Server Error")
 
+def _route_backtest(start_response, environ):
+    try:
+        q = parse_qs(environ.get("QUERY_STRING", ""))
+        symbol = (q.get("symbol", [""])[0] or "").strip().upper()
+        strategy = (q.get("strategy", ["trendpulse"])[0] or "trendpulse").lower()
+        try: days = int(q.get("days", ["30"])[0] or 30)
+        except Exception: days = 30
+        days = max(7, min(days, 730))
+        if not symbol: return _json_response(start_response, {"error": "symbol required"}, status="400 Bad Request")
+        try:
+            from backtest import BacktestEngine
+        except Exception as e:
+            return _json_response(start_response, {"error": f"backtest module unavailable: {e}"}, status="500 Internal Server Error")
+        eng = BacktestEngine()
+        if strategy == "sweep": res = eng.backtest_sweep(symbol, days)
+        else: res = eng.backtest_trendpulse(symbol, days)
+        if not isinstance(res, dict): res = {"error": "backtest failed"}
+        res["symbol"], res["strategy"], res["days"] = symbol, strategy, days
+        return _json_response(start_response, res)
+    except Exception as e:
+        return _json_response(start_response, {"error": str(e)}, status="500 Internal Server Error")
+
 def register_routes(path, start_response, environ):
     method = environ.get("REQUEST_METHOD", "GET")
     if path in ("/dashboard", "/dashboard/"): return _html_response(start_response, open(_HTML_PATH, "rb").read())
     if path == "/api/dashboard": return _route_dashboard(start_response)
+    if path.startswith("/api/backtest"): return _route_backtest(start_response, environ)
     if path.startswith("/api/prices"): return _json_response(start_response, {"prices": _batch_live_prices(parse_qs(environ.get("QUERY_STRING", "")).get("symbols", [""])[0].split(",")), "ts": int(time.time())})
     if path == "/api/health": return _json_response(start_response, {"ok": True, "ts": int(time.time())})
     if path == "/api/close-trade" and method == "POST": return _route_close_trade(start_response, environ)
