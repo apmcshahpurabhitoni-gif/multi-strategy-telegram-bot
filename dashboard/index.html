@@ -239,7 +239,7 @@
     font-family: 'JetBrains Mono', monospace;
     font-weight: 600; font-size: 11px;
   }
-  .account-pnl.pos { color: var(--accent); }
+  .account-pnl.pos { color: var(--long); }
   .account-pnl.neg { color: var(--danger); }
   .account-status {
     width: 6px; height: 6px; border-radius: 50%;
@@ -265,7 +265,7 @@
     overflow: hidden;
     text-overflow: ellipsis;
   }
-  .stat-value.pos { color: var(--accent); }
+  .stat-value.pos { color: var(--long); }
   .stat-value.neg { color: var(--danger); }
   .stat-label {
     font-size: 9px; font-weight: 500; text-transform: uppercase;
@@ -587,7 +587,7 @@
     font-weight: 600;
   }
   .mini-tag.pending { background: rgba(124, 108, 255, 0.15); color: var(--accent); }
-  .mini-tag.long { background: rgba(16, 185, 129, 0.15); color: var(--accent); }
+  .mini-tag.long { background: rgba(16, 185, 129, 0.15); color: var(--long); }
   .mini-tag.short { background: rgba(239, 68, 68, 0.15); color: var(--danger); }
   .mini-tag.closed { background: rgba(71, 85, 105, 0.15); color: var(--text-dim); }
   .skeleton {
@@ -637,6 +637,26 @@
   }
   .close-btn:hover { background: var(--danger); color: #fff; }
   .close-btn:active { transform: scale(0.94); }
+  .bt-form {
+    display: flex; flex-wrap: wrap; gap: 8px; align-items: center;
+  }
+  .bt-input {
+    background: var(--bg-elevated);
+    border: 1px solid var(--border);
+    color: var(--text);
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-family: 'JetBrains Mono', monospace;
+    flex: 1; min-width: 110px;
+  }
+  .bt-input:focus { outline: none; border-color: var(--accent); }
+  .bt-metrics {
+    display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px;
+  }
+  @media (min-width: 768px) {
+    .bt-metrics { grid-template-columns: repeat(6, 1fr); }
+  }
   .last-updated {
     font-size: 9px;
     color: var(--text-dim);
@@ -866,6 +886,44 @@
         <div class="card-empty"><span class="emoji">📰</span>Loading economic calendar...</div>
       </div>
     </div>
+
+    <div class="tab-page" id="tab-backtest">
+      <div class="card">
+        <div class="card-header">
+          <div class="card-title"><span class="icon">🧪</span> Run Backtest</div>
+        </div>
+        <div class="card-body">
+          <div class="bt-form">
+            <input type="text" id="btSymbol" class="bt-input" list="btSymbols" placeholder="Symbol e.g. BTC-USD, GC=F, RELIANCE.NS" value="BTC-USD">
+            <datalist id="btSymbols">
+              <option value="BTC-USD"></option>
+              <option value="GC=F"></option>
+              <option value="EURUSD=X"></option>
+              <option value="GBPUSD=X"></option>
+              <option value="USDJPY=X"></option>
+              <option value="^NSEI"></option>
+              <option value="RELIANCE.NS"></option>
+              <option value="HDFCBANK.NS"></option>
+              <option value="INFY.NS"></option>
+              <option value="TCS.NS"></option>
+            </datalist>
+            <select id="btStrategy" class="bt-input">
+              <option value="trendpulse">TrendPulse 1H</option>
+              <option value="sweep">4H Sweep + FVG</option>
+            </select>
+            <select id="btDays" class="bt-input">
+              <option value="30">30 days</option>
+              <option value="60" selected>60 days</option>
+              <option value="90">90 days</option>
+              <option value="180">180 days</option>
+            </select>
+            <button class="refresh-btn" id="btRunBtn" onclick="runBacktest()">▶ Run</button>
+          </div>
+          <div style="font-size:10px;color:var(--text-dim);margin-top:6px;">Runs on the server against historical 1H data · may take 15–60s</div>
+        </div>
+      </div>
+      <div id="btResults"></div>
+    </div>
   </div>
 
   <div class="tab-bar">
@@ -897,6 +955,10 @@
       <span class="tab-icon">📰</span>
       <span class="tab-label">News</span>
       <span class="tab-badge" id="badgeNews" style="display:none">0</span>
+    </button>
+    <button class="tab-btn" data-tab="backtest">
+      <span class="tab-icon">🧪</span>
+      <span class="tab-label">Backtest</span>
     </button>
   </div>
 
@@ -1516,6 +1578,82 @@ function renderStockGrid() {
         ${sweepHtml}
       </div>`;
   }).join('');
+}
+
+async function runBacktest() {
+  const symbol = (document.getElementById('btSymbol').value || '').trim();
+  const strategy = document.getElementById('btStrategy').value;
+  const days = document.getElementById('btDays').value;
+  const btn = document.getElementById('btRunBtn');
+  const out = document.getElementById('btResults');
+  if (!symbol) { showToast('Enter a symbol'); return; }
+  btn.disabled = true;
+  btn.classList.add('spinning');
+  out.innerHTML = '<div class="card"><div class="card-body"><div class="card-empty"><span class="emoji">⏳</span>Running backtest on ' + symbol + '… (this can take up to a minute)</div></div></div>';
+  try {
+    const res = await fetch('/api/backtest?symbol=' + encodeURIComponent(symbol) + '&strategy=' + encodeURIComponent(strategy) + '&days=' + encodeURIComponent(days));
+    const data = await res.json();
+    if (!res.ok || data.error) throw new Error(data.error || ('HTTP ' + res.status));
+    renderBacktestResults(data);
+  } catch (e) {
+    out.innerHTML = '<div class="card"><div class="card-body"><div class="card-empty"><span class="emoji">⚠️</span>Backtest failed: ' + (e.message || e) + '</div></div></div>';
+  } finally {
+    btn.disabled = false;
+    btn.classList.remove('spinning');
+  }
+}
+
+function renderBacktestResults(r) {
+  const out = document.getElementById('btResults');
+  const stratName = r.strategy === 'sweep' ? '4H Sweep + FVG' : 'TrendPulse 1H';
+  const pnl = parseFloat(r.total_pnl) || 0;
+  const ret = parseFloat(r.return_pct) || 0;
+  if (!r.total_trades) {
+    out.innerHTML = `<div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> ${r.symbol} · ${stratName} · ${r.days}d</div></div>
+      <div class="card-body"><div class="card-empty"><span class="emoji">📭</span>No trades triggered in this period</div></div></div>`;
+    return;
+  }
+  const metric = (label, val, cls) => `<div class="stat-box"><div class="stat-value ${cls || ''}">${val}</div><div class="stat-label">${label}</div></div>`;
+  let tradesHtml = `<table class="data-table"><thead><tr><th>#</th><th>Dir</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Exit Via</th></tr></thead><tbody>`;
+  (r.trades || []).forEach((t, i) => {
+    const tp = parseFloat(t.pnl) || 0;
+    tradesHtml += `<tr>
+      <td class="dim">${i + 1}</td>
+      <td class="${t.type === 'LONG' ? 'dir-long' : 'dir-short'}">${t.type || '—'}</td>
+      <td>${(parseFloat(t.entry) || 0).toFixed(2)}</td>
+      <td>${(parseFloat(t.exit) || 0).toFixed(2)}</td>
+      <td class="${tp >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtPnl(tp)}</td>
+      <td class="dim">${t.exit_reason || '—'}</td>
+    </tr>`;
+  });
+  tradesHtml += '</tbody></table>';
+  out.innerHTML = `
+    <div class="card">
+      <div class="card-header">
+        <div class="card-title"><span class="icon">🧪</span> ${r.symbol} · ${stratName} · ${r.days}d</div>
+        <div class="card-badge">${r.total_trades} trades</div>
+      </div>
+      <div class="card-body">
+        <div class="bt-metrics">
+          ${metric('Total P/L', fmtPnl(pnl), pnl >= 0 ? 'pos' : 'neg')}
+          ${metric('Return', (ret >= 0 ? '+' : '') + ret.toFixed(2) + '%', ret >= 0 ? 'pos' : 'neg')}
+          ${metric('Win Rate', (parseFloat(r.win_rate) || 0).toFixed(1) + '%')}
+          ${metric('W/L', (r.wins || 0) + ' / ' + (r.losses || 0))}
+          ${metric('Profit Factor', (parseFloat(r.profit_factor) || 0).toFixed(2))}
+          ${metric('Max DD', (parseFloat(r.max_drawdown_pct) || 0).toFixed(2) + '%', 'neg')}
+          ${metric('Avg Trade', fmtPnl(r.avg_trade || 0), (parseFloat(r.avg_trade) || 0) >= 0 ? 'pos' : 'neg')}
+          ${metric('Avg Win', fmtPnl(r.avg_win || 0), 'pos')}
+          ${metric('Avg Loss', fmtPnl(r.avg_loss || 0), 'neg')}
+          ${metric('Sharpe', (parseFloat(r.sharpe) || 0).toFixed(2))}
+          ${metric('Final Bal', fmtMoney(r.final_balance || 0), (parseFloat(r.final_balance) || 0) >= 100000 ? 'pos' : 'neg')}
+          ${metric('Start Bal', fmtMoney(100000))}
+        </div>
+      </div>
+    </div>
+    <div class="card">
+      <div class="card-header"><div class="card-title"><span class="icon">📋</span> Trades (first ${(r.trades || []).length})</div></div>
+      <div class="card-body" style="overflow-x:auto;">${tradesHtml}</div>
+    </div>`;
 }
 
 async function fetchData() {
