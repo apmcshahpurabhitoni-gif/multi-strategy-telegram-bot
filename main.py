@@ -79,7 +79,7 @@ _price_cache = {}
 IST = pytz.timezone("Asia/Kolkata")
 _sweep_cooldown = {}
 _ut_15m_cache = {}
-NEWS_CACHE = {"data": [], "last_fetch": 0}
+NEWS_CACHE = {"data": [], "last_fetch": 0, "initialized": False}
 
 _yf_symbol_cache = {} 
 _YF_SYMBOL_TTL = 30.0
@@ -519,14 +519,23 @@ def _iso_to_ist_dt(iso_str):
 
 def get_cached_news():
     global NEWS_CACHE
-    if time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
-        try:
-            print("[NEWS] Fetching fresh news...")
+    try:
+        # Force initial fetch if never initialized
+        if not NEWS_CACHE.get("initialized", False):
+            print("[NEWS] Initial news fetch triggered...")
+            NEWS_CACHE["data"] = fetch_news()
+            NEWS_CACHE["last_fetch"] = time.time()
+            NEWS_CACHE["initialized"] = True
+            print(f"[NEWS] Initialized with {len(NEWS_CACHE['data'])} news items")
+        elif time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
+            print("[NEWS] Fetching fresh news (cache expired)...")
             NEWS_CACHE["data"] = fetch_news()
             NEWS_CACHE["last_fetch"] = time.time()
             print(f"[NEWS] Cached {len(NEWS_CACHE['data'])} news items")
-        except Exception as e:
-            print(f"[NEWS] Failed to fetch news: {e}")
+    except Exception as e:
+        print(f"[NEWS] Failed to fetch news: {e}")
+        import traceback
+        traceback.print_exc()
     return NEWS_CACHE.get("data", [])
 
 def is_news_pause_active():
