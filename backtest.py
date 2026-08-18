@@ -1,6 +1,7 @@
 import json
 import time
 import os
+import base64  # <-- ADD THIS LINE
 import numpy as np
 import pandas as pd
 import yfinance as yf
