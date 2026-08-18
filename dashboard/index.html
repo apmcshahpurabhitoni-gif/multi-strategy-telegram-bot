@@ -319,7 +319,7 @@
   .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent-dim)); transition: width 0.5s ease; }
   .news-day-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); padding: 16px 0 8px 0; display: flex; align-items: center; gap: 8px; }
   .news-day-header:first-child { padding-top: 0; }
-  .news-item { background: var(--bg-card); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; transition: all 0.2s; }
+  .news-item { background: var(--bg-card); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; transition: all 0.2s; position: relative; overflow: hidden; }
   [data-theme="retro"] .news-item { box-shadow: var(--shadow-hard); border-width: 2px; }
   [data-theme="retro"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #000000; }
   [data-theme="light"] .news-item { box-shadow: var(--shadow-hard); border-width: 2px; }
@@ -327,11 +327,11 @@
   [data-theme="dark"] .news-item { box-shadow: var(--shadow-hard); border-width: 1px; }
   [data-theme="dark"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px rgba(0,0,0,0.5); }
   .news-item:hover { border-color: var(--border-light); }
-  .news-impact { width: 4px; height: 40px; border-radius: 2px; flex-shrink: 0; margin-top: 2px; }
-  .news-impact.high { background: var(--danger); box-shadow: 0 0 8px rgba(239,68,68,0.2); }
-  .news-impact.medium { background: var(--warning); }
-  .news-impact.low { background: var(--accent); }
-  .news-impact.holiday { background: var(--text-dim); }
+  .news-item.high { background: rgba(239, 68, 68, 0.12); border-left: 4px solid var(--danger); }
+  .news-item.medium { background: rgba(245, 158, 11, 0.12); border-left: 4px solid var(--warning); }
+  .news-item.low { background: rgba(99, 102, 241, 0.12); border-left: 4px solid var(--info); }
+  .news-item.holiday { background: rgba(154, 163, 199, 0.12); border-left: 4px solid var(--text-dim); }
+  .news-impact { display: none; }
   .news-content { flex: 1; min-width: 0; }
   .news-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; line-height: 1.3; }
   .news-meta { font-size: 11px; color: var(--text-dim); display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
@@ -400,12 +400,14 @@
   [data-theme="light"] .tab-bar { box-shadow: 0 -4px 12px rgba(45,27,78,0.15); border-top-width: 2px; }
   [data-theme="retro"] .tab-bar { border-top-width: 3px; box-shadow: 0 -4px 0px #1A0F2E; }
   [data-theme="dark"] .tab-bar { box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 1px solid var(--border); }
+  .tab-btn:last-child { border-right: none; }
   .tab-btn:active { transform: scale(0.92); }
-  .tab-btn.active { color: var(--tab-icon-active); }
+  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.08); }
   .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; background: var(--tab-border); border-radius: 0 0 4px 4px; }
   [data-theme="light"] .tab-btn.active::before { height: 4px; background: #2D1B4E; }
   [data-theme="retro"] .tab-btn.active::before { width: 44px; height: 5px; border-radius: 0; }
+  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.08); }
   .tab-icon { font-size: 26px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
   [data-theme="retro"] .tab-icon { font-size: 32px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
   [data-theme="light"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(45,27,78,0.3)); }
@@ -492,7 +494,7 @@
     </div>
 
     <div class="tab-page" id="tab-backtest">
-      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><input list="forex-pairs" type="text" id="btSymbol" class="bt-input" placeholder="Type or select pair (e.g. EURUSD)" value="EURUSD"><datalist id="forex-pairs"><option value="EURUSD"><option value="GBPUSD"><option value="USDJPY"><option value="USDCHF"><option value="AUDUSD"><option value="USDCAD"><option value="NZDUSD"><option value="EURGBP"><option value="EURJPY"><option value="GBPJPY"><option value="EURCHF"><option value="EURAUD"><option value="EURCAD"><option value="GBPCHF"><option value="GBPAUD"><option value="GBPCAD"><option value="GBPNZD"><option value="CHFJPY"><option value="AUDJPY"><option value="CADJPY"><option value="NZDJPY"><option value="AUDCAD"><option value="AUDCHF"><option value="AUDNZD"><option value="CADCHF"><option value="NZDCAD"><option value="NZDCHF"><option value="XAUUSD"></datalist><select id="btStrategy" class="bt-input"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><input type="number" id="btDays" class="bt-input" value="60" min="7" max="365"><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
+      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><select id="btSymbol" class="bt-input"><option value="EURUSD">EUR/USD</option><option value="GBPUSD">GBP/USD</option><option value="USDJPY">USD/JPY</option><option value="USDCHF">USD/CHF</option><option value="AUDUSD">AUD/USD</option><option value="USDCAD">USD/CAD</option><option value="NZDUSD">NZD/USD</option><option value="EURGBP">EUR/GBP</option><option value="EURJPY">EUR/JPY</option><option value="GBPJPY">GBP/JPY</option><option value="EURCHF">EUR/CHF</option><option value="EURAUD">EUR/AUD</option><option value="EURCAD">EUR/CAD</option><option value="GBPCHF">GBP/CHF</option><option value="GBPAUD">GBP/AUD</option><option value="GBPCAD">GBP/CAD</option><option value="GBPNZD">GBP/NZD</option><option value="CHFJPY">CHF/JPY</option><option value="AUDJPY">AUD/JPY</option><option value="CADJPY">CAD/JPY</option><option value="NZDJPY">NZD/JPY</option><option value="AUDCAD">AUD/CAD</option><option value="AUDCHF">AUD/CHF</option><option value="AUDNZD">AUD/NZD</option><option value="CADCHF">CAD/CHF</option><option value="NZDCAD">NZD/CAD</option><option value="NZDCHF">NZD/CHF</option><option value="XAUUSD">Gold (XAU/USD)</option><option value="BTCUSD">Bitcoin (BTC/USD)</option></select><select id="btDuration" class="bt-input"><option value="30">30 Days</option><option value="60" selected>60 Days</option><option value="90">90 Days</option><option value="120">120 Days</option><option value="180">180 Days</option><option value="365">1 Year</option></select><select id="btStrategy" class="bt-input"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
     </div>
   </div>
 
@@ -669,7 +671,7 @@ function renderNews() {
     for (const ev of grouped[d]) {
       const impact = (ev.impact || '').toUpperCase(); const impactClass = impact === 'HIGH' ? 'high' : impact === 'MEDIUM' ? 'medium' : impact === 'HOLIDAY' ? 'holiday' : 'low';
       const et = extractTimeET(ev.date); const ist = extractTimeIST(ev.date); const timeStr = et ? `${et} ET → ${ist} IST` : 'All Day';
-      html += `<div class="news-item"><div class="news-impact ${impactClass}"></div><div class="news-content"><div class="news-title">${ev.title || 'Unknown'}</div><div class="news-meta"><span class="flag">${getFlag(ev.country || ev.currency || '???')}</span><span class="news-tag ${impactClass}">${impact}</span><span>${timeStr}</span></div>${(ev.forecast || ev.previous) ? `<div class="news-forecast"><span>Forecast:</span> ${ev.forecast || '—'} &nbsp;|&nbsp; <span>Previous:</span> ${ev.previous || '—'}</div>` : ''}</div></div>`;
+      html += `<div class="news-item ${impactClass}"><div class="news-content"><div class="news-title">${ev.title || 'Unknown'}</div><div class="news-meta"><span class="flag">${getFlag(ev.country || ev.currency || '???')}</span><span class="news-tag ${impactClass}">${impact}</span><span>${timeStr}</span></div>${(ev.forecast || ev.previous) ? `<div class="news-forecast"><span>Forecast:</span> ${ev.forecast || '—'} &nbsp;|&nbsp; <span>Previous:</span> ${ev.previous || '—'}</div>` : ''}</div></div>`;
     }
   }
   container.innerHTML = html || '<div class="card-empty"><span class="emoji"></span>No upcoming events in the calendar</div>';
@@ -707,7 +709,7 @@ function renderStockGrid() {
 }
 
 async function runBacktest() {
-  const symbol = (document.getElementById('btSymbol').value || '').trim(); const strategy = document.getElementById('btStrategy').value; const days = document.getElementById('btDays').value;
+  const symbol = (document.getElementById('btSymbol').value || '').trim(); const strategy = document.getElementById('btStrategy').value; const days = document.getElementById('btDuration').value;
   const btn = document.getElementById('btRunBtn'); const out = document.getElementById('btResults');
   if (!symbol) { showToast('Enter a symbol'); return; }
   btn.disabled = true; btn.classList.add('spinning');

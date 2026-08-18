@@ -68,11 +68,20 @@ class BacktestEngine:
     def backtest_trendpulse(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         print(f"[BACKTEST] TrendPulse on {symbol} for {days} days...")
         end = datetime.now()
-        df_1h = yf.download(symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
-        if df_1h is None or len(df_1h) < 100: return {"error": f"Insufficient data for {symbol}"}
+        # Handle crypto symbols (BTCUSD -> BTC-USD) and forex/gold with Yahoo Finance format
+        yf_symbol = symbol
+        if symbol == "BTCUSD":
+            yf_symbol = "BTC-USD"
+        elif symbol == "XAUUSD":
+            yf_symbol = "GC=F"  # Gold futures
+        else:
+            # Forex pairs need =X suffix for Yahoo Finance
+            yf_symbol = symbol + "=X"
+        df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
+        if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
         if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
         df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 20: return {"error": "Insufficient 4H data"}
+        if len(df_4h) < 20: return {"error": "Insufficient 4H data after resampling"}
 
         df_4h["EMA50"], df_4h["ATR"] = df_4h["Close"].ewm(span=50, adjust=False).mean(), self._calc_atr(df_4h, 14)
         df_1h["EMA20"], df_1h["RSI"], df_1h["ATR"] = df_1h["Close"].ewm(span=20, adjust=False).mean(), self._get_rsi(df_1h, 14), self._calc_atr(df_1h, 14)
@@ -132,11 +141,20 @@ class BacktestEngine:
     def backtest_sweep(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         print(f"[BACKTEST] Sweep on {symbol} for {days} days...")
         end = datetime.now()
-        df_1h = yf.download(symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
-        if df_1h is None or len(df_1h) < 100: return {"error": f"Insufficient data for {symbol}"}
+        # Handle crypto symbols (BTCUSD -> BTC-USD) and forex/gold with Yahoo Finance format
+        yf_symbol = symbol
+        if symbol == "BTCUSD":
+            yf_symbol = "BTC-USD"
+        elif symbol == "XAUUSD":
+            yf_symbol = "GC=F"  # Gold futures
+        else:
+            # Forex pairs need =X suffix for Yahoo Finance
+            yf_symbol = symbol + "=X"
+        df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
+        if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
         if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
         df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 10: return {"error": "Insufficient 4H data"}
+        if len(df_4h) < 10: return {"error": "Insufficient 4H data after resampling"}
 
         balance, trades = self.starting_balance, []
         for i in range(5, len(df_4h) - 1):
