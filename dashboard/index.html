@@ -1354,8 +1354,12 @@ function renderSignals() {
       const dirClass = s.dir === 'LONG' ? 'dir-long' : 'dir-short';
       const spnl = parseFloat(s.pnl) || 0;
       const spnlCell = spnl !== 0 ? `<td class="${spnl >= 0 ? 'pnl-pos' : 'pnl-neg'}">${fmtPnl(spnl)}</td>` : '<td class="dim">—</td>';
+      
+      // NEW: Render FRESH/STALE tag
+      const tagHtml = s.tag ? `<span style="font-size:9px;font-weight:700;margin-left:6px;padding:1px 4px;border-radius:3px;background:${s.tag.includes('FRESH') ? 'rgba(52,211,153,0.15)' : 'rgba(245,185,66,0.15)'};color:${s.tag.includes('FRESH') ? 'var(--long)' : 'var(--warning)'};">${s.tag}</span>` : '';
+      
       bodyHtml += `<tr>
-        <td style="font-weight:800;color:#ffffff;font-size:12px;letter-spacing:0.5px;">${s.time || s.time_str || '—'}</td>
+        <td style="font-weight:600;color:var(--text);font-size:11px;white-space:nowrap;">${s.time || s.time_str || '—'}${tagHtml}</td>
         <td class="sym">${s.sym || s.symbol || '—'}</td>
         <td class="${dirClass}">${s.dir || '—'}</td>
         <td class="dim">${(s.strategy || s.strat || '').slice(0,12)}</td>
