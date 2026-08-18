@@ -1,14 +1,26 @@
 services:
   - type: web
-    name: multi-strategy-telegram-bot
-    runtime: docker
+    name: mavis-trading-bot
+    runtime: python
     plan: free
-    envVars:
-      - key: TELEGRAM_BOT_TOKEN
-        sync: false
-      - key: TELEGRAM_CHAT_ID
-        sync: false
-      - key: PORT
-        value: 10000
+    region: oregon
+    branch: main
+    buildCommand: pip install --upgrade pip && pip install -r requirements.txt
+    startCommand: python main.py
     healthCheckPath: /ping
     autoDeploy: true
+    envVars:
+      - key: PYTHON_VERSION
+        value: 3.12.0
+      - key: PORT
+        value: 8080
+      - key: TELEGRAM_BOT_TOKEN
+        sync: false        # set in Render dashboard
+      - key: TELEGRAM_CHAT_ID
+        sync: false
+      - key: WEBHOOK_URL
+        value: https://mavis-trading-bot.onrender.com/webhook
+      - key: SUPABASE_URL
+        sync: false
+      - key: SUPABASE_KEY
+        sync: false

@@ -1,111 +1,58 @@
-# 🤖 Mavis Trading Bot
+# Mavis Trading Bot
 
-> **Multi-strategy paper trading bot** with real-time Telegram alerts, web dashboard, and automated risk management.  
-> Built for **Gold (XAU/USD)**, **Bitcoin (BTC/USD)**, **Forex**, and **NSE stocks**.
+A multi-strategy paper-trading bot for Telegram, built around modern retail methodologies (multi-timeframe trend + Smart Money Concepts), with a built-in backtester and a live web dashboard.
 
-[![Python](https://img.shields.io/badge/Python-3.12-blue)](https://python.org)
-[![Deploy](https://img.shields.io/badge/Deploy-Render-green)](https://render.com)
-[![License](https://img.shields.io/badge/License-MIT-yellow)](LICENSE)
+> **Status:** Paper trading only. Do not risk real capital without extensive forward-testing.
 
 ---
 
-## 🎯 What It Does
+## ✨ Features
 
-| Feature | Description |
-|---------|-------------|
-| 📊 **TrendPulse 1H** | Multi-timeframe momentum strategy (4H trend + 1H MACD/RSI entry) |
-| 🧹 **4H Sweep + FVG** | Smart Money Concepts — liquidity sweep detection with Fair Value Gap fills |
-| 📡 **Telegram Alerts** | Instant signal, entry, exit, and news notifications |
-| 🌐 **Web Dashboard** | Live trades (with one-tap force close), balances, P&L, strategy stats, R-multiples, and equity charts |
-| 📰 **Economic Calendar** | Auto-fetches high-impact news + 30-min pre-release warnings |
-| 💰 **4 Virtual Accounts** | Macro, Nifty, NY Session, Sweep 4H — each with independent risk |
-| 🛡️ **Risk Management** | 2% risk per trade, trailing stops, max drawdown tracking |
-
----
-
-## 🚀 Quick Start
-
-### 1. Clone & Setup
-
-```bash
-git clone https://github.com/yourusername/mavis-trading-bot.git
-cd mavis-trading-bot
-pip install -r requirements.txt
-```
-
-### 2. Environment Variables
-
-Create a `.env` file:
-
-```env
-TELEGRAM_BOT_TOKEN=your_bot_token_from_botfather
-TELEGRAM_CHAT_ID=your_telegram_user_id
-WEBHOOK_URL=https://your-app.onrender.com/webhook
-# Optional:
-SUPABASE_URL=https://your-project.supabase.co
-SUPABASE_KEY=your-service-role-key
-```
-
-### 3. Run Locally
-
-```bash
-python main.py
-```
-
-### 4. Deploy to Render
-
-| Setting | Value |
-|---------|-------|
-| **Build Command** | `pip install -r requirements.txt` |
-| **Start Command** | `python main.py` |
-| **Health Check** | `/ping` → `pong` |
-
-> 💡 **Keep Alive:** Free tier sleeps after 15 min. Use [cron-job.org](https://cron-job.org) to ping `/ping` every 10 minutes.
+- **Two strategies running in parallel**
+  - **TrendPulse 1H** — 4H trend filter (EMA50) + 1H MACD/RSI/EMA20 entries on candle close (no repaint)
+  - **4H Sweep + FVG** — liquidity-sweep detection on the 4H, then waits for a 1H Fair Value Gap fill
+- **Real-time Telegram alerts** with signal age tags (`🔥 FRESH` / `⚠️ STALE`) and stale-warning on restart
+- **Web dashboard** at `/dashboard` — overview, trades, signals, history, Nifty, news, backtest
+- **Built-in backtester** — equity-curve chart + metrics via `/backtest` or the dashboard
+- **Resilient data layer** — yfinance → CoinGecko / Binance fallback for BTC; GC=F → GLD → IAU for Gold
+- **Optional Supabase persistence** — survives Render free-tier restarts
 
 ---
 
-## 📈 Strategies
+## 🧠 Strategies
 
-### Strategy 1: TrendPulse 1H ⭐ (Primary)
+### 1. TrendPulse 1H (Primary)
+- **4H filter:** price > EMA50 (uptrend) / < EMA50 (downtrend)
+- **1H trigger:** MACD cross + RSI(14) confirmation + EMA20 proximity
+- **Risk:** ATR(14)-based SL, 2R TP, 0.5R trailing once in profit
+- **No repaint:** signals only emit on the close of the 1H candle
 
-**Replaces the old UT Bot** with a well-researched, non-repainting system.
+### 2. 4H Sweep + FVG
+- **Sweep:** 4H candle wicks above prior high *and* below prior low, then closes back inside
+- **FVG fill:** waits up to 24h for price to enter a 1H 3-candle Fair Value Gap
+- **Risk:** 1.5R SL beyond the sweep extreme, 3R TP
+- **Assets:** NSE stocks + major forex pairs
 
-```
-4H Trend Filter:    Close > EMA(50) → Only LONGs
-                    Close < EMA(50) → Only SHORTs
+---
 
-Volatility Guard:   ATR(14)/Close > 0.05% (Crypto)
-                    ATR(14)/Close > 0.03% (Gold/Forex)
-                    → Skip if too flat (chop)
+## 🤖 Telegram Commands
 
-1H Entry:           MACD line crosses Signal line
-                    AND RSI(14) > 50 (LONG) / < 50 (SHORT)
-                    AND Close > EMA(20) (LONG) / < EMA(20) (SHORT)
-
-Exit:               MACD crosses opposite direction on 1H
-SL:                 Entry ± 1.5 × ATR(14)
-TP:                 Entry ± 3.0 × ATR(14)
-```
-
-**Why it wins:**
-- ✅ No repainting (uses confirmed closed candles)
-- ✅ Trend-aligned (filters counter-trend trades)
-- ✅ Chop-filtered (skips low-volatility periods)
-- ✅ Tight stops (0.6% Gold, 1.2% BTC)
-- ✅ Research-backed (Sharpe ~1.07 in literature)
-
-### Strategy 2: 4H Sweep + FVG
-
-**Smart Money Concepts** for NSE stocks and forex.
-
-```
-Sweep:      4H candle breaks previous high AND low (liquidity grab)
-FVG:        Wait for 1H Fair Value Gap to form
-Entry:      Price enters FVG zone
-SL:         Sweep extreme
-TP:         2× risk
-Expiry:     24 hours if no fill
-```
+| Command | What it does |
+|---|---|
+| `/start` | Guide + control menu |
+| `/check` | Scan all assets now |
+| `/test` | Test data feeds (debug) |
+| `/summary` | Live prices & status |
+| `/stats` | Win rate & P/L per account |
+| `/balance` | Virtual account balances |
+| `/pending` | Pending sweep setups |
+| `/risk` | Exposure & R-multiples |
+| `/weekly` | Weekly performance digest |
+| `/news` | Economic calendar |
+| `/refreshnews` | Force-refresh the news cache |
+| `/nifty` | Nifty 50 stock prices |
+| `/backtest <SYM> <STRAT> <DAYS>` | Backtest with equity-curve chart |
+| `/clear` | Reset everything to ₹1,00,000 |
 
 ---
 
@@ -113,143 +60,202 @@ Expiry:     24 hours if no fill
 
 Open `/dashboard` on your deployed URL. Six tabs:
 
-| Tab | What You Get |
-|-----|--------------|
-| 🏠 **Overview** | Account balances, equity curve, exposure/risk/max drawdown, **Strategy Performance** (win rate, W/L, avg P/L per strategy), **Open Trade Risk** (per-trade R-multiples), quick status, last-updated timestamp |
-| 🔥 **Trades** | Live open trades with entry/current price, live P/L (₹), progress to TP, market, opened time, and a **Close button** (force-closes at market via `/api/close-trade`) + pending sweep setups with FVG zones and expiry |
-| 📡 **Signals** | Last 24h signals grouped by day, with strategy, status, and running P/L |
-| 📜 **History** | Closed trades grouped by day with daily totals and W/L — badge shows "15 of N" total |
-| 📈 **Nifty** | Nifty 50 + Bank Nifty and 15 NSE stocks (lazy-loaded, error state with retry) |
-| 📰 **News** | Economic calendar grouped by day with ET → IST times and impact tags |
-| 🧪 **Backtest** | Run **TrendPulse 1H** or **4H Sweep + FVG** on any symbol over 30–180 days — win rate, profit factor, Sharpe, max drawdown, and a full trade list |
-
-**API endpoints:** `/api/dashboard` (snapshot), `/api/prices?symbols=...`, `/api/close-trade` (POST), `/api/backtest?symbol=BTC-USD&strategy=trendpulse&days=60`, `/api/health`
-
----
-
-## 🤖 Telegram Commands
-
-| Command | What It Does |
-|---------|-------------|
-| `/start` | Show guide + control menu |
-| `/menu` | Inline button dashboard |
-| `/check` | Scan all assets now |
-| `/test` | Test data feeds (debug) |
-| `/summary` | Live prices & status |
-| `/stats` | Win rate & P/L per account |
-| `/balance` | Virtual account balances |
-| `/indi1` | Diagnose Strategy 1 (Sweep) |
-| `/indi2` | Diagnose Strategy 2 (TrendPulse) |
-| `/pending` | Pending sweep setups |
-| `/risk` | Exposure & R-multiples |
-| `/weekly` | Weekly performance digest |
-| `/news` | Economic calendar |
-| `/nifty` | Nifty 50 stock prices |
-| `/clear` | Reset everything to ₹1,00,000 |
-
----
-
-## 🏦 Account Structure
-
-| Account | Assets | Balance | Daily Limit |
-|---------|--------|---------|-------------|
-| **Macro** | BTC, Gold, Forex | ₹1,00,000 | 20 trades |
-| **NY Session** | Same (18:00–01:30 IST) | ₹1,00,000 | 3 trades |
-| **Nifty** | NSE stocks, indices | ₹1,00,000 | 5 trades |
-| **Sweep 4H** | Non-NSE sweeps | ₹1,00,000 | 3 trades |
-
-**Risk per trade:** 2% of account balance  
-**Trailing stops:** Breakeven at +1%, lock 30% at +3%, lock 50% at +5%
-
----
-
-## 📊 Monitored Assets
-
-| Asset | Type | Market Hours (IST) |
-|-------|------|-------------------|
-| BTC-USD | Crypto | 24/7 |
-| GC=F (Gold) | Commodity | 24/7 |
-| EURUSD=X | Forex | Sun 15:00 – Fri 23:30 |
-| GBPUSD=X | Forex | Sun 15:00 – Fri 23:30 |
-| USDJPY=X | Forex | Sun 15:00 – Fri 23:30 |
-| ^NSEI | Index | Mon–Fri 09:15–15:30 |
-| ^NSEBANK | Index | Mon–Fri 09:15–15:30 |
-| 15 NSE Stocks | Equities | Mon–Fri 09:15–15:30 |
-
----
-
-## 🛠️ Tech Stack
-
-| Layer | Technology |
-|-------|-----------|
-| **Language** | Python 3.12 |
-| **Data** | yfinance, CoinGecko API, Binance API |
-| **Analysis** | pandas, numpy |
-| **Bot** | pyTelegramBotAPI |
-| **Charts** | matplotlib |
-| **Web** | WSGI (built-in) |
-| **Storage** | JSON files + Supabase (optional) |
-| **Deploy** | Render (Web Service) |
+| Tab | What you get |
+|---|---|
+| 🏠 Overview | Account balances, equity curve, exposure / risk / max drawdown, strategy performance, open-trade R-multiples |
+| 🔥 Trades | Live open trades with live P/L, progress to TP, close button + pending sweep setups |
+| 📡 Signals | Last 24h signals grouped by day, with `🔥 FRESH` (< 1h) or `⚠️ STALE` (> 4h) tags |
+| 📜 History | Closed trades grouped by day with daily totals and W/L |
+| 📈 Nifty | Nifty 50 + Bank Nifty and 15 NSE stocks (lazy-loaded) |
+| 📰 News | Economic calendar grouped by day, ET → IST times, impact tags |
+| 🧪 Backtest | Run strategies on any symbol over 30–180 days — includes an equity-curve chart |
 
 ---
 
 ## 📁 Project Structure
 
 ```
-mavis-trading-bot/
-├── main.py                 # Core bot (2,064 lines)
-├── dashboard_api.py        # Web dashboard routes
-├── requirements.txt        # Dependencies
-├── .env                    # Environment variables (gitignored)
-├── README.md               # This file
-└── DOCUMENTATION.md        # Full technical docs
+.
+├── main.py              # Core bot: scanner, monitor, Telegram handlers, threads
+├── backtest.py          # Backtest engine + matplotlib equity-curve chart
+├── dashboard_api.py     # WSGI app: /ping, /webhook, /dashboard, /api/*
+├── dashboard/
+│   └── index.html       # Single-page dashboard
+├── requirements.txt
+├── render.yaml          # Render blueprint
+├── Dockerfile           # Container build (optional)
+├── .env.example         # Environment variable template
+├── .gitignore
+└── README.md
 ```
+
+State lives in `/tmp/workspace/*.json`:
+- `accounts.json` — virtual account balances & daily trade counts
+- `active_trades.json` — currently open paper trades
+- `trade_history.json` — closed trades
+- `sent_signals.json` — dedup cache for sent alerts
+- `pending_sweeps.json` — sweeps waiting for FVG fill
+- `reset_state.json` — last daily reset date (isolated to prevent a known dict-key crash)
+
+> If `SUPABASE_URL` + `SUPABASE_KEY` are set, the bot transparently syncs these to a `bot_data` table.
+
+---
+
+## 🛠️ Tech Stack
+
+| Layer | Tech |
+|---|---|
+| Language | Python 3.12 |
+| Data | yfinance, CoinGecko API, Binance API |
+| Analysis | pandas, numpy |
+| Bot | pyTelegramBotAPI |
+| Charts | matplotlib |
+| Web | WSGI (built-in threaded server) |
+| Storage | JSON files (`/tmp/workspace/`) + optional Supabase |
+| Deploy | Render (Web Service) or Docker |
+
+---
+
+## ⚙️ Configuration (Environment Variables)
+
+Copy `.env.example` to `.env` and fill in:
+
+| Var | Required | Notes |
+|---|---|---|
+| `TELEGRAM_BOT_TOKEN` | ✅ | From `@BotFather` |
+| `TELEGRAM_CHAT_ID` | ✅ | Your chat id (from `getUpdates`) |
+| `WEBHOOK_URL` | ✅ | `https://<your-app>.onrender.com/webhook` |
+| `SUPABASE_URL` | optional | For persistent state across restarts |
+| `SUPABASE_KEY` | optional | Service-role key (keep secret) |
+| `PORT` | optional | Defaults to `8080` |
+
+---
+
+## 🚀 Deployment Guide
+
+### Step 1 — Telegram setup
+1. Talk to `@BotFather` → `/newbot` → copy the token.
+2. Send `/start` to your bot.
+3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` and copy your `chat_id`.
+
+### Step 2 — (Recommended) Supabase for persistence
+Render's free tier has ephemeral disk — without Supabase, `accounts.json` and friends vanish on restart.
+1. Create a free project at [supabase.com](https://supabase.com).
+2. In the SQL editor, create the `bot_data` table:
+   ```sql
+   create table if not exists bot_data (
+     key text primary key,
+     value jsonb,
+     updated_at timestamptz default now()
+   );
+   alter table bot_data enable row level security;
+   create policy "service role full access" on bot_data
+     for all using (true) with check (true);
+   ```
+3. Settings → API → copy Project URL + `service_role` key.
+
+### Step 3 — Deploy to Render
+1. Push your repo to GitHub.
+2. Render → **New +** → **Web Service** → connect the repo.
+3. Settings:
+   - **Environment:** Python 3
+   - **Build command:** `pip install -r requirements.txt`
+   - **Start command:** `python main.py`
+4. Add the env vars from the table above in the Render dashboard.
+5. Click **Deploy**.
+
+Or use the included `render.yaml` blueprint: Render → **New +** → **Blueprint** → pick the repo. It wires everything up automatically.
+
+### Step 4 — Keep it alive (free tier)
+Render spins down after 15 min of inactivity.
+1. Sign up at [cron-job.org](https://cron-job.org).
+2. Create a cron job: `GET https://<your-app>.onrender.com/ping` every 10 minutes, 24/7.
+
+### Step 5 — Verify
+Within ~60 seconds of deploy you should see in Telegram:
+
+```
+✅ BOT STARTED
+Started At: 18-Aug-2026 10:48 IST
+
+⚠️ Any signal/sweep message older than this one is STALE — do not act on it.
+```
+
+Then run `/test` to verify data feeds.
+
+---
+
+## 🐳 Docker (optional)
+
+```bash
+docker build -t mavis-trading-bot .
+docker run --rm --env-file .env -p 8080:8080 mavis-trading-bot
+```
+
+---
+
+## 🧪 Development
+
+### Local setup
+```bash
+git clone https://github.com/<you>/multi-strategy-telegram-bot.git
+cd multi-strategy-telegram-bot
+python -m venv .venv && source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in values
+python main.py
+```
+
+### Threading model
+| Thread | Job |
+|---|---|
+| Main | WSGI server (`/ping`, `/webhook`, `/dashboard`) |
+| Scanner | Loops through assets, evaluates both strategies |
+| Monitor | Updates open trades, trailing stops, TP/SL checks |
+| Pending Sweeps | Watches for FVG fills (90s interval) |
+| Daily Reset | Midnight IST reset + digest |
+| Weekly Digest | Sunday 21:00 IST summary |
+
+### API endpoints
+| Endpoint | Method | Purpose |
+|---|---|---|
+| `/ping` | GET | Health check (cron-job.org) |
+| `/webhook` | POST | Telegram updates |
+| `/dashboard` | GET | SPA shell |
+| `/api/dashboard` | GET | Full state snapshot |
+| `/api/prices?symbols=...` | GET | Live prices |
+| `/api/close-trade` | POST | Force-close a trade |
+| `/api/backtest?symbol=...&strategy=...&days=...` | GET | Run a backtest |
+
+### Code style
+- Python 3.12+, type hints encouraged
+- Functions under ~50 lines
+- Document non-obvious logic inline
+- No magic numbers — use `config.py` if you're adding parameters
 
 ---
 
 ## ⚠️ Known Issues & Fixes
 
-### Yahoo Finance Blocks Render
-**Problem:** Yahoo blocks cloud IPs → prices show ₹0  
-**Fixes applied:**
-- BTC → CoinGecko API + Binance klines fallback
-- Gold → GC=F → GLD → IAU fallback chain
-- Still failing? Run on VPS with residential IP
-
-### Free Tier Sleeps
-**Problem:** Render free tier sleeps after 15 min idle  
-**Fix:** Use cron-job.org to ping `/ping` every 10 minutes
-
-### Webhook 409 Conflict
-**Problem:** Multiple instances or polling + webhook clash  
-**Fix:** Set `WEBHOOK_URL` env var, restart service
-
----
-
-## 📚 Research References
-
-| Strategy | Source | Metrics |
-|----------|--------|---------|
-| Multi-Timeframe MACD | Published quant research | Sharpe 1.07, Calmar 0.87 |
-| Donchian Breakout | arxum.com / Turtle Traders | PF 5.58, Max DD -5.9% |
-| Dual Momentum | Quantpedia / Antonacci GEM | 12.01% CAGR, 1.37 Sharpe |
-| Smart Money Concepts | ICT (Inner Circle Trader) | Liquidity sweep + FVG |
+| Issue | Status | Fix |
+|---|---|---|
+| Daily Reset crash (`'str' object does not support item assignment`) | ✅ Fixed | `last_reset_date` moved to its own `reset_state.json`; non-dict keys in `accounts.json` are purged on boot. Self-heals on deploy. |
+| Stale signals after restart | ✅ Fixed | "✅ BOT STARTED" boot message with timestamp; every signal shows `⏳ Signal Age` (`🔥 FRESH` < 1h, `⚠️ STALE` > 4h). |
+| Yahoo Finance blocks cloud IPs | ⚠️ Mitigated | BTC → CoinGecko/Binance fallback. Gold → `GC=F` → `GLD` → `IAU` chain. |
+| Render free tier sleeps | ⚠️ Mitigated | External cron-job pings `/ping` every 10 min. |
+| News tab shows "No upcoming events" | ⚠️ Mitigated | Date parser fixed; `/refreshnews` force-refreshes the cache; clear error state if the upstream API is down. |
 
 ---
 
 ## 📝 License
 
-MIT License — free to use, modify, and deploy.
-
----
+MIT — free to use, modify, and deploy.
 
 ## 🙏 Credits
 
-- **TrendPulse strategy** based on multi-timeframe MACD research
-- **Sweep + FVG** based on Smart Money Concepts
-- **Price fallbacks** engineered for Render deployment
+- TrendPulse logic based on multi-timeframe MACD research
+- Sweep + FVG based on Smart Money Concepts
+- Price fallbacks engineered for Render deployment
 - Built with ❤️ for traders who want automation without the BS
 
----
-
-> **⚡ Pro Tip:** Start with `/test` after deploy to verify data feeds, then `/indi2` to see TrendPulse scanning live markets.
+> ⚡ **Pro tip:** After deploy, run `/test` to verify data feeds, then `/backtest BTC-USD trendpulse 60` to see the equity-curve chart in action.

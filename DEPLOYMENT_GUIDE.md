@@ -1,303 +1,101 @@
-# 🚀 Deployment Guide - Dashboard Fix
+# Deployment Guide — Mavis Trading Bot
 
-## The Problem
-Your dashboard was showing all zeros because the API endpoint `/api/dashboard` was returning an error:
-```
-{"cached": false, "error": "main module not loaded"}
-```
-
-**Root Cause:** The `dashboard_api.py` file was checking `sys.modules.get("main")` but Python stores the main module as `__main__` when running with `python main.py`.
+Three ways to deploy, pick one.
 
 ---
 
-## Quick Fix (3 Options)
+## Option 1 — Render (recommended, free tier works)
 
-### Option 1: Replace the file on GitHub (Recommended)
+### One-time: Telegram
+1. `@BotFather` → `/newbot` → copy the **token**.
+2. Send `/start` to your new bot.
+3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` → copy your **chat id** from the JSON.
 
-1. **Go to your GitHub repo:** https://github.com/apmcshahpurabhitoni-gif/multi-strategy-telegram-bot
+### One-time: Supabase (strongly recommended)
+Render's free tier wipes `/tmp` on restart. Supabase keeps your state alive.
 
-2. **Click on `dashboard_api.py` → Edit (pencil icon)**
+1. [supabase.com](https://supabase.com) → free project.
+2. SQL editor → run:
+   ```sql
+   create table if not exists bot_data (
+     key text primary key,
+     value jsonb,
+     updated_at timestamptz default now()
+   );
+   alter table bot_data enable row level security;
+   create policy "service role full access" on bot_data
+     for all using (true) with check (true);
+   ```
+3. **Settings → API** → copy **Project URL** + **service_role** key.
 
-3. **Replace the entire file** with the fixed version I've provided
+### Deploy
+**Via Blueprint (easiest):**
+1. Push this repo to GitHub.
+2. Render → **New +** → **Blueprint** → pick the repo.
+3. Render reads `render.yaml` and pre-fills everything. You just enter the secret env vars in the dashboard.
+4. Click **Apply**.
 
-4. **Commit changes** with message: "Fix: handle __main__ module name for API"
+**Via Web Service (manual):**
+1. Render → **New +** → **Web Service** → connect repo.
+2. Settings:
+   - Environment: **Python 3**
+   - Build: `pip install --upgrade pip && pip install -r requirements.txt`
+   - Start: `python main.py`
+   - Health check path: `/ping`
+3. Add env vars (see `.env.example`).
+4. **Deploy**.
 
-5. **Render will auto-deploy** within ~30 seconds
+### Keep alive
+Free tier sleeps after 15 min idle.
+1. [cron-job.org](https://cron-job.org) → free account.
+2. New cron: `GET https://<your-app>.onrender.com/ping`, every 10 min, 24/7.
 
-### Option 2: Manual Replace via Git
+### Verify
+In Telegram within ~60 s:
+```
+✅ BOT STARTED
+Started At: 18-Aug-2026 10:48 IST
+⚠️ Any signal/sweep message older than this is STALE — do not act on it.
+```
+Then `/test` to confirm data feeds.
+
+---
+
+## Option 2 — Docker (any VPS: DigitalOcean, Hetzner, AWS Lightsail, etc.)
 
 ```bash
-# Clone the repo
-git clone https://github.com/apmcshahpurabhitoni-gif/multi-strategy-telegram-bot.git
+git clone https://github.com/<you>/multi-strategy-telegram-bot.git
 cd multi-strategy-telegram-bot
-
-# Replace dashboard_api.py with the fixed version
-
-# Commit and push
-git add dashboard_api.py
-git commit -m "Fix: handle __main__ module name for API"
-git push origin main
+cp .env.example .env   # fill in values
+docker build -t mavis-trading-bot .
+docker run -d --name mavis --restart unless-stopped --env-file .env -p 8080:8080 mavis-trading-bot
 ```
 
-### Option 3: Direct Edit on Render
-
-1. Log into Render Dashboard
-2. Go to your service → Shell
-3. Run: `nano dashboard_api.py`
-4. Find and replace the `_get_main_module()` function (or the problematic line)
-5. Save and restart the service
+Reverse proxy with Caddy or nginx + Let's Encrypt for HTTPS (Telegram needs HTTPS webhook).
 
 ---
 
-## Verify the Fix
-
-After deploying, test the API:
+## Option 3 — Local (dev only)
 
 ```bash
-curl https://multi-strategy-telegram-bot-1.onrender.com/api/dashboard
+python -m venv .venv
+source .venv/bin/activate
+pip install -r requirements.txt
+cp .env.example .env   # fill in values
+python main.py
 ```
 
-**Before (Broken):**
-```json
-{"cached": false, "error": "main module not loaded"}
-```
-
-**After (Fixed):**
-```json
-{
-  "generated_at": "2026-08-02 10:30:00 IST",
-  "accounts": {
-    "macro": {"balance": 112450.30, ...},
-    ...
-  },
-  "live_trades": [...],
-  ...
-}
-```
-
-Then open your dashboard: https://multi-strategy-telegram-bot-1.onrender.com/dashboard
-
----
-
-## Files That Are Useless (Safe to Delete)
-
-These files serve no purpose and bloat your repo:
-
-### Completely Dead Code
-```
-src/                          ← Dead React app, never deployed
-├── App.tsx
-├── components/
-├── src/data/initialData.ts
-├── src/types.ts
-├── src/utils/formatters.ts
-├── src/index.css
-├── src/main.tsx
-
-server.ts                     ← Dev server for dead React app
-vite.config.ts                ← Vite config for dead React app
-package.json                  ← Node deps for dead React app (you have bun.lock too)
-tsconfig.json                 ← TS config for dead React app
-index.html                    ← Root placeholder HTML, not your dashboard
-```
-
-### How to Remove Them
-
-```bash
-git rm -r src/
-git rm server.ts vite.config.ts package.json tsconfig.json index.html
-git commit -m "Remove dead React app files"
-git push origin main
-```
-
-### Keep These Files
-```
-✅ dashboard_api.py          ← Fixed, serves your dashboard API
-✅ dashboard/index.html      ← Your actual dashboard
-✅ main.py                   ← Main trading bot
-✅ Dockerfile                ← Render deployment
-✅ requirements.txt         ← Python dependencies
-✅ render.yaml               ← Render config
-✅ .env.example              ← Environment template
-✅ .gitignore
-✅ README.md
-✅ metadata.json (if you use it)
-✅ bun.lock (if you use Bun)
-✅ runtime.txt
-```
-
----
-
-## Dashboard Behavior Explained
-
-| State | Dashboard Shows | Status Pill |
-|-------|----------------|-------------|
-| API Working | Real data from your bot | 🟢 LIVE |
-| API Down | MOCK demo data (₹1,12,450 etc) | 🟡 DEMO |
-| Both Fail | Error message + retry button | 🔴 ERROR |
-
-The MOCK fallback is intentional - it lets you see the dashboard layout even when the trading bot has no real data yet.
+Use a tunnel like `ngrok http 8080` and set `WEBHOOK_URL` to the HTTPS ngrok URL.
 
 ---
 
 ## Troubleshooting
 
-### "main module not loaded" persists
-- Make sure you're running the latest `dashboard_api.py`
-- Check Render logs: Dashboard → Logs
-- Restart the service manually
-
-### Dashboard still empty
-- Check browser console (F12 → Console) for JavaScript errors
-- Verify `/api/dashboard` returns valid JSON (not an error)
-- Clear browser cache
-
-### `/api/dashboard` returns 500 when a trade is open
-- Fixed in the latest `dashboard_api.py` — `_build_risk()` previously used `entry` before assignment inside a one-line tuple unpack. If you still see this, re-copy `dashboard_api.py` from this repo and restart.
-
-### Live P/L column shows "—"
-- Fixed in the latest `dashboard/index.html` — the frontend was reading `t.pnl` but the API returns `pnl_inr`. Redeploy the updated dashboard file.
-
-### "📈 Chart" Telegram button does nothing
-- Fixed in the latest `main.py` — the callback handler now handles `chart_{symbol}` and sends a 5-day 1H chart image.
-
-### Server is sleeping (Render Free Tier)
-- Visit https://multi-strategy-telegram-bot-1.onrender.com/ping
-- Wait 30 seconds for the server to wake up
-- The dashboard will auto-refresh when server wakes
-
----
-
-## Architecture Summary
-
-```
-┌─────────────────────────────────────────────────────────────┐
-│                      Your Browser                          │
-│                                                             │
-│   GET /dashboard → Returns dashboard/index.html            │
-│   GET /api/dashboard → Returns JSON snapshot               │
-└─────────────────────────┬───────────────────────────────────┘
-                          │
-                          ▼
-┌─────────────────────────────────────────────────────────────┐
-│                   Render Server                             │
-│                                                             │
-│   main.py (Telegram Bot + Scanner + Monitor)               │
-│       │                                                     │
-│       ├── Imports dashboard_api.py                          │
-│       └── run_web() → WSGI Server on PORT 10000            │
-│                                                             │
-│   dashboard_api.py                                          │
-│       ├── register_routes() → Routes API requests          │
-│       ├── _build_snapshot() → Reads bot's state            │
-│       └── Returns JSON with accounts, trades, etc.         │
-└─────────────────────────────────────────────────────────────┘
-```
-
-╔══════════════════════════════════════════════════════════════════════════════╗
-║                    COMPLETE FIX — ALL IN ONE GO                              ║
-╚══════════════════════════════════════════════════════════════════════════════╝
-
-You have 4 problems. Here are ALL the fixes:
-
-┌──────────────────────────────────────────────────────────────────────────────┐
-│ PROBLEM 1: Dashboard blank (--:--:--, all zeros)                             │
-│ PROBLEM 2: Live trade not showing (BTC-USD exists in API)                     │
-│ PROBLEM 3: News not showing (100+ events in API)                              │
-│ PROBLEM 4: Today's signals empty                                              │
-│ PROBLEM 5: Clock shows 24h instead of 12h AM/PM                              │
-└──────────────────────────────────────────────────────────────────────────────┘
-
-═══════════════════════════════════════════════════════════════════════════════
-STEP 1: REPLACE dashboard/index.html
-═══════════════════════════════════════════════════════════════════════════════
-
-Download this file:
-📎 dashboard_complete_fix.html
-
-Copy its contents and PASTE OVER your entire dashboard/index.html file.
-Do NOT make partial edits. Replace the WHOLE file.
-
-What this fixes:
-  ✅ 12-hour clock with AM/PM (01:30:45 PM instead of 13:30:45)
-  ✅ Clock shows immediately (no more --:--:--)
-  ✅ API timeout 30s instead of 12s (Render cold-start needs time)
-  ✅ renderAll() never bails — always renders even if API fails
-  ✅ Console logging so you can debug in browser
-  ✅ Global error handlers catch JS crashes
-  ✅ News parses ISO datetime correctly
-
-═══════════════════════════════════════════════════════════════════════════════
-STEP 2: REPLACE dashboard_api.py
-═══════════════════════════════════════════════════════════════════════════════
-
-Download this file:
-📎 dashboard_api_fixed.py
-
-Copy its contents and PASTE OVER your entire dashboard_api.py file.
-
-What this fixes:
-  ✅ today_signals now works with boolean sent_signals (old format)
-  ✅ Parses signal keys like "BTC-USD_1234567890123_BULLISH_macro"
-  ✅ Extracts symbol, timestamp, direction, account from key
-  ✅ Shows signals that triggered your trades
-
-═══════════════════════════════════════════════════════════════════════════════
-STEP 3: COMMIT & PUSH
-═══════════════════════════════════════════════════════════════════════════════
-
-git add dashboard/index.html dashboard_api.py
-git commit -m "Fix dashboard: 12h clock, render fallback, signal parsing, 30s timeout"
-git push origin main
-
-═══════════════════════════════════════════════════════════════════════════════
-STEP 4: WAIT & VERIFY
-═══════════════════════════════════════════════════════════════════════════════
-
-1. Go to Render dashboard → your service → wait for "Deploy in progress..." to finish
-2. Open: https://multi-strategy-telegram-bot-1.onrender.com/dashboard
-3. Hard refresh: Ctrl+Shift+R (or Cmd+Shift+R on Mac)
-4. Open DevTools (F12) → Console
-
-You should see:
-  [Dashboard] Starting bootstrap...
-  [Dashboard] API loaded, keys: ["accounts", "live_trades", "today_signals", ...]
-
-Then on the page you should see:
-  ✅ Clock: "01:25:45 PM IST · Updated just now · 02/08"
-  ✅ Total Equity: ₹4,00,000.00
-  ✅ Live Open Trades: 1 (BTC-USD LONG)
-  ✅ Today's Signals: your signal(s)
-  ✅ Weekly Economic Calendar: all 100+ events
-
-═══════════════════════════════════════════════════════════════════════════════
-WHY THESE FIXES WERE NEEDED
-═══════════════════════════════════════════════════════════════════════════════
-
-1. BLANK DASHBOARD
-   renderAll() had: if (!state.snapshot) return;
-   When API was slow, snapshot was null → renderAll bailed → nothing rendered
-   Fix: Remove guard, use MOCK fallback if API fails
-
-2. --:--:-- CLOCK
-   updateClock() only ran via setInterval(1000) — 1 second delay
-   renderAll() bailed before setting state.lastFullUpdate
-   Fix: Call updateClock() immediately before setInterval
-
-3. LIVE TRADE HIDDEN
-   Same as #1 — renderAll() bailed before renderLiveTrades()
-   Fix: Same as #1
-
-4. TODAY'S SIGNALS EMPTY
-   sent_signals.json stores: {"BTC-USD_1234567890123_BULLISH_macro": true}
-   dashboard_api.py expected: {"key": {"ts_ms": 123, "symbol": "BTC"...}}
-   isinstance(sig, dict) was always False → all signals skipped
-   Fix: Parse the key string when value is boolean
-
-5. NEWS HIDDEN
-   Same as #1 — renderAll() bailed before renderNews()
-   Fix: Same as #1
-
-6. 24-HOUR CLOCK
-   You wanted AM/PM format
-   Fix: Add h%12 logic with AM/PM suffix
+| Symptom | Likely cause | Fix |
+|---|---|---|
+| Telegram bot doesn't respond | Wrong token / chat id | Re-check `.env` |
+| Prices show ₹0 | yfinance blocked your IP | Wait — fallback should kick in. Check logs. |
+| State resets on every restart | No Supabase configured | Add `SUPABASE_URL` + `SUPABASE_KEY` |
+| Render app is "sleeping" | Free tier idle | Add cron-job.org ping every 10 min |
+| News tab is empty | API down / date parse bug | Run `/refreshnews` in Telegram, check logs |
+| `Daily Reset` errors in logs | (Fixed) | Redeploy — purges bad keys automatically |
