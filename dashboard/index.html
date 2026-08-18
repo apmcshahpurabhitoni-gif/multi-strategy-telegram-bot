@@ -1061,10 +1061,20 @@ function fmtTime(ts) {
   if (m) return m[0];
   return ts;
 }
-function extractDate(iso) {
-  if (!iso) return '';
-  const s = String(iso);
-  return s.includes('T') ? s.split('T')[0] : s.slice(0, 10);
+function extractDate(isoStr) {
+  if (!isoStr) return '';
+  try {
+    // Handle ISO 8601 with timezone offset: "2026-08-18T10:00:00-05:00"
+    const d = new Date(isoStr);
+    if (isNaN(d.getTime())) return '';
+    
+    // Convert to IST (UTC+5:30) for date comparison
+    const istOffset = 5.5 * 60 * 60 * 1000; // 5:30 in ms
+    const istDate = new Date(d.getTime() + istOffset);
+    return istDate.toISOString().slice(0, 10);
+  } catch { 
+    return ''; 
+  }
 }
 function extractTimeET(iso) {
   if (!iso) return '';
