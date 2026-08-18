@@ -1441,34 +1441,52 @@ function buildCollapse(headerHtml, bodyHtml, openDefault) {
 function renderNews() {
   const news = state.news_raw || [];
   const container = document.getElementById('newsContainer');
+  
   if (!news.length) {
-    container.innerHTML = '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
+    container.innerHTML = `
+      <div class="card-empty">
+        <span class="emoji">📰</span>
+        No upcoming events found<br>
+        <span style="font-size:11px;color:var(--text-dim);margin-top:8px;display:block;">
+          News API may be temporarily unavailable.<br>
+          The bot will retry automatically every 10 minutes.
+        </span>
+        <button class="refresh-btn" style="margin-top:12px;" onclick="fetchData(); showToast('Refreshing...');">
+          🔄 Retry Now
+        </button>
+      </div>`;
     return;
   }
+  
   const today = new Date().toISOString().slice(0, 10);
   const grouped = {};
+  
   for (const ev of news) {
     const d = extractDate(ev.date);
+    if (!d) continue;
     if (!grouped[d]) grouped[d] = [];
     grouped[d].push(ev);
   }
+  
   let html = '';
   for (const d of Object.keys(grouped).sort()) {
-    // ── FILTER: Skip past dates ──
+    // Skip past dates — user only wants upcoming
     if (d < today) continue;
     
     const dateObj = new Date(d + 'T00:00:00');
     const isToday = d === today;
     const label = isToday ? 'TODAY' : dateObj.toLocaleDateString('en-IN', { weekday: 'short', month: 'short', day: 'numeric' });
     const highCount = grouped[d].filter(e => (e.impact || '').toUpperCase() === 'HIGH').length;
-    html += `<div class="news-day-header">📅 ${label}${highCount > 0 ? ' · ' + highCount + ' HIGH' : ''}</div>`;
+    
+    html += `<div class="news-day-header">📅 ${label}${highCount > 0 ? ' · <span style="color:var(--danger);">' + highCount + ' HIGH</span>' : ''}</div>`;
+    
     for (const ev of grouped[d]) {
       const impact = (ev.impact || '').toUpperCase();
       const impactClass = impact === 'HIGH' ? 'high' : impact === 'MEDIUM' ? 'medium' : impact === 'HOLIDAY' ? 'holiday' : 'low';
-      const tagClass = impactClass;
       const et = extractTimeET(ev.date);
       const ist = extractTimeIST(ev.date);
       const timeStr = et ? `${et} ET → ${ist} IST` : 'All Day';
+      
       html += `
         <div class="news-item">
           <div class="news-impact ${impactClass}"></div>
@@ -1476,7 +1494,7 @@ function renderNews() {
             <div class="news-title">${ev.title || 'Unknown'}</div>
             <div class="news-meta">
               <span class="flag">${getFlag(ev.country || ev.currency || '???')}</span>
-              <span class="news-tag ${tagClass}">${impact}</span>
+              <span class="news-tag ${impactClass}">${impact}</span>
               <span>${timeStr}</span>
             </div>
             ${(ev.forecast || ev.previous) ? `<div class="news-forecast"><span>Forecast:</span> ${ev.forecast || '—'} &nbsp;|&nbsp; <span>Previous:</span> ${ev.previous || '—'}</div>` : ''}
@@ -1484,7 +1502,12 @@ function renderNews() {
         </div>`;
     }
   }
-  container.innerHTML = html || '<div class="card-empty"><span class="emoji">📰</span>No upcoming events</div>';
+  
+  container.innerHTML = html || `
+    <div class="card-empty">
+      <span class="emoji">📰</span>
+      No upcoming events in the calendar
+    </div>`;
 }
 function getFlag(code) {
   const flags = {
