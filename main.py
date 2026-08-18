@@ -146,8 +146,7 @@ def msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, wor
     return f"🗓️ *WEEKLY DIGEST*\n{BR}\n{pnl_icon} *Week P/L:* `{pnl_sign}₹{week_pnl:,.2f}`\n📊 *Trades:* `{total_trades}` · ✅ `{wins}W` · ❌ `{losses}L` · 🎯 `{win_rate:.1f}%`\n{BR}\n🏆 *Best Symbol:* {best_str}\n💔 *Worst Symbol:* {worst_str}\n{BR}\n🏦 *Total Equity:* `₹{total_equity:,.2f}`\n{BR2}"
 
 def msg_guide():
-    return f"🤖 *TRADING BOT — COMMAND CENTER*\n{BR}\n📘 *COMMANDS:*\n├ `/start` — Show this guide\n├ `/backtest` — Backtest a strategy\n├ `/newspause` — Toggle news auto-pause\n├ `/pending` — Show sweep setups waiting for FVG\n└ `/stats` — Win rate & P/L report\n{BR2}"
-
+    return f"🤖 *TRADING BOT — COMMAND CENTER*\n{BR}\n📘 *COMMANDS:*\n├ `/start` — Show this guide\n├ `/backtest` — Backtest a strategy\n├ `/newspause` — Toggle news auto-pause\n├ `/refreshnews` — Force refresh news calendar\n├ `/pending` — Show sweep setups waiting for FVG\n└ `/stats` — Win rate & P/L report\n{BR2}"
 def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
@@ -827,6 +826,19 @@ def cmd_newspause(m):
     if len(parts) > 1 and parts[1].lower() in ("off", "0"): _news_pause_enabled = False; safe_send(m.chat.id, "⏸️ News Pause DISABLED", parse_mode="Markdown")
     elif len(parts) > 1 and parts[1].lower() in ("on", "1"): _news_pause_enabled = True; safe_send(m.chat.id, "▶️ News Pause ENABLED", parse_mode="Markdown")
     else: safe_send(m.chat.id, f"News Pause: {'ON ✅' if _news_pause_enabled else 'OFF 🛑'}", parse_mode="Markdown")
+
+@bot.message_handler(commands=["refreshnews"])
+def cmd_refreshnews(m):
+    global NEWS_CACHE
+    NEWS_CACHE["last_fetch"] = 0  # Force refresh
+    news = get_cached_news()
+    if news:
+        # Show first 5 upcoming events as a preview
+        preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])
+        safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(news)}` upcoming events\n\n{preview}\n\n{'...' if len(news) > 5 else ''}", parse_mode="Markdown")
+    else:
+        safe_send(m.chat.id, f"⚠️ *News API Unavailable*\n{BR}\nNo upcoming events found. The bot will retry automatically.", parse_mode="Markdown")
+
 
 def send_chart(symbol, chat_id):
     with _chart_lock:
