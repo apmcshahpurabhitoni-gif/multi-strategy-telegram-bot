@@ -498,10 +498,22 @@ def _iso_to_ist_dt(iso_str):
     return None
 
 def get_cached_news():
+    """Get cached news with forced refresh on empty."""
     global NEWS_CACHE
-    if time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
-        try: NEWS_CACHE["data"] = fetch_news(); NEWS_CACHE["last_fetch"] = time.time()
-        except Exception: pass
+    now = time.time()
+    last_fetch = NEWS_CACHE.get("last_fetch", 0)
+    cached_data = NEWS_CACHE.get("data", [])
+    
+    # Refresh if: cache is old (10 min) OR cache is empty
+    if now - last_fetch > 600 or not cached_data:
+        try:
+            fresh_data = fetch_news()
+            NEWS_CACHE["data"] = fresh_data
+            NEWS_CACHE["last_fetch"] = now
+            print(f"[NEWS] Cache refreshed: {len(fresh_data)} upcoming events")
+        except Exception as e:
+            print(f"[ERR] News refresh failed: {e}")
+    
     return NEWS_CACHE.get("data", [])
 
 def is_news_pause_active():
@@ -730,11 +742,47 @@ def build_weekly_digest_text(days=7):
     return msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity)
 
 def fetch_news():
-    try:
-        r = requests.get("https://nfs.faireconomy.media/ff_calendar_thisweek.json", headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
-        if r.status_code == 200 and r.text: return r.json()
-    except Exception: pass
-    return [{"title": "ISM Manufacturing PMI", "country": "USD", "date": "2024-12-02T10:00:00-05:00", "impact": "High"}]
+    """Fetch economic calendar with reliable fallbacks."""
+    sources = [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+    ]
+    
+    all_events = []
+    for url in sources:
+        try:
+            print(f"[NEWS] Fetching from {url}...")
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}, timeout=20)
+            if r.status_code == 200 and r.text.strip():
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    all_events.extend(data)
+                    print(f"[NEWS] Got {len(data)} events from {url}")
+        except Exception as e:
+            print(f"[NEWS] Failed {url}: {e}")
+    
+    if not all_events:
+        print("[NEWS] ⚠️ All sources failed — no events available")
+        return []
+    
+    # Filter to ONLY upcoming events (from now onwards)
+    now = datetime.now(IST)
+    upcoming = []
+    for ev in all_events:
+        try:
+            ev_date_str = ev.get("date", "")
+            if not ev_date_str: continue
+            
+            # Parse ISO date with timezone
+            ev_dt = _iso_to_ist_dt(ev_date_str)
+            if ev_dt and ev_dt >= now:
+                upcoming.append(ev)
+        except Exception as e:
+            print(f"[NEWS] Failed to parse event: {e}")
+            continue
+    
+    print(f"[NEWS] ✅ {len(upcoming)} upcoming events (filtered from {len(all_events)} total)")
+    return upcoming
 
 @bot.message_handler(commands=["start", "menu"])
 def cmd_start(m): safe_send(m.chat.id, msg_guide(), parse_mode="Markdown")
