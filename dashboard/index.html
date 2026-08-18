@@ -319,18 +319,18 @@
   .progress-fill { height: 100%; border-radius: 2px; background: linear-gradient(90deg, var(--accent), var(--accent-dim)); transition: width 0.5s ease; }
   .news-day-header { font-size: 11px; font-weight: 700; text-transform: uppercase; letter-spacing: 0.8px; color: var(--text-muted); padding: 16px 0 8px 0; display: flex; align-items: center; gap: 8px; }
   .news-day-header:first-child { padding-top: 0; }
-  .news-item { background: var(--bg-card); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; transition: all 0.2s; position: relative; overflow: hidden; }
-  [data-theme="retro"] .news-item { box-shadow: var(--shadow-hard); border-width: 2px; }
-  [data-theme="retro"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #000000; }
-  [data-theme="light"] .news-item { box-shadow: var(--shadow-hard); border-width: 2px; }
-  [data-theme="light"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #2D1B4E; }
-  [data-theme="dark"] .news-item { box-shadow: var(--shadow-hard); border-width: 1px; }
+  .news-item { background: var(--bg-card); border: var(--border-width) solid var(--border); border-radius: var(--radius-sm); padding: 12px 14px; margin-bottom: 8px; display: flex; align-items: flex-start; gap: 10px; transition: all 0.2s; position: relative; overflow: hidden; box-shadow: var(--shadow-hard); }
+  [data-theme="retro"] .news-item { box-shadow: 4px 4px 0px #1A0F2E; border-width: 2px; }
+  [data-theme="retro"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px #1A0F2E; }
+  [data-theme="light"] .news-item { box-shadow: 4px 4px 0px rgba(45,27,78,0.2); border-width: 2px; }
+  [data-theme="light"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px rgba(45,27,78,0.3); }
+  [data-theme="dark"] .news-item { box-shadow: 4px 4px 0px rgba(0,0,0,0.4); border-width: 1px; }
   [data-theme="dark"] .news-item:hover { transform: translate(-2px, -2px); box-shadow: 6px 6px 0px rgba(0,0,0,0.5); }
   .news-item:hover { border-color: var(--border-light); }
-  .news-item.high { background: rgba(239, 68, 68, 0.12); border-left: 4px solid var(--danger); }
-  .news-item.medium { background: rgba(245, 158, 11, 0.12); border-left: 4px solid var(--warning); }
-  .news-item.low { background: rgba(99, 102, 241, 0.12); border-left: 4px solid var(--info); }
-  .news-item.holiday { background: rgba(154, 163, 199, 0.12); border-left: 4px solid var(--text-dim); }
+  .news-item.high { background: rgba(239, 68, 68, 0.15); border-left: 4px solid var(--danger); }
+  .news-item.medium { background: rgba(245, 158, 11, 0.15); border-left: 4px solid var(--warning); }
+  .news-item.low { background: rgba(99, 102, 241, 0.15); border-left: 4px solid var(--info); }
+  .news-item.holiday { background: rgba(154, 163, 199, 0.15); border-left: 4px solid var(--text-dim); }
   .news-impact { display: none; }
   .news-content { flex: 1; min-width: 0; }
   .news-title { font-size: 13px; font-weight: 600; color: var(--text); margin-bottom: 3px; line-height: 1.3; }
@@ -390,36 +390,40 @@
   .close-btn { background: rgba(245, 86, 106, 0.12); border: 1px solid var(--danger); color: var(--danger); padding: 3px 10px; border-radius: 6px; font-size: 10px; font-weight: 700; cursor: pointer; font-family: 'Inter', sans-serif; transition: all 0.2s; -webkit-tap-highlight-color: transparent; }
   .close-btn:hover { background: var(--danger); color: #fff; }
   .close-btn:active { transform: scale(0.94); }
-  .bt-form { display: flex; flex-wrap: wrap; gap: 8px; align-items: center; }
-  .bt-input { background: var(--bg-elevated); border: 1px solid var(--border); color: var(--text); padding: 8px 10px; border-radius: 8px; font-size: 12px; font-family: 'JetBrains Mono', monospace; flex: 1; min-width: 110px; }
-  .bt-input:focus { outline: none; border-color: var(--accent); }
+  .bt-form { display: flex; flex-wrap: wrap; gap: 10px; align-items: center; }
+  .bt-input, .bt-select { background: var(--bg-elevated); border: 2px solid var(--border); color: var(--text); padding: 10px 12px; border-radius: var(--radius-sm); font-size: 13px; font-family: 'JetBrains Mono', monospace; flex: 1; min-width: 140px; box-shadow: var(--shadow-tab); transition: all 0.2s; cursor: pointer; }
+  .bt-input:focus, .bt-select:focus { outline: none; border-color: var(--accent); box-shadow: 4px 4px 0px var(--border); }
+  .bt-select option { background: var(--bg-elevated); color: var(--text); padding: 8px; }
+  [data-theme="retro"] .bt-input, [data-theme="retro"] .bt-select { border-width: 3px; border-radius: 0; box-shadow: 4px 4px 0px #1A0F2E; }
+  [data-theme="light"] .bt-input, [data-theme="light"] .bt-select { box-shadow: 4px 4px 0px rgba(45,27,78,0.2); }
+  [data-theme="dark"] .bt-input, [data-theme="dark"] .bt-select { box-shadow: 4px 4px 0px rgba(0,0,0,0.4); }
   .bt-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   @media (min-width: 768px) { .bt-metrics { grid-template-columns: repeat(6, 1fr); } }
   .last-updated { font-size: 9px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; text-align: center; padding: 4px 0 8px 0; }
-  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--tab-bg); border-top: var(--border-width) solid var(--border); display: flex; justify-content: space-around; align-items: center; height: 68px; padding-bottom: env(safe-area-inset-bottom, 0); z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 -4px 12px rgba(0,0,0,0.1); }
-  [data-theme="light"] .tab-bar { box-shadow: 0 -4px 12px rgba(45,27,78,0.15); border-top-width: 2px; }
-  [data-theme="retro"] .tab-bar { border-top-width: 3px; box-shadow: 0 -4px 0px #1A0F2E; }
-  [data-theme="dark"] .tab-bar { box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 2px solid var(--border); }
+  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--tab-bg); border-top: 3px solid var(--border); display: flex; justify-content: space-around; align-items: center; height: 72px; padding-bottom: env(safe-area-inset-bottom, 0); z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 -6px 0 var(--border); }
+  [data-theme="light"] .tab-bar { box-shadow: 0 -6px 0 rgba(45,27,78,0.15); border-top-width: 3px; }
+  [data-theme="retro"] .tab-bar { border-top-width: 4px; box-shadow: 0 -6px 0 #1A0F2E; }
+  [data-theme="dark"] .tab-bar { box-shadow: 0 -6px 0 rgba(0,0,0,0.5); }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 3px solid var(--border); }
   .tab-btn:last-child { border-right: none; }
-  .tab-btn:active { transform: scale(0.95); }
-  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.12); }
-  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 48px; height: 5px; background: var(--tab-border); border-radius: 0; box-shadow: 0 2px 0 var(--border); }
-  [data-theme="light"] .tab-btn.active::before { height: 5px; background: #2D1B4E; box-shadow: 0 2px 0 #F4D35E; }
-  [data-theme="retro"] .tab-btn.active::before { width: 56px; height: 6px; border-radius: 0; box-shadow: 0 2px 0 #1A0F2E; }
-  [data-theme="dark"] .tab-btn.active::before { box-shadow: 0 2px 0 #F4D35E; }
-  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.12); }
-  .tab-icon { font-size: 28px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4)); }
-  [data-theme="retro"] .tab-icon { font-size: 36px; filter: drop-shadow(3px 3px 0px #1A0F2E); }
-  [data-theme="light"] .tab-icon { filter: drop-shadow(0 3px 6px rgba(45,27,78,0.4)); }
-  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.6)); }
-  .tab-btn.active .tab-icon { transform: translateY(-4px) scale(1.1); }
-  .tab-label { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
-  .tab-btn.active .tab-label { color: var(--tab-label-active); text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
-  [data-theme="retro"] .tab-label { font-size: 12px; letter-spacing: 1.2px; text-shadow: 2px 2px 0 #1A0F2E; }
-  [data-theme="dark"] .tab-label { color: #B8A8D0; }
+  .tab-btn:active { transform: scale(0.96); }
+  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.08); }
+  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 52px; height: 6px; background: var(--tab-border); border-radius: 0; box-shadow: 0 3px 0 var(--border); }
+  [data-theme="light"] .tab-btn.active::before { height: 6px; background: #2D1B4E; box-shadow: 0 3px 0 #F4D35E; }
+  [data-theme="retro"] .tab-btn.active::before { width: 60px; height: 7px; border-radius: 0; box-shadow: 0 3px 0 #1A0F2E; }
+  [data-theme="dark"] .tab-btn.active::before { box-shadow: 0 3px 0 #F4D35E; }
+  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.08); }
+  .tab-icon { font-size: 22px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
+  [data-theme="retro"] .tab-icon { font-size: 28px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
+  [data-theme="light"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(45,27,78,0.3)); }
+  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
+  .tab-btn.active .tab-icon { transform: translateY(-3px) scale(1.05); }
+  .tab-label { font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; text-shadow: 0 1px 1px rgba(0,0,0,0.2); }
+  .tab-btn.active .tab-label { color: var(--tab-label-active); text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
+  [data-theme="retro"] .tab-label { font-size: 10px; letter-spacing: 1px; text-shadow: 1px 1px 0 #1A0F2E; }
+  [data-theme="dark"] .tab-label { color: #A898C0; }
   [data-theme="dark"] .tab-btn.active .tab-label { color: #F4D35E; }
-  [data-theme="light"] .tab-label { color: #4A3669; }
+  [data-theme="light"] .tab-label { color: #5A4679; }
   [data-theme="light"] .tab-btn.active .tab-label { color: #2D1B4E; }
   .tab-badge { position: absolute; top: 6px; right: calc(50% - 16px); min-width: 16px; height: 16px; border-radius: 8px; background: var(--danger); color: white; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--tab-bg); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
   .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px); background: var(--bg-card); border: 1px solid var(--border-light); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }
@@ -495,7 +499,7 @@
     </div>
 
     <div class="tab-page" id="tab-backtest">
-      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><select id="btSymbol" class="bt-input"><option value="EURUSD">EUR/USD</option><option value="GBPUSD">GBP/USD</option><option value="USDJPY">USD/JPY</option><option value="USDCHF">USD/CHF</option><option value="AUDUSD">AUD/USD</option><option value="USDCAD">USD/CAD</option><option value="NZDUSD">NZD/USD</option><option value="EURGBP">EUR/GBP</option><option value="EURJPY">EUR/JPY</option><option value="GBPJPY">GBP/JPY</option><option value="EURCHF">EUR/CHF</option><option value="EURAUD">EUR/AUD</option><option value="EURCAD">EUR/CAD</option><option value="GBPCHF">GBP/CHF</option><option value="GBPAUD">GBP/AUD</option><option value="GBPCAD">GBP/CAD</option><option value="GBPNZD">GBP/NZD</option><option value="CHFJPY">CHF/JPY</option><option value="AUDJPY">AUD/JPY</option><option value="CADJPY">CAD/JPY</option><option value="NZDJPY">NZD/JPY</option><option value="AUDCAD">AUD/CAD</option><option value="AUDCHF">AUD/CHF</option><option value="AUDNZD">AUD/NZD</option><option value="CADCHF">CAD/CHF</option><option value="NZDCAD">NZD/CAD</option><option value="NZDCHF">NZD/CHF</option><option value="XAUUSD">Gold (XAU/USD)</option><option value="BTCUSD">Bitcoin (BTC/USD)</option></select><select id="btDuration" class="bt-input"><option value="30">30 Days</option><option value="60" selected>60 Days</option><option value="90">90 Days</option><option value="120">120 Days</option><option value="180">180 Days</option><option value="365">1 Year</option></select><select id="btStrategy" class="bt-input"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
+      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><select id="btSymbol" class="bt-select"><option value="EURUSD">EUR/USD</option><option value="GBPUSD">GBP/USD</option><option value="USDJPY">USD/JPY</option><option value="USDCHF">USD/CHF</option><option value="AUDUSD">AUD/USD</option><option value="USDCAD">USD/CAD</option><option value="NZDUSD">NZD/USD</option><option value="EURGBP">EUR/GBP</option><option value="EURJPY">EUR/JPY</option><option value="GBPJPY">GBP/JPY</option><option value="EURCHF">EUR/CHF</option><option value="EURAUD">EUR/AUD</option><option value="EURCAD">EUR/CAD</option><option value="GBPCHF">GBP/CHF</option><option value="GBPAUD">GBP/AUD</option><option value="GBPCAD">GBP/CAD</option><option value="GBPNZD">GBP/NZD</option><option value="CHFJPY">CHF/JPY</option><option value="AUDJPY">AUD/JPY</option><option value="CADJPY">CAD/JPY</option><option value="NZDJPY">NZD/JPY</option><option value="AUDCAD">AUD/CAD</option><option value="AUDCHF">AUD/CHF</option><option value="AUDNZD">AUD/NZD</option><option value="CADCHF">CAD/CHF</option><option value="NZDCAD">NZD/CAD</option><option value="NZDCHF">NZD/CHF</option><option value="XAUUSD">Gold (XAU/USD)</option><option value="BTCUSD">Bitcoin (BTC/USD)</option></select><select id="btDuration" class="bt-select"><option value="30">30 Days</option><option value="60" selected>60 Days</option><option value="90">90 Days</option><option value="120">120 Days</option><option value="180">180 Days</option><option value="365">1 Year</option></select><select id="btStrategy" class="bt-select"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
     </div>
   </div>
 
