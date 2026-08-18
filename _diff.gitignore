@@ -1,0 +1,39 @@
+--- .gitignore (原始)
+```
+# Compiled Python files
+*.pyc
+__pycache__/
+
+# Log files
+*.log
+bot.log
+server.log
+```
+
++++ .gitignore (修改后)
+# Examples 1:
+(empty)
+
+# Example 2 (Project with artifacts):
+# Compiled and build artifacts
+*.pyc
+__pycache__/
+*.o
+*.obj
+dist/
+build/
+# Dependencies
+.venv/
+venv/
+node_modules/
+# Logs and temp files
+*.log
+*.tmp
+*.swp
+# Environment
+.env
+.env.local
+.env.*
+# Editors
+.vscode/
+.idea/
