@@ -240,8 +240,15 @@ def _build_snapshot():
 
     news = []
     if get_cached_news:
-        try: news = [dict(ev, impact=str(ev.get("impact", "")).upper()) for ev in get_cached_news()[:120]]
-        except Exception: pass
+        try:
+            raw_news = get_cached_news()
+            if raw_news:
+                news = [dict(ev, impact=str(ev.get("impact", "")).upper()) for ev in raw_news[:120]]
+                print(f"[DASHBOARD] Loaded {len(news)} news items")
+            else:
+                print("[DASHBOARD] No news available from cache")
+        except Exception as e:
+            print(f"[DASHBOARD] Failed to load news: {e}")
 
     strategy_stats = {}
     for t in history:

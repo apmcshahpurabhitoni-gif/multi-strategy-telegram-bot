@@ -520,8 +520,13 @@ def _iso_to_ist_dt(iso_str):
 def get_cached_news():
     global NEWS_CACHE
     if time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
-        try: NEWS_CACHE["data"] = fetch_news(); NEWS_CACHE["last_fetch"] = time.time()
-        except Exception: pass
+        try:
+            print("[NEWS] Fetching fresh news...")
+            NEWS_CACHE["data"] = fetch_news()
+            NEWS_CACHE["last_fetch"] = time.time()
+            print(f"[NEWS] Cached {len(NEWS_CACHE['data'])} news items")
+        except Exception as e:
+            print(f"[NEWS] Failed to fetch news: {e}")
     return NEWS_CACHE.get("data", [])
 
 def is_news_pause_active():
