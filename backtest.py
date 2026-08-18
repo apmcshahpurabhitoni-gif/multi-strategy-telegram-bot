@@ -188,7 +188,9 @@ class BacktestEngine:
                             for k in range(len(df_after.iloc[j+1:])):
                                 bar = df_after.iloc[j+1+k]
                                 if float(bar["High"]) >= zl and float(bar["Close"]) <= zh:
-                                    entry, sl, risk = float(bar["Close"]), sweep_high, abs(sweep_high - float(bar["Close"]))
+                                    entry = float(bar["Close"])
+                                    sl = sweep_high
+                                    risk = abs(sweep_high - entry)
                                     if risk > 0:
                                         qty = self._calc_qty(balance, entry, sl)
                                         if qty > 0:
