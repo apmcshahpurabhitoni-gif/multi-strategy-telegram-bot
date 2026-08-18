@@ -1,9 +1,3 @@
-"""
-Dashboard API for the multi-strategy Telegram bot.
-==================================================
-Drop this file at the REPO ROOT (next to main.py).
-"""
-
 import os
 import sys
 import json
@@ -11,8 +5,8 @@ import time
 import threading
 from datetime import datetime, timedelta
 from urllib.parse import parse_qs
+import pytz
 
-# Cache TTLs (seconds)
 PRICE_TTL = 60
 SNAPSHOT_TTL = 15
 NEWS_TTL = 600
@@ -25,8 +19,7 @@ _HTML_PATH = os.path.join(_HERE, "dashboard", "index.html")
 
 def _get_main_module():
     main = sys.modules.get("__main__")
-    if main is not None:
-        return main
+    if main is not None: return main
     return sys.modules.get("main")
 
 def _batch_live_prices(symbols):
@@ -130,9 +123,9 @@ def _build_snapshot():
     PENDING_SWEEPS_FILE = getattr(main, "PENDING_SWEEPS_FILE", "pending_sweeps.json")
     pending_sweeps = getattr(main, "pending_sweeps", [])
     get_cached_news = getattr(main, "get_cached_news", None)
-    IST = getattr(main, "IST", None)
-    if not all([_lock, load_json, IST]): return {"error": "missing bot globals"}
-    try: now = datetime.now(IST)
+    IST_tz = getattr(main, "IST", pytz.timezone("Asia/Kolkata"))
+    if not all([_lock, load_json, IST_tz]): return {"error": "missing bot globals"}
+    try: now = datetime.now(IST_tz)
     except Exception: now = datetime.now()
     today_str, week_start = now.strftime("%Y-%m-%d"), (now - timedelta(days=7)).strftime("%Y-%m-%d")
     history = load_json(HISTORY_FILE, []) if load_json else []
@@ -173,7 +166,7 @@ def _build_snapshot():
         else: progress = 0.0
         
         live_trades_view.append({
-            "id": t.get("id", ""),  # <-- FIX #1: ADDED MISSING ID FOR DASHBOARD CLOSE BUTTON
+            "id": t.get("id", ""),
             "symbol": sym, "market": t.get("market", t.get("mtype", "—")),
             "account": t.get("account", ""), "direction": "LONG" if is_long else "SHORT",
             "entry": entry, "current": cur, "sl": sl, "tp": tp,
@@ -184,14 +177,57 @@ def _build_snapshot():
     today_signals, cutoff = [], time.time() * 1000 - 24 * 3600 * 1000
     for key, sig in (sent or {}).items():
         ts_ms, sym, sig_type, strat, status, pnl, hint, time_str = 0, "", "", "", "open", 0, "", ""
-        if isinstance(sig, dict): ts_ms, sym, sig_type, strat, status, pnl, hint, time_str = sig.get("ts_ms", 0), sig.get("symbol", ""), sig.get("sig_type", ""), sig.get("strat", ""), sig.get("status", "open"), sig.get("pnl", 0), sig.get("hint", ""), sig.get("time_str", "")
+        if isinstance(sig, dict): 
+            ts_ms = sig.get("ts_ms", 0)
+            sym = sig.get("symbol", "")
+            sig_type = sig.get("sig_type", "")
+            strat = sig.get("strat", "")
+            status = sig.get("status", "open")
+            pnl = sig.get("pnl", 0)
+            hint = sig.get("hint", "")
+            if ts_ms:
+                try:
+                    dt = datetime.fromtimestamp(ts_ms / 1000, tz=IST_tz)
+                    time_str = dt.strftime("%d-%b %H:%M")
+                except:
+                    time_str = sig.get("time_str", "")
+            else:
+                time_str = sig.get("time_str", "")
         else:
             parts = str(key).split("_")
-            if len(parts) >= 3: sym, ts_ms, sig_type, strat = parts[0], int(parts[1]) if parts[1].isdigit() else 0, parts[2], parts[3] if len(parts) > 3 else ""
-            time_str = datetime.fromtimestamp(ts_ms / 1000).strftime("%H:%M") if ts_ms else ""
+            if len(parts) >= 3: 
+                sym, ts_ms, sig_type, strat = parts[0], int(parts[1]) if parts[1].isdigit() else 0, parts[2], parts[3] if len(parts) > 3 else ""
+                if ts_ms:
+                    try:
+                        dt = datetime.fromtimestamp(ts_ms / 1000, tz=IST_tz)
+                        time_str = dt.strftime("%d-%b %H:%M")
+                    except:
+                        time_str = ""
+        
         if ts_ms < cutoff: continue
-        today_signals.append({"time": time_str[-5:], "sym": sym, "dir": "LONG" if "BULL" in str(sig_type).upper() else "SHORT", "strategy": strat, "status": status, "pnl": pnl, "hint": hint})
-    today_signals.sort(key=lambda x: x.get("time", ""), reverse=True)
+        
+        # Calculate age for FRESH/STALE tag
+        age_ms = time.time() * 1000 - ts_ms
+        age_hr = age_ms / 3600000
+        if age_hr < 1:
+            tag = "🔥 FRESH"
+        elif age_hr > 4:
+            tag = "⚠️ STALE"
+        else:
+            tag = ""
+            
+        today_signals.append({
+            "time": time_str, 
+            "sym": sym, 
+            "dir": "LONG" if "BULL" in str(sig_type).upper() else "SHORT", 
+            "strategy": strat, 
+            "status": status, 
+            "pnl": pnl, 
+            "hint": hint,
+            "tag": tag,
+            "ts_ms": ts_ms
+        })
+    today_signals.sort(key=lambda x: x.get("ts_ms", 0), reverse=True)
 
     last_history = sorted(history, key=lambda x: str(x.get("closed_at", "")), reverse=True)[:15]
     pending_view = []

@@ -1,18 +1,12 @@
-"""
-Backtest Engine for Mavis Trading Bot
-=====================================
-Backtests TrendPulse 1H and 4H Sweep strategies on historical data.
-Run via Telegram: /backtest <symbol> <strategy> <days>
-"""
-
 import json
 import time
+import os
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
-
 
 class BacktestEngine:
     def __init__(self, starting_balance: float = 100000.0, risk_per_trade: float = 0.02):
@@ -189,8 +183,28 @@ class BacktestEngine:
         wins, losses = [t for t in trades if t["result"] == "WIN"], [t for t in trades if t["result"] == "LOSS"]
         total_pnl, win_pnl, loss_pnl = sum(t["pnl"] for t in trades), sum(t["pnl"] for t in wins), abs(sum(t["pnl"] for t in losses))
         equity, peak, max_dd = self.starting_balance, self.starting_balance, 0.0
+        equity_points = [self.starting_balance]
         for t in trades:
-            equity += t["pnl"]; peak = max(peak, equity); max_dd = max(max_dd, (peak - equity) / peak * 100)
+            equity += t["pnl"]
+            equity_points.append(equity)
+            peak = max(peak, equity)
+            max_dd = max(max_dd, (peak - equity) / peak * 100)
+            
         returns = [t["pnl"] for t in trades]
         sharpe = (np.mean(returns) / np.std(returns) * np.sqrt(252)) if len(returns) > 1 and np.std(returns) > 0 else 0.0
+        
+        # Generate equity curve chart
+        try:
+            os.makedirs("/tmp/workspace", exist_ok=True)
+            color = "green" if equity_points[-1] >= self.starting_balance else "red"
+            fig, ax = plt.subplots(figsize=(10, 4))
+            ax.fill_between(range(len(equity_points)), equity_points, color=color, alpha=0.3)
+            ax.plot(equity_points, color=color, linewidth=1.5)
+            ax.set_title(f"Equity Curve: {self.starting_balance} -> {equity_points[-1]:.2f}")
+            ax.grid(alpha=0.2)
+            plt.savefig("/tmp/workspace/backtest_chart.png", dpi=150, bbox_inches="tight")
+            plt.close(fig)
+        except Exception as e:
+            print(f"[WARN] Failed to generate backtest chart: {e}")
+            
         return {"total_trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": len(wins) / len(trades) * 100, "profit_factor": round(win_pnl / loss_pnl, 2) if loss_pnl > 0 else 999.99, "total_pnl": round(total_pnl, 2), "final_balance": round(final_balance, 2), "max_drawdown_pct": round(max_dd, 2), "sharpe": round(sharpe, 2), "avg_trade": round(total_pnl / len(trades), 2), "avg_win": round(win_pnl / len(wins), 2) if wins else 0, "avg_loss": round(loss_pnl / len(losses), 2) if losses else 0, "trades": trades[:50], "return_pct": round((final_balance - self.starting_balance) / self.starting_balance * 100, 2)}
