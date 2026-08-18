@@ -563,11 +563,14 @@ def get_cached_news():
                 color = '#f97316'  # Orange
             
             processed.append({
-                'time': item.get('date', ''),
+                'date': item.get('date', ''),
                 'title': title,
                 'impact': impact,
                 'color': color,
-                'country': item.get('country', '')
+                'country': item.get('country', ''),
+                'currency': item.get('currency', ''),
+                'forecast': item.get('forecast', ''),
+                'previous': item.get('previous', '')
             })
             
             if len(processed) >= 50:

@@ -148,6 +148,11 @@ class BacktestEngine:
                     qty = self._calc_qty(balance, m1_close, sl)
                     if qty > 0: in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = True, m1_close, sl, tp, qty, "LONG", i
                 elif htf_close < htf_ema50 and mp >= sp and mc < sc and 20 < m1_rsi < 50 and m1_close < m1_ema20:
+                    # NOTE: do NOT inline `sl` into a tuple-unpacking assignment
+                    # together with `self._calc_qty(... sl)` — Python evaluates
+                    # the RHS left-to-right and `sl` is not yet bound when the
+                    # third value is evaluated, causing
+                    # "cannot access local variable 'sl' where it is not associated with a value".
                     sl = m1_close + m1_atr * 1.5
                     tp = m1_close - m1_atr * 3.0
                     qty = self._calc_qty(balance, m1_close, sl)
