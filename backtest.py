@@ -180,7 +180,7 @@ class BacktestEngine:
         return self._compute_metrics(trades, balance)
 
     def _compute_metrics(self, trades: List[Dict], final_balance: float) -> Dict[str, Any]:
-        if not trades: return {"total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "profit_factor": 0, "total_pnl": 0, "final_balance": final_balance, "max_drawdown_pct": 0, "sharpe": 0, "avg_trade": 0, "avg_win": 0, "avg_loss": 0, "trades": [], "return_pct": 0}
+        if not trades: return {"total_trades": 0, "wins": 0, "losses": 0, "win_rate": 0, "profit_factor": 0, "total_pnl": 0, "final_balance": final_balance, "max_drawdown_pct": 0, "sharpe": 0, "avg_trade": 0, "avg_win": 0, "avg_loss": 0, "trades": [], "return_pct": 0, "equity_points": []}
         wins, losses = [t for t in trades if t["result"] == "WIN"], [t for t in trades if t["result"] == "LOSS"]
         total_pnl, win_pnl, loss_pnl = sum(t["pnl"] for t in trades), sum(t["pnl"] for t in wins), abs(sum(t["pnl"] for t in losses))
         equity, peak, max_dd = self.starting_balance, self.starting_balance, 0.0
@@ -208,4 +208,4 @@ class BacktestEngine:
         except Exception as e:
             print(f"[WARN] Failed to generate backtest chart: {e}")
             
-        return {"total_trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": len(wins) / len(trades) * 100, "profit_factor": round(win_pnl / loss_pnl, 2) if loss_pnl > 0 else 999.99, "total_pnl": round(total_pnl, 2), "final_balance": round(final_balance, 2), "max_drawdown_pct": round(max_dd, 2), "sharpe": round(sharpe, 2), "avg_trade": round(total_pnl / len(trades), 2), "avg_win": round(win_pnl / len(wins), 2) if wins else 0, "avg_loss": round(loss_pnl / len(losses), 2) if losses else 0, "trades": trades[:50], "return_pct": round((final_balance - self.starting_balance) / self.starting_balance * 100, 2)}
+        return {"total_trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": len(wins) / len(trades) * 100, "profit_factor": round(win_pnl / loss_pnl, 2) if loss_pnl > 0 else 999.99, "total_pnl": round(total_pnl, 2), "final_balance": round(final_balance, 2), "max_drawdown_pct": round(max_dd, 2), "sharpe": round(sharpe, 2), "avg_trade": round(total_pnl / len(trades), 2), "avg_win": round(win_pnl / len(wins), 2) if wins else 0, "avg_loss": round(loss_pnl / len(losses), 2) if losses else 0, "trades": trades[:50], "return_pct": round((final_balance - self.starting_balance) / self.starting_balance * 100, 2), "equity_points": equity_points}

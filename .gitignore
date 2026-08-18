@@ -1,15 +1,4 @@
-# Data & State (Generated at runtime)
-/data/
-*.json
-*.csv
-
-# Environment Variables
-.env
-
-# Python
+```
 __pycache__/
-*.py[cod]
-*$py.class
-*.so
-.Python
-venv/
+*.pyc
+```
