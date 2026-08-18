@@ -37,6 +37,12 @@ TOKEN = os.environ.get("TELEGRAM_BOT_TOKEN")
 CHAT_ID = os.environ.get("TELEGRAM_CHAT_ID")
 WEBHOOK_URL = os.environ.get("WEBHOOK_URL")
 
+# Support multiple chat IDs (comma-separated): personal + group(s)
+CHAT_IDS = [cid.strip() for cid in CHAT_ID.split(",") if cid.strip()] if CHAT_ID else []
+if not CHAT_IDS:
+    raise ValueError("TELEGRAM_CHAT_ID not set!")
+print(f"[INIT] Bot will send to {len(CHAT_IDS)} chat(s): {CHAT_IDS}")
+
 NIFTY_STOCKS = [
     ("RELIANCE.NS", "Reliance"), ("HDFCBANK.NS", "HDFC Bank"),
     ("ICICIBANK.NS", "ICICI Bank"), ("INFY.NS", "Infosys"), ("TCS.NS", "TCS"),
@@ -47,7 +53,6 @@ NIFTY_STOCKS = [
 ]
 
 if not TOKEN: raise ValueError("TELEGRAM_BOT_TOKEN not set!")
-if not CHAT_ID: raise ValueError("TELEGRAM_CHAT_ID not set!")
 
 ACCOUNTS_FILE = "/tmp/workspace/accounts.json"
 RESET_STATE_FILE = "/tmp/workspace/reset_state.json"
@@ -147,6 +152,7 @@ def msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, wor
 
 def msg_guide():
     return f"🤖 *TRADING BOT — COMMAND CENTER*\n{BR}\n📘 *COMMANDS:*\n├ `/start` — Show this guide\n├ `/backtest` — Backtest a strategy\n├ `/newspause` — Toggle news auto-pause\n├ `/refreshnews` — Force refresh news calendar\n├ `/pending` — Show sweep setups waiting for FVG\n└ `/stats` — Win rate & P/L report\n{BR2}"
+
 def msg_error(context, error):
     return f"⚠️ *ERROR — {context}*\n{BR}\n❌ `{error}`\n{BR2}"
 
@@ -161,7 +167,7 @@ def alert_error(context, error, cooldown_s=ERROR_ALERT_COOLDOWN_S):
         last = _error_alert_last_sent.get(context, 0)
         if now - last < cooldown_s: return
         _error_alert_last_sent[context] = now
-    try: safe_send(CHAT_ID, msg_error(context, error), parse_mode="Markdown")
+    try: send_to_personal_only(msg_error(context, error), parse_mode="Markdown")
     except Exception: pass
 
 class ThreadedWSGIServer(ThreadingMixIn, WSGIServer):
@@ -235,16 +241,31 @@ def safe_send(chat_id, text, **kwargs):
         try: bot.send_message(chat_id, text.replace("*","").replace("`","").replace("_",""), parse_mode=None)
         except Exception: pass
 
+def send_to_all(text, **kwargs):
+    """Send a message to ALL configured chat IDs (personal + groups)."""
+    for cid in CHAT_IDS:
+        try:
+            safe_send(cid, text, **kwargs)
+        except Exception as e:
+            print(f"[WARN] Failed to send to chat {cid}: {e}")
+
+def send_to_personal_only(text, **kwargs):
+    """Send a message only to personal chat (not groups)."""
+    for cid in CHAT_IDS:
+        if not cid.startswith("-"):  # Personal IDs are positive
+            try:
+                safe_send(cid, text, **kwargs)
+            except Exception as e:
+                print(f"[WARN] Failed to send to personal chat {cid}: {e}")
+
 def init_accounts():
     global accounts
     defaults = {"macro": {"balance": 100000.0, "daily_trades": 0}, "nifty": {"balance": 100000.0, "daily_trades": 0}, "ny_session": {"balance": 100000.0, "daily_trades": 0}, "sweep_4h": {"balance": 100000.0, "daily_trades": 0}}
     raw_accounts = load_json(ACCOUNTS_FILE, {})
-    # FIX: Purge junk non-dict keys (like last_reset_date if it was accidentally stored here)
     accounts = {k: v for k, v in raw_accounts.items() if isinstance(v, dict)}
     for k, v in defaults.items():
         if k not in accounts: accounts[k] = v.copy()
     
-    # FIX: Handle reset state in a separate file
     reset_state = load_json(RESET_STATE_FILE, {"last_reset_date": ""})
     today = datetime.now(IST).strftime("%Y-%m-%d")
     if reset_state.get("last_reset_date") != today:
@@ -385,7 +406,7 @@ def register_pending_sweep(symbol, mtype, sweep):
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str = get_signal_age_str(sweep_close_ts)
     
-    safe_send(CHAT_ID, f"🟢 *SWEEP — WAITING FOR FVG*\n{BR}\n🪙 *Asset:* `{symbol}`\n📊 *Direction:* {'LONG 📈' if direction=='BULLISH' else 'SHORT 📉'}\n⏰ *Sweep Time:* `{time_str}`\n⏳ *Age:* `{age_str}`\n{BR2}", parse_mode="Markdown")
+    send_to_all(f"🟢 *SWEEP — WAITING FOR FVG*\n{BR}\n🪙 *Asset:* `{symbol}`\n📊 *Direction:* {'LONG 📈' if direction=='BULLISH' else 'SHORT 📉'}\n⏰ *Sweep Time:* `{time_str}`\n⏳ *Age:* `{age_str}`\n{BR2}", parse_mode="Markdown")
 
 def manage_pending_sweeps():
     global pending_sweeps
@@ -403,7 +424,7 @@ def manage_pending_sweeps():
                 if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
                     with _lock: p["status"] = "expired"
                     to_remove.append(p)
-                    safe_send(CHAT_ID, f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{sym}` {p['direction']}\n{BR2}", parse_mode="Markdown")
+                    send_to_all(f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{sym}` {p['direction']}\n{BR2}", parse_mode="Markdown")
                     continue
                 if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
                     with _lock: p["status"] = "invalidated"
@@ -497,22 +518,10 @@ def _iso_to_ist_dt(iso_str):
     return None
 
 def get_cached_news():
-    """Get cached news with forced refresh on empty."""
     global NEWS_CACHE
-    now = time.time()
-    last_fetch = NEWS_CACHE.get("last_fetch", 0)
-    cached_data = NEWS_CACHE.get("data", [])
-    
-    # Refresh if: cache is old (10 min) OR cache is empty
-    if now - last_fetch > 600 or not cached_data:
-        try:
-            fresh_data = fetch_news()
-            NEWS_CACHE["data"] = fresh_data
-            NEWS_CACHE["last_fetch"] = now
-            print(f"[NEWS] Cache refreshed: {len(fresh_data)} upcoming events")
-        except Exception as e:
-            print(f"[ERR] News refresh failed: {e}")
-    
+    if time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
+        try: NEWS_CACHE["data"] = fetch_news(); NEWS_CACHE["last_fetch"] = time.time()
+        except Exception: pass
     return NEWS_CACHE.get("data", [])
 
 def is_news_pause_active():
@@ -550,7 +559,7 @@ def force_close_trade(trade_id, reason="Dashboard"):
         active_trades.remove(trade_to_close); history.append(trade_to_close)
         save_json(ACCOUNTS_FILE, accounts); save_json(ACTIVE_TRADES_FILE, active_trades); save_json(HISTORY_FILE, history)
         bal = accounts.get(acc_name, {}).get("balance", 0)
-    safe_send(CHAT_ID, msg_trade_closed(trade_to_close, live, pnl, bal, is_long, pnl > 0), parse_mode="Markdown")
+    send_to_all(msg_trade_closed(trade_to_close, live, pnl, bal, is_long, pnl > 0), parse_mode="Markdown")
     return True, f"Closed {trade_to_close.get('symbol')} at {live:.4f}"
 
 def build_strategy_stats():
@@ -575,7 +584,8 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
     paused, pause_reason = is_news_pause_active()
     if paused:
         print(f"[NEWS PAUSE] Skipping {symbol} {sig_type} — {pause_reason}")
-        safe_send(CHAT_ID, f"⏸️ *NEWS PAUSE*\n{BR}\n`{symbol}` {sig_type} skipped\n🛑 {pause_reason}\n{BR2}", parse_mode="Markdown"); return
+        send_to_personal_only(f"⏸️ *NEWS PAUSE*\n{BR}\n`{symbol}` {sig_type} skipped\n🛑 {pause_reason}\n{BR2}", parse_mode="Markdown")
+        return
 
     if fvg_entry is not None:
         sl, ts = float(fvg_entry["sl"]), fvg_entry["sweep_ts"]
@@ -600,7 +610,7 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         trade = {"id": f"{symbol}_{int(time.time())}", "symbol": symbol, "market": mtype, "account": account, "strat": strat, "type": "LONG" if "BULLISH" in sig_type else "SHORT", "entry": float(price), "sl": float(sl), "tp": float(tp), "qty": float(qty), "trail_sl": float(sl), "ts_trigger": ts, "opened_at": datetime.now(IST).isoformat(), "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")}
         active_trades.append(trade); accounts[account]["daily_trades"] += 1
         save_json(ACCOUNTS_FILE, accounts); save_json(ACTIVE_TRADES_FILE, active_trades)
-        safe_send(CHAT_ID, msg_trade_signal(symbol, mtype, strat, sig_type, "4H" if "Sweep" in strat else "1H", price, sl, tp, qty, abs(price - sl) * qty, account, ts, fvg_entry.get("zone") if fvg_entry else None), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}")]]))
+        send_to_all(msg_trade_signal(symbol, mtype, strat, sig_type, "4H" if "Sweep" in strat else "1H", price, sl, tp, qty, abs(price - sl) * qty, account, ts, fvg_entry.get("zone") if fvg_entry else None), parse_mode="Markdown", reply_markup=InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}")]]))
 
 def monitor():
     global active_trades
@@ -642,7 +652,7 @@ def monitor():
                                 to_close.append(t); history.append(t)
                                 save_json(ACCOUNTS_FILE, accounts); save_json(HISTORY_FILE, history)
                                 bal = accounts[account]["balance"]
-                            safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, pnl > 0), parse_mode="Markdown")
+                            send_to_all(msg_trade_closed(t, live, pnl, bal, long, pnl > 0), parse_mode="Markdown")
                             continue
                 
                 if not (hit_tp or hit_sl): continue
@@ -655,7 +665,7 @@ def monitor():
                     to_close.append(t); history.append(t)
                     save_json(ACCOUNTS_FILE, accounts); save_json(HISTORY_FILE, history)
                     bal = accounts[account]["balance"]
-                safe_send(CHAT_ID, msg_trade_closed(t, live, pnl, bal, long, hit_tp), parse_mode="Markdown")
+                send_to_all(msg_trade_closed(t, live, pnl, bal, long, hit_tp), parse_mode="Markdown")
             except Exception as e: alert_error(f"Monitor: {t.get('symbol','?')}", e)
         if to_close:
             with _lock:
@@ -703,7 +713,7 @@ def daily_reset():
                     save_json(SENT_SIGNALS_FILE, sent_signals)
                     history = load_json(HISTORY_FILE, [])
                     day_pnl = sum(float(t["pnl"]) for t in history if t.get("close_time", "").startswith(last))
-                    safe_send(CHAT_ID, msg_midnight_reset(day_pnl, accounts["macro"]["balance"], accounts["nifty"]["balance"], accounts["ny_session"]["balance"], accounts["sweep_4h"]["balance"]), parse_mode="Markdown")
+                    send_to_all(msg_midnight_reset(day_pnl, accounts["macro"]["balance"], accounts["nifty"]["balance"], accounts["ny_session"]["balance"], accounts["sweep_4h"]["balance"]), parse_mode="Markdown")
                     if len(history) > 500: history = history[-500:]
                     save_json(HISTORY_FILE, history)
                 last = today; gc.collect()
@@ -718,7 +728,7 @@ def weekly_digest_loop():
                 week_label = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
                 state = load_json(WEEKLY_DIGEST_FILE, {"last_sent_week": None})
                 if state.get("last_sent_week") != week_label:
-                    safe_send(CHAT_ID, build_weekly_digest_text(7), parse_mode="Markdown")
+                    send_to_all(build_weekly_digest_text(7), parse_mode="Markdown")
                     state["last_sent_week"] = week_label; save_json(WEEKLY_DIGEST_FILE, state)
         except Exception as e: alert_error("Weekly Digest", e)
         time.sleep(600)
@@ -741,7 +751,6 @@ def build_weekly_digest_text(days=7):
     return msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity)
 
 def fetch_news():
-    """Fetch economic calendar with reliable fallbacks."""
     sources = [
         "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
         "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
@@ -764,15 +773,12 @@ def fetch_news():
         print("[NEWS] ⚠️ All sources failed — no events available")
         return []
     
-    # Filter to ONLY upcoming events (from now onwards)
     now = datetime.now(IST)
     upcoming = []
     for ev in all_events:
         try:
             ev_date_str = ev.get("date", "")
             if not ev_date_str: continue
-            
-            # Parse ISO date with timezone
             ev_dt = _iso_to_ist_dt(ev_date_str)
             if ev_dt and ev_dt >= now:
                 upcoming.append(ev)
@@ -830,15 +836,13 @@ def cmd_newspause(m):
 @bot.message_handler(commands=["refreshnews"])
 def cmd_refreshnews(m):
     global NEWS_CACHE
-    NEWS_CACHE["last_fetch"] = 0  # Force refresh
+    NEWS_CACHE["last_fetch"] = 0
     news = get_cached_news()
     if news:
-        # Show first 5 upcoming events as a preview
         preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])
         safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(news)}` upcoming events\n\n{preview}\n\n{'...' if len(news) > 5 else ''}", parse_mode="Markdown")
     else:
         safe_send(m.chat.id, f"⚠️ *News API Unavailable*\n{BR}\nNo upcoming events found. The bot will retry automatically.", parse_mode="Markdown")
-
 
 def send_chart(symbol, chat_id):
     with _chart_lock:
@@ -887,7 +891,6 @@ if __name__ == "__main__":
     muted_assets = set(load_json(MUTE_FILE, []))
     pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
     
-    # FIX: Bot Started message with stale warning
     start_time_str = datetime.now(IST).strftime("%d-%b-%Y %H:%M IST")
     start_msg = (
         f"✅ *BOT STARTED*\n"
@@ -896,7 +899,7 @@ if __name__ == "__main__":
         f"⚠️ *WARNING:* Any signal/sweep message older than this one is STALE — do not act on it.\n"
         f"{BR2}"
     )
-    safe_send(CHAT_ID, start_msg, parse_mode="Markdown")
+    send_to_all(start_msg, parse_mode="Markdown")
     
     threading.Thread(target=run_web, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
@@ -904,5 +907,5 @@ if __name__ == "__main__":
     threading.Thread(target=manage_pending_sweeps, daemon=True).start()
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=weekly_digest_loop, daemon=True).start()
-    print("[INIT] Bot running with P0/P1 fixes applied.")
+    print("[INIT] Bot running with group messaging enabled.")
     while True: time.sleep(3600)
