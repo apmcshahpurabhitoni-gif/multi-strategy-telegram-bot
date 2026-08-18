@@ -318,7 +318,11 @@ def _route_backtest(start_response, environ):
         if strategy == "sweep": res = eng.backtest_sweep(symbol, days)
         else: res = eng.backtest_trendpulse(symbol, days)
         if not isinstance(res, dict): res = {"error": "backtest failed"}
-        res["symbol"], res["strategy"], res["days"] = symbol, strategy, days
+        # Wrap result in metrics key for dashboard compatibility
+        if "error" not in res:
+            res = {"metrics": res, "symbol": symbol, "strategy": strategy, "days": days}
+        else:
+            res["symbol"], res["strategy"], res["days"] = symbol, strategy, days
         return _json_response(start_response, res)
     except Exception as e:
         return _json_response(start_response, {"error": str(e)}, status="500 Internal Server Error")

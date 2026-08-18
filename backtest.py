@@ -148,7 +148,9 @@ class BacktestEngine:
                     qty = self._calc_qty(balance, m1_close, sl)
                     if qty > 0: in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = True, m1_close, sl, tp, qty, "LONG", i
                 elif htf_close < htf_ema50 and mp >= sp and mc < sc and 20 < m1_rsi < 50 and m1_close < m1_ema20:
-                    sl, tp, qty = m1_close + m1_atr * 1.5, m1_close - m1_atr * 3.0, self._calc_qty(balance, m1_close, sl)
+                    sl = m1_close + m1_atr * 1.5
+                    tp = m1_close - m1_atr * 3.0
+                    qty = self._calc_qty(balance, m1_close, sl)
                     if qty > 0: in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = True, m1_close, sl, tp, qty, "SHORT", i
         return self._compute_metrics(trades, balance)
 
@@ -193,48 +195,50 @@ class BacktestEngine:
             elif c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]: 
                 sweep = ("BEARISH", float(c["High"]), float(c["Low"]))
             
-            if sweep:
-                direction, sweep_high, sweep_low = sweep
-                df_after = df_1h[df_1h.index > df_4h.index[i-1]]
-                fvg_found = False
-                for j in range(2, min(len(df_after), 24)):
-                    if fvg_found: 
-                        break
-                    c_prev2, c_curr = df_after.iloc[j-2], df_after.iloc[j]
-                    if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
-                        zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
-                        if zh > zl:
-                            for k in range(len(df_after.iloc[j+1:])):
-                                bar = df_after.iloc[j+1+k]
-                                if float(bar["Low"]) <= zh and float(bar["Close"]) >= zl:
-                                    entry_price = float(bar["Close"])
-                                    sl_price = sweep_low
-                                    risk = abs(entry_price - sweep_low)
-                                    if risk > 0:
-                                        qty = self._calc_qty(balance, entry_price, sl_price)
-                                        if qty > 0:
-                                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price + risk * 2.0, qty, "LONG", df_after.iloc[j+2+k:])
-                                            balance += pnl
-                                            trades.append({"type": "LONG", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
-                                            fvg_found = True
-                                            break
-                    elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
-                        zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
-                        if zh > zl:
-                            for k in range(len(df_after.iloc[j+1:])):
-                                bar = df_after.iloc[j+1+k]
-                                if float(bar["High"]) >= zl and float(bar["Close"]) <= zh:
-                                    entry_price = float(bar["Close"])
-                                    sl_price = sweep_high
-                                    risk = abs(sweep_high - entry_price)
-                                    if risk > 0:
-                                        qty = self._calc_qty(balance, entry_price, sl_price)
-                                        if qty > 0:
-                                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price - risk * 2.0, qty, "SHORT", df_after.iloc[j+2+k:])
-                                            balance += pnl
-                                            trades.append({"type": "SHORT", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
-                                            fvg_found = True
-                                            break
+            if not sweep:
+                continue
+                
+            direction, sweep_high, sweep_low = sweep
+            df_after = df_1h[df_1h.index > df_4h.index[i-1]]
+            fvg_found = False
+            for j in range(2, min(len(df_after), 24)):
+                if fvg_found: 
+                    break
+                c_prev2, c_curr = df_after.iloc[j-2], df_after.iloc[j]
+                if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
+                    zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
+                    if zh > zl:
+                        for k in range(len(df_after.iloc[j+1:])):
+                            bar = df_after.iloc[j+1+k]
+                            if float(bar["Low"]) <= zh and float(bar["Close"]) >= zl:
+                                entry_price = float(bar["Close"])
+                                sl_price = sweep_low
+                                risk = abs(entry_price - sweep_low)
+                                if risk > 0:
+                                    qty = self._calc_qty(balance, entry_price, sl_price)
+                                    if qty > 0:
+                                        pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price + risk * 2.0, qty, "LONG", df_after.iloc[j+2+k:])
+                                        balance += pnl
+                                        trades.append({"type": "LONG", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
+                                        fvg_found = True
+                                        break
+                elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
+                    zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
+                    if zh > zl:
+                        for k in range(len(df_after.iloc[j+1:])):
+                            bar = df_after.iloc[j+1+k]
+                            if float(bar["High"]) >= zl and float(bar["Close"]) <= zh:
+                                entry_price = float(bar["Close"])
+                                sl_price = sweep_high
+                                risk = abs(sweep_high - entry_price)
+                                if risk > 0:
+                                    qty = self._calc_qty(balance, entry_price, sl_price)
+                                    if qty > 0:
+                                        pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price - risk * 2.0, qty, "SHORT", df_after.iloc[j+2+k:])
+                                        balance += pnl
+                                        trades.append({"type": "SHORT", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
+                                        fvg_found = True
+                                        break
         return self._compute_metrics(trades, balance)
 
     def _compute_metrics(self, trades: List[Dict], final_balance: float) -> Dict[str, Any]:
