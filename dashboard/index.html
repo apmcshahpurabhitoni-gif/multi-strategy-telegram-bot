@@ -400,32 +400,156 @@
   .bt-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   @media (min-width: 768px) { .bt-metrics { grid-template-columns: repeat(6, 1fr); } }
   .last-updated { font-size: 9px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; text-align: center; padding: 4px 0 8px 0; }
-  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--tab-bg); border-top: 3px solid var(--border); display: flex; justify-content: space-around; align-items: center; height: 72px; padding-bottom: env(safe-area-inset-bottom, 0); z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 -6px 0 var(--border); }
-  [data-theme="light"] .tab-bar { box-shadow: 0 -6px 0 rgba(45,27,78,0.15); border-top-width: 3px; }
-  [data-theme="retro"] .tab-bar { border-top-width: 4px; box-shadow: 0 -6px 0 #1A0F2E; }
-  [data-theme="dark"] .tab-bar { box-shadow: 0 -6px 0 rgba(0,0,0,0.5); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 3px solid var(--border); }
-  .tab-btn:last-child { border-right: none; }
-  .tab-btn:active { transform: scale(0.96); }
-  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.08); }
-  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 52px; height: 6px; background: var(--tab-border); border-radius: 0; box-shadow: 0 3px 0 var(--border); }
-  [data-theme="light"] .tab-btn.active::before { height: 6px; background: #2D1B4E; box-shadow: 0 3px 0 #F4D35E; }
-  [data-theme="retro"] .tab-btn.active::before { width: 60px; height: 7px; border-radius: 0; box-shadow: 0 3px 0 #1A0F2E; }
-  [data-theme="dark"] .tab-btn.active::before { box-shadow: 0 3px 0 #F4D35E; }
-  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.08); }
-  .tab-icon { font-size: 22px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4)); }
-  [data-theme="retro"] .tab-icon { font-size: 28px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
-  [data-theme="light"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(45,27,78,0.3)); }
-  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
-  .tab-btn.active .tab-icon { transform: translateY(-3px) scale(1.05); }
-  .tab-label { font-size: 9px; font-weight: 800; letter-spacing: 0.6px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; text-shadow: 0 1px 1px rgba(0,0,0,0.2); }
-  .tab-btn.active .tab-label { color: var(--tab-label-active); text-shadow: 0 1px 2px rgba(0,0,0,0.4); }
-  [data-theme="retro"] .tab-label { font-size: 10px; letter-spacing: 1px; text-shadow: 1px 1px 0 #1A0F2E; }
-  [data-theme="dark"] .tab-label { color: #A898C0; }
-  [data-theme="dark"] .tab-btn.active .tab-label { color: #F4D35E; }
-  [data-theme="light"] .tab-label { color: #5A4679; }
-  [data-theme="light"] .tab-btn.active .tab-label { color: #2D1B4E; }
-  .tab-badge { position: absolute; top: 6px; right: calc(50% - 16px); min-width: 16px; height: 16px; border-radius: 8px; background: var(--danger); color: white; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--tab-bg); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
+  /* NEORUBTALISM TAB BAR - Inspired by neobrutalism.dev */
+  .tab-bar { 
+    position: fixed; 
+    bottom: 0; 
+    left: 0; 
+    right: 0; 
+    background: var(--bg-elevated); 
+    border-top: 4px solid var(--border); 
+    display: flex; 
+    justify-content: space-around; 
+    align-items: center; 
+    height: 80px; 
+    padding-bottom: env(safe-area-inset-bottom, 0); 
+    z-index: 100; 
+    box-shadow: 0 -8px 0 var(--border); 
+  }
+  [data-theme="light"] .tab-bar { 
+    box-shadow: 0 -8px 0 #2D1B4E; 
+    border-top-width: 4px; 
+    background: #F5F0FF;
+  }
+  [data-theme="retro"] .tab-bar { 
+    border-top-width: 6px; 
+    box-shadow: 0 -8px 0 #1A0F2E;
+    background: #2D1B4E;
+  }
+  [data-theme="dark"] .tab-bar { 
+    box-shadow: 0 -8px 0 rgba(0,0,0,0.6);
+    background: #1a1a2e;
+  }
+  
+  .tab-btn { 
+    flex: 1; 
+    display: flex; 
+    flex-direction: column; 
+    align-items: center; 
+    justify-content: center; 
+    gap: 6px; 
+    height: 100%; 
+    cursor: pointer; 
+    background: var(--bg-card);
+    border: 3px solid var(--border);
+    margin: 0 4px;
+    border-radius: 8px;
+    color: var(--text);
+    transition: all 0.15s ease;
+    position: relative; 
+    -webkit-tap-highlight-color: transparent;
+    box-shadow: 4px 4px 0 var(--shadow-tab);
+  }
+  .tab-btn:first-child { margin-left: 8px; }
+  .tab-btn:last-child { margin-right: 8px; border-right: 3px solid var(--border); }
+  .tab-btn:active { 
+    transform: translate(2px, 2px);
+    box-shadow: 2px 2px 0 var(--shadow-tab);
+  }
+  .tab-btn.active { 
+    background: var(--accent);
+    color: #2D1B4E;
+    border-color: #2D1B4E;
+    box-shadow: 4px 4px 0 #2D1B4E;
+    transform: translateY(-2px);
+  }
+  [data-theme="light"] .tab-btn.active {
+    background: #2D1B4E;
+    color: #F4D35E;
+    border-color: #F4D35E;
+    box-shadow: 4px 4px 0 #F4D35E;
+  }
+  [data-theme="retro"] .tab-btn {
+    border-radius: 0;
+    border-width: 4px;
+    box-shadow: 4px 4px 0 #1A0F2E;
+  }
+  [data-theme="retro"] .tab-btn:active {
+    transform: translate(4px, 4px);
+    box-shadow: 0 0 0 #1A0F2E;
+  }
+  [data-theme="retro"] .tab-btn.active {
+    background: #F4D35E;
+    color: #2D1B4E;
+    border-color: #1A0F2E;
+    box-shadow: 4px 4px 0 #1A0F2E;
+  }
+  
+  .tab-icon { 
+    font-size: 20px; 
+    line-height: 1; 
+    transition: transform 0.15s; 
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.3)); 
+  }
+  [data-theme="retro"] .tab-icon { 
+    font-size: 24px; 
+    filter: drop-shadow(2px 2px 0 #1A0F2E); 
+  }
+  [data-theme="light"] .tab-icon { 
+    filter: drop-shadow(0 2px 3px rgba(45,27,78,0.3)); 
+  }
+  [data-theme="dark"] .tab-icon { 
+    filter: drop-shadow(0 2px 3px rgba(0,0,0,0.5)); 
+  }
+  .tab-btn.active .tab-icon { 
+    transform: scale(1.1);
+    filter: drop-shadow(0 2px 4px rgba(0,0,0,0.4));
+  }
+  
+  .tab-label { 
+    font-size: 8px; 
+    font-weight: 700; 
+    letter-spacing: 0.5px; 
+    text-transform: uppercase; 
+    color: var(--text-muted);
+    transition: color 0.15s; 
+    text-shadow: 0 1px 1px rgba(0,0,0,0.2); 
+  }
+  .tab-btn.active .tab-label { 
+    color: #2D1B4E;
+    text-shadow: none;
+  }
+  [data-theme="retro"] .tab-label { 
+    font-size: 9px; 
+    letter-spacing: 0.8px; 
+    text-shadow: 1px 1px 0 #1A0F2E; 
+  }
+  [data-theme="retro"] .tab-btn.active .tab-label {
+    color: #2D1B4E;
+    text-shadow: 1px 1px 0 rgba(255,255,255,0.3);
+  }
+  [data-theme="light"] .tab-btn.active .tab-label {
+    color: #F4D35E;
+  }
+  .tab-badge { 
+    position: absolute; 
+    top: 8px; 
+    right: 8px; 
+    min-width: 18px; 
+    height: 18px; 
+    border-radius: 10px; 
+    background: var(--danger); 
+    color: white; 
+    font-size: 10px; 
+    font-weight: 700; 
+    display: flex; 
+    align-items: center; 
+    justify-content: center; 
+    padding: 0 5px; 
+    border: 2px solid var(--bg-card); 
+    box-shadow: 0 2px 4px rgba(0,0,0,0.3); 
+    z-index: 10;
+  }
   .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px); background: var(--bg-card); border: 1px solid var(--border-light); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }
   .toast.show { transform: translateX(-50%) translateY(0); }
   @media (min-width: 768px) {
