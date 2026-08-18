@@ -400,25 +400,26 @@
   [data-theme="light"] .tab-bar { box-shadow: 0 -4px 12px rgba(45,27,78,0.15); border-top-width: 2px; }
   [data-theme="retro"] .tab-bar { border-top-width: 3px; box-shadow: 0 -4px 0px #1A0F2E; }
   [data-theme="dark"] .tab-bar { box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 1px solid var(--border); }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 5px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; border-right: 2px solid var(--border); }
   .tab-btn:last-child { border-right: none; }
-  .tab-btn:active { transform: scale(0.92); }
-  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.08); }
-  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; background: var(--tab-border); border-radius: 0 0 4px 4px; }
-  [data-theme="light"] .tab-btn.active::before { height: 4px; background: #2D1B4E; }
-  [data-theme="retro"] .tab-btn.active::before { width: 44px; height: 5px; border-radius: 0; }
-  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.08); }
-  .tab-icon { font-size: 26px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
-  [data-theme="retro"] .tab-icon { font-size: 32px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
-  [data-theme="light"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(45,27,78,0.3)); }
-  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
-  .tab-btn.active .tab-icon { transform: translateY(-3px); }
-  .tab-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; }
-  .tab-btn.active .tab-label { color: var(--tab-label-active); }
-  [data-theme="retro"] .tab-label { font-size: 11px; letter-spacing: 1px; }
-  [data-theme="dark"] .tab-label { color: #9AA3C7; }
-  [data-theme="dark"] .tab-btn.active .tab-label { color: #6366F1; }
-  [data-theme="light"] .tab-label { color: #5C4485; }
+  .tab-btn:active { transform: scale(0.95); }
+  .tab-btn.active { color: var(--tab-icon-active); background: rgba(244, 211, 94, 0.12); }
+  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 48px; height: 5px; background: var(--tab-border); border-radius: 0; box-shadow: 0 2px 0 var(--border); }
+  [data-theme="light"] .tab-btn.active::before { height: 5px; background: #2D1B4E; box-shadow: 0 2px 0 #F4D35E; }
+  [data-theme="retro"] .tab-btn.active::before { width: 56px; height: 6px; border-radius: 0; box-shadow: 0 2px 0 #1A0F2E; }
+  [data-theme="dark"] .tab-btn.active::before { box-shadow: 0 2px 0 #F4D35E; }
+  [data-theme="light"] .tab-btn.active { background: rgba(45, 27, 78, 0.12); }
+  .tab-icon { font-size: 28px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 3px 6px rgba(0,0,0,0.4)); }
+  [data-theme="retro"] .tab-icon { font-size: 36px; filter: drop-shadow(3px 3px 0px #1A0F2E); }
+  [data-theme="light"] .tab-icon { filter: drop-shadow(0 3px 6px rgba(45,27,78,0.4)); }
+  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 3px 6px rgba(0,0,0,0.6)); }
+  .tab-btn.active .tab-icon { transform: translateY(-4px) scale(1.1); }
+  .tab-label { font-size: 10px; font-weight: 800; letter-spacing: 0.8px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; text-shadow: 0 1px 2px rgba(0,0,0,0.3); }
+  .tab-btn.active .tab-label { color: var(--tab-label-active); text-shadow: 0 1px 2px rgba(0,0,0,0.5); }
+  [data-theme="retro"] .tab-label { font-size: 12px; letter-spacing: 1.2px; text-shadow: 2px 2px 0 #1A0F2E; }
+  [data-theme="dark"] .tab-label { color: #B8A8D0; }
+  [data-theme="dark"] .tab-btn.active .tab-label { color: #F4D35E; }
+  [data-theme="light"] .tab-label { color: #4A3669; }
   [data-theme="light"] .tab-btn.active .tab-label { color: #2D1B4E; }
   .tab-badge { position: absolute; top: 6px; right: calc(50% - 16px); min-width: 16px; height: 16px; border-radius: 8px; background: var(--danger); color: white; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--tab-bg); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
   .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px); background: var(--bg-card); border: 1px solid var(--border-light); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }

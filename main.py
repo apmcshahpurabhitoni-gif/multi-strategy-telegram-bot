@@ -520,18 +520,23 @@ def _iso_to_ist_dt(iso_str):
 def get_cached_news():
     global NEWS_CACHE
     try:
-        # Force initial fetch if never initialized
-        if not NEWS_CACHE.get("initialized", False):
-            print("[NEWS] Initial news fetch triggered...")
-            NEWS_CACHE["data"] = fetch_news()
-            NEWS_CACHE["last_fetch"] = time.time()
-            NEWS_CACHE["initialized"] = True
-            print(f"[NEWS] Initialized with {len(NEWS_CACHE['data'])} news items")
-        elif time.time() - NEWS_CACHE.get("last_fetch", 0) > 600:
-            print("[NEWS] Fetching fresh news (cache expired)...")
-            NEWS_CACHE["data"] = fetch_news()
-            NEWS_CACHE["last_fetch"] = time.time()
-            print(f"[NEWS] Cached {len(NEWS_CACHE['data'])} news items")
+        # Cache news for 24 hours (86400 seconds) instead of 10 minutes
+        CACHE_DURATION = 86400
+        
+        # Force initial fetch if never initialized or cache expired
+        if not NEWS_CACHE.get("initialized", False) or (time.time() - NEWS_CACHE.get("last_fetch", 0)) > CACHE_DURATION:
+            print("[NEWS] Fetching news (initial or cache expired)...")
+            fetched = fetch_news()
+            if fetched:  # Only update if we got valid data
+                NEWS_CACHE["data"] = fetched
+                NEWS_CACHE["last_fetch"] = time.time()
+                NEWS_CACHE["initialized"] = True
+                print(f"[NEWS] Cached {len(NEWS_CACHE['data'])} news items for 24h")
+            elif NEWS_CACHE.get("data"):  # Keep old data if fetch failed
+                print("[NEWS] ⚠️ Fetch failed, keeping cached data")
+        else:
+            remaining = int((CACHE_DURATION - (time.time() - NEWS_CACHE.get("last_fetch", 0))) / 60)
+            print(f"[NEWS] Using cache ({remaining} min remaining)")
     except Exception as e:
         print(f"[NEWS] Failed to fetch news: {e}")
         import traceback
