@@ -519,7 +519,7 @@ def _iso_to_ist_dt(iso_str):
 
 def get_cached_news():
     """Get news with 24-hour persistent file caching"""
-    cache_file = 'news_cache.json'
+    cache_file = '/tmp/workspace/news_cache.json'
     now = datetime.now()
     
     # Try to load existing cache from file
@@ -541,7 +541,8 @@ def get_cached_news():
     # Fetch fresh data
     try:
         url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        response = requests.get(url, timeout=10)
+        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
+        response = requests.get(url, headers=headers, timeout=10)
         response.raise_for_status()
         data = response.json()
         
@@ -580,6 +581,7 @@ def get_cached_news():
             'timestamp': now.isoformat(),
             'items': processed
         }
+        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
         with open(cache_file, 'w') as f:
             json.dump(cache_data, f)
             
