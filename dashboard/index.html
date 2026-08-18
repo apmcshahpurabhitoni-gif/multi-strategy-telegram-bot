@@ -41,12 +41,16 @@
     --short: #FF6B6B;
     --tab-bg: #2D1B4E;
     --tab-active: #4F3A75;
+    --tab-border: #F4D35E;
     --tab-icon: #B8A8D0;
     --tab-icon-active: #F4D35E;
+    --tab-label: #E8D5A3;
+    --tab-label-active: #F4D35E;
     --radius: 8px;
     --radius-sm: 6px;
     --shadow-card: 6px 6px 0px #1A0F2E;
     --shadow-hard: 4px 4px 0px #1A0F2E;
+    --shadow-tab: 3px 3px 0px #1A0F2E;
     --border-width: 2px;
     color-scheme: dark;
   }
@@ -75,12 +79,16 @@
     --short: #FF6B6B;
     --tab-bg: #FFF9E6;
     --tab-active: #FFFFFF;
+    --tab-border: #2D1B4E;
     --tab-icon: #8B7AA8;
     --tab-icon-active: #2D1B4E;
+    --tab-label: #5C4485;
+    --tab-label-active: #2D1B4E;
     --radius: 8px;
     --radius-sm: 6px;
     --shadow-card: 6px 6px 0px #2D1B4E;
     --shadow-hard: 4px 4px 0px #2D1B4E;
+    --shadow-tab: 3px 3px 0px #2D1B4E;
     --border-width: 2px;
     color-scheme: light;
   }
@@ -109,12 +117,16 @@
     --short: #EF4444;
     --tab-bg: #0D0D1A;
     --tab-active: #16213E;
+    --tab-border: #6366F1;
     --tab-icon: #6B729E;
     --tab-icon-active: #6366F1;
+    --tab-label: #9AA3C7;
+    --tab-label-active: #6366F1;
     --radius: 12px;
     --radius-sm: 8px;
     --shadow-card: 0 4px 20px rgba(0,0,0,0.4);
     --shadow-hard: 4px 4px 0px rgba(0,0,0,0.3);
+    --shadow-tab: 3px 3px 0px rgba(0,0,0,0.5);
     --border-width: 1px;
     color-scheme: dark;
   }
@@ -384,22 +396,28 @@
   .bt-metrics { display: grid; grid-template-columns: repeat(3, 1fr); gap: 8px; }
   @media (min-width: 768px) { .bt-metrics { grid-template-columns: repeat(6, 1fr); } }
   .last-updated { font-size: 9px; color: var(--text-dim); font-family: 'JetBrains Mono', monospace; text-align: center; padding: 4px 0 8px 0; }
-  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--tab-bg); border-top: var(--border-width) solid var(--border); display: flex; justify-content: space-around; align-items: center; height: 64px; padding-bottom: env(safe-area-inset-bottom, 0); z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 -4px 12px rgba(0,0,0,0.1); }
+  .tab-bar { position: fixed; bottom: 0; left: 0; right: 0; background: var(--tab-bg); border-top: var(--border-width) solid var(--border); display: flex; justify-content: space-around; align-items: center; height: 68px; padding-bottom: env(safe-area-inset-bottom, 0); z-index: 100; backdrop-filter: blur(20px); -webkit-backdrop-filter: blur(20px); box-shadow: 0 -4px 12px rgba(0,0,0,0.1); }
   [data-theme="light"] .tab-bar { box-shadow: 0 -4px 12px rgba(45,27,78,0.15); border-top-width: 2px; }
   [data-theme="retro"] .tab-bar { border-top-width: 3px; box-shadow: 0 -4px 0px #1A0F2E; }
-  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 6px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; }
+  [data-theme="dark"] .tab-bar { box-shadow: 0 -4px 12px rgba(0,0,0,0.3); }
+  .tab-btn { flex: 1; display: flex; flex-direction: column; align-items: center; justify-content: center; gap: 4px; height: 100%; cursor: pointer; background: none; border: none; color: var(--tab-icon); transition: all 0.2s; position: relative; -webkit-tap-highlight-color: transparent; }
   .tab-btn:active { transform: scale(0.92); }
   .tab-btn.active { color: var(--tab-icon-active); }
-  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 32px; height: 4px; background: var(--accent); border-radius: 0 0 4px 4px; }
+  .tab-btn.active::before { content: ''; position: absolute; top: 0; left: 50%; transform: translateX(-50%); width: 36px; height: 4px; background: var(--tab-border); border-radius: 0 0 4px 4px; }
   [data-theme="light"] .tab-btn.active::before { height: 4px; background: #2D1B4E; }
-  [data-theme="retro"] .tab-btn.active::before { width: 40px; height: 5px; border-radius: 0; }
-  .tab-icon { font-size: 24px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 1px 2px rgba(0,0,0,0.2)); }
-  [data-theme="retro"] .tab-icon { font-size: 28px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
-  [data-theme="light"] .tab-icon { filter: drop-shadow(0 1px 2px rgba(45,27,78,0.3)); }
+  [data-theme="retro"] .tab-btn.active::before { width: 44px; height: 5px; border-radius: 0; }
+  .tab-icon { font-size: 26px; line-height: 1; transition: transform 0.2s; filter: drop-shadow(0 2px 4px rgba(0,0,0,0.3)); }
+  [data-theme="retro"] .tab-icon { font-size: 32px; filter: drop-shadow(2px 2px 0px #1A0F2E); }
+  [data-theme="light"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(45,27,78,0.3)); }
+  [data-theme="dark"] .tab-icon { filter: drop-shadow(0 2px 4px rgba(0,0,0,0.5)); }
   .tab-btn.active .tab-icon { transform: translateY(-3px); }
-  .tab-label { font-size: 10px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; }
-  [data-theme="retro"] .tab-label { font-size: 12px; letter-spacing: 1px; }
-  [data-theme="light"] .tab-label { color: #2D1B4E; }
+  .tab-label { font-size: 9px; font-weight: 700; letter-spacing: 0.5px; text-transform: uppercase; color: var(--tab-label); transition: color 0.2s; }
+  .tab-btn.active .tab-label { color: var(--tab-label-active); }
+  [data-theme="retro"] .tab-label { font-size: 11px; letter-spacing: 1px; }
+  [data-theme="dark"] .tab-label { color: #9AA3C7; }
+  [data-theme="dark"] .tab-btn.active .tab-label { color: #6366F1; }
+  [data-theme="light"] .tab-label { color: #5C4485; }
+  [data-theme="light"] .tab-btn.active .tab-label { color: #2D1B4E; }
   .tab-badge { position: absolute; top: 6px; right: calc(50% - 16px); min-width: 16px; height: 16px; border-radius: 8px; background: var(--danger); color: white; font-size: 9px; font-weight: 700; display: flex; align-items: center; justify-content: center; padding: 0 4px; border: 2px solid var(--tab-bg); box-shadow: 0 2px 4px rgba(0,0,0,0.3); }
   .toast { position: fixed; top: 16px; left: 50%; transform: translateX(-50%) translateY(-60px); background: var(--bg-card); border: 1px solid var(--border-light); color: var(--text); padding: 10px 18px; border-radius: 8px; font-size: 13px; font-weight: 500; z-index: 200; box-shadow: 0 8px 32px rgba(0,0,0,0.4); transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1); pointer-events: none; }
   .toast.show { transform: translateX(-50%) translateY(0); }
@@ -474,7 +492,7 @@
     </div>
 
     <div class="tab-page" id="tab-backtest">
-      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><input type="text" id="btSymbol" class="bt-input" placeholder="Symbol (e.g. BTC-USD)"><select id="btStrategy" class="bt-input"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><input type="number" id="btDays" class="bt-input" value="60" min="7" max="365"><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
+      <div class="card"><div class="card-header"><div class="card-title"><span class="icon">🧪</span> Run Backtest</div></div><div class="card-body"><div class="bt-form"><input list="forex-pairs" type="text" id="btSymbol" class="bt-input" placeholder="Type or select pair (e.g. EURUSD)" value="EURUSD"><datalist id="forex-pairs"><option value="EURUSD"><option value="GBPUSD"><option value="USDJPY"><option value="USDCHF"><option value="AUDUSD"><option value="USDCAD"><option value="NZDUSD"><option value="EURGBP"><option value="EURJPY"><option value="GBPJPY"><option value="EURCHF"><option value="EURAUD"><option value="EURCAD"><option value="GBPCHF"><option value="GBPAUD"><option value="GBPCAD"><option value="GBPNZD"><option value="CHFJPY"><option value="AUDJPY"><option value="CADJPY"><option value="NZDJPY"><option value="AUDCAD"><option value="AUDCHF"><option value="AUDNZD"><option value="CADCHF"><option value="NZDCAD"><option value="NZDCHF"><option value="XAUUSD"></datalist><select id="btStrategy" class="bt-input"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select><input type="number" id="btDays" class="bt-input" value="60" min="7" max="365"><button id="btRunBtn" class="refresh-btn" onclick="runBacktest()"><span class="spin-icon">▶️</span> Run</button></div></div></div><div id="btResults"></div>
     </div>
   </div>
 
@@ -522,6 +540,7 @@ function switchTab(tabId, btn) {
   btn.classList.add('active');
   currentTab = tabId;
   if (tabId === 'nifty' && !niftyLoaded) refreshNifty();
+  if (tabId === 'news') renderNews();
 }
 
 function fmtMoney(n) { return '₹' + (n || 0).toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }); }
@@ -794,6 +813,8 @@ setInterval(() => { const now = new Date(); document.getElementById('clock').tex
 console.log('[Dashboard] Starting bootstrap...');
 fetchData();
 setInterval(fetchData, 30000);
+// Initial news render to ensure it shows on first load
+renderNews();
 
 window.onerror = (msg, src, line) => { console.error(`[Dashboard] ${msg} at ${src}:${line}`); };
 window.onunhandledrejection = e => { console.error('[Dashboard] Unhandled:', e.reason); };
