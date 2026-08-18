@@ -74,8 +74,22 @@ class BacktestEngine:
             yf_symbol = "BTC-USD"
         elif symbol == "XAUUSD":
             yf_symbol = "GC=F"  # Gold futures
-        else:
-            # Forex pairs need =X suffix for Yahoo Finance
+        elif symbol == "EURUSD":
+            yf_symbol = "EURUSD=X"
+        elif symbol == "GBPUSD":
+            yf_symbol = "GBPUSD=X"
+        elif symbol == "USDJPY":
+            yf_symbol = "USDJPY=X"
+        elif symbol == "USDCHF":
+            yf_symbol = "USDCHF=X"
+        elif symbol == "AUDUSD":
+            yf_symbol = "AUDUSD=X"
+        elif symbol == "USDCAD":
+            yf_symbol = "USDCAD=X"
+        elif symbol == "NZDUSD":
+            yf_symbol = "NZDUSD=X"
+        # If symbol doesn't already have =X or = suffix, add =X for forex
+        elif "=" not in symbol and not symbol.endswith(".NS"):
             yf_symbol = symbol + "=X"
         df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
         if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
@@ -147,8 +161,22 @@ class BacktestEngine:
             yf_symbol = "BTC-USD"
         elif symbol == "XAUUSD":
             yf_symbol = "GC=F"  # Gold futures
-        else:
-            # Forex pairs need =X suffix for Yahoo Finance
+        elif symbol == "EURUSD":
+            yf_symbol = "EURUSD=X"
+        elif symbol == "GBPUSD":
+            yf_symbol = "GBPUSD=X"
+        elif symbol == "USDJPY":
+            yf_symbol = "USDJPY=X"
+        elif symbol == "USDCHF":
+            yf_symbol = "USDCHF=X"
+        elif symbol == "AUDUSD":
+            yf_symbol = "AUDUSD=X"
+        elif symbol == "USDCAD":
+            yf_symbol = "USDCAD=X"
+        elif symbol == "NZDUSD":
+            yf_symbol = "NZDUSD=X"
+        # If symbol doesn't already have =X or = suffix, add =X for forex
+        elif "=" not in symbol and not symbol.endswith(".NS"):
             yf_symbol = symbol + "=X"
         df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
         if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
@@ -160,14 +188,18 @@ class BacktestEngine:
         for i in range(5, len(df_4h) - 1):
             c, m = df_4h.iloc[i-1], df_4h.iloc[i-2]
             sweep = None
-            if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]: sweep = ("BULLISH", float(c["High"]), float(c["Low"]))
-            elif c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]: sweep = ("BEARISH", float(c["High"]), float(c["Low"]))
+            if c["Low"] < m["Low"] and c["High"] > m["High"] and c["Close"] > m["High"]: 
+                sweep = ("BULLISH", float(c["High"]), float(c["Low"]))
+            elif c["High"] > m["High"] and c["Low"] < m["Low"] and c["Close"] < m["Low"]: 
+                sweep = ("BEARISH", float(c["High"]), float(c["Low"]))
+            
             if sweep:
                 direction, sweep_high, sweep_low = sweep
                 df_after = df_1h[df_1h.index > df_4h.index[i-1]]
                 fvg_found = False
                 for j in range(2, min(len(df_after), 24)):
-                    if fvg_found: break
+                    if fvg_found: 
+                        break
                     c_prev2, c_curr = df_after.iloc[j-2], df_after.iloc[j]
                     if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
                         zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
@@ -175,28 +207,34 @@ class BacktestEngine:
                             for k in range(len(df_after.iloc[j+1:])):
                                 bar = df_after.iloc[j+1+k]
                                 if float(bar["Low"]) <= zh and float(bar["Close"]) >= zl:
-                                    entry, sl, risk = float(bar["Close"]), sweep_low, abs(float(bar["Close"]) - sweep_low)
+                                    entry_price = float(bar["Close"])
+                                    sl_price = sweep_low
+                                    risk = abs(entry_price - sweep_low)
                                     if risk > 0:
-                                        qty = self._calc_qty(balance, entry, sl)
+                                        qty = self._calc_qty(balance, entry_price, sl_price)
                                         if qty > 0:
-                                            pnl, result, exit_price = self._simulate_trade(entry, sl, entry + risk * 2.0, qty, "LONG", df_after.iloc[j+2+k:])
-                                            balance += pnl; trades.append({"type": "LONG", "entry": entry, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
-                                            fvg_found = True; break
+                                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price + risk * 2.0, qty, "LONG", df_after.iloc[j+2+k:])
+                                            balance += pnl
+                                            trades.append({"type": "LONG", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
+                                            fvg_found = True
+                                            break
                     elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
                         zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
                         if zh > zl:
                             for k in range(len(df_after.iloc[j+1:])):
                                 bar = df_after.iloc[j+1+k]
                                 if float(bar["High"]) >= zl and float(bar["Close"]) <= zh:
-                                    entry = float(bar["Close"])
-                                    sl = sweep_high
-                                    risk = abs(sweep_high - entry)
+                                    entry_price = float(bar["Close"])
+                                    sl_price = sweep_high
+                                    risk = abs(sweep_high - entry_price)
                                     if risk > 0:
-                                        qty = self._calc_qty(balance, entry, sl)
+                                        qty = self._calc_qty(balance, entry_price, sl_price)
                                         if qty > 0:
-                                            pnl, result, exit_price = self._simulate_trade(entry, sl, entry - risk * 2.0, qty, "SHORT", df_after.iloc[j+2+k:])
-                                            balance += pnl; trades.append({"type": "SHORT", "entry": entry, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
-                                            fvg_found = True; break
+                                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price - risk * 2.0, qty, "SHORT", df_after.iloc[j+2+k:])
+                                            balance += pnl
+                                            trades.append({"type": "SHORT", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
+                                            fvg_found = True
+                                            break
         return self._compute_metrics(trades, balance)
 
     def _compute_metrics(self, trades: List[Dict], final_balance: float) -> Dict[str, Any]:

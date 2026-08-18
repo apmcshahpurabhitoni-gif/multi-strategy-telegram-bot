@@ -518,30 +518,75 @@ def _iso_to_ist_dt(iso_str):
     return None
 
 def get_cached_news():
-    global NEWS_CACHE
+    """Get news with 24-hour persistent file caching"""
+    cache_file = 'news_cache.json'
+    now = datetime.now()
+    
+    # Try to load existing cache from file
+    if os.path.exists(cache_file):
+        try:
+            with open(cache_file, 'r') as f:
+                data = json.load(f)
+                cached_time = datetime.fromisoformat(data['timestamp'])
+                
+                # If less than 24 hours old, return cached data
+                if (now - cached_time).total_seconds() < 86400:
+                    print(f"[NEWS] Serving {len(data['items'])} items from cache ({((now - cached_time).total_seconds()/3600):.1f}h old)")
+                    return data['items']
+                else:
+                    print("[NEWS] Cache expired (>24h), fetching fresh data...")
+        except Exception as e:
+            print(f"[NEWS] Cache read error: {e}")
+    
+    # Fetch fresh data
     try:
-        # Cache news for 24 hours (86400 seconds) instead of 10 minutes
-        CACHE_DURATION = 86400
+        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
+        response = requests.get(url, timeout=10)
+        response.raise_for_status()
+        data = response.json()
         
-        # Force initial fetch if never initialized or cache expired
-        if not NEWS_CACHE.get("initialized", False) or (time.time() - NEWS_CACHE.get("last_fetch", 0)) > CACHE_DURATION:
-            print("[NEWS] Fetching news (initial or cache expired)...")
-            fetched = fetch_news()
-            if fetched:  # Only update if we got valid data
-                NEWS_CACHE["data"] = fetched
-                NEWS_CACHE["last_fetch"] = time.time()
-                NEWS_CACHE["initialized"] = True
-                print(f"[NEWS] Cached {len(NEWS_CACHE['data'])} news items for 24h")
-            elif NEWS_CACHE.get("data"):  # Keep old data if fetch failed
-                print("[NEWS] ⚠️ Fetch failed, keeping cached data")
-        else:
-            remaining = int((CACHE_DURATION - (time.time() - NEWS_CACHE.get("last_fetch", 0))) / 60)
-            print(f"[NEWS] Using cache ({remaining} min remaining)")
+        # Process and limit to top 50 events
+        processed = []
+        seen = set()
+        for item in data[:100]:  # Check first 100 to find 50 unique
+            title = item.get('title', 'No Title')
+            if title in seen:
+                continue
+            seen.add(title)
+            
+            impact = item.get('impact', 'Low')
+            color = '#3b82f6'  # Blue default
+            if impact == 'High':
+                color = '#ef4444'  # Red
+            elif impact == 'Medium':
+                color = '#f97316'  # Orange
+            
+            processed.append({
+                'time': item.get('date', ''),
+                'title': title,
+                'impact': impact,
+                'color': color,
+                'country': item.get('country', '')
+            })
+            
+            if len(processed) >= 50:
+                break
+        
+        # Save to file cache
+        cache_data = {
+            'timestamp': now.isoformat(),
+            'items': processed
+        }
+        with open(cache_file, 'w') as f:
+            json.dump(cache_data, f)
+            
+        print(f"[NEWS] Fetched {len(processed)} fresh items and saved to disk.")
+        return processed
+        
     except Exception as e:
-        print(f"[NEWS] Failed to fetch news: {e}")
-        import traceback
-        traceback.print_exc()
-    return NEWS_CACHE.get("data", [])
+        print(f"[NEWS] Fetch failed: {e}")
+        # Return empty list if fetch fails and no cache exists
+        return []
 
 def is_news_pause_active():
     if not _news_pause_enabled: return False, ""

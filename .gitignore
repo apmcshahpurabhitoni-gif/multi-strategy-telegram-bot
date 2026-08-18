@@ -19,6 +19,11 @@ __pycache__/
 .vscode/
 .idea/
 
+# Dependencies
+.venv/
+venv/
+node_modules/
+
 # Build artifacts
 dist/
 build/
