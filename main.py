@@ -517,81 +517,102 @@ def _iso_to_ist_dt(iso_str):
     except Exception: pass
     return None
 
-def get_cached_news():
-    """Get news with 24-hour persistent file caching"""
-    cache_file = '/tmp/workspace/news_cache.json'
-    now = datetime.now()
-    
-    # Try to load existing cache from file
-    if os.path.exists(cache_file):
-        try:
-            with open(cache_file, 'r') as f:
-                data = json.load(f)
-                cached_time = datetime.fromisoformat(data['timestamp'])
-                
-                # If less than 24 hours old, return cached data
-                if (now - cached_time).total_seconds() < 86400:
-                    print(f"[NEWS] Serving {len(data['items'])} items from cache ({((now - cached_time).total_seconds()/3600):.1f}h old)")
-                    return data['items']
-                else:
-                    print("[NEWS] Cache expired (>24h), fetching fresh data...")
-        except Exception as e:
-            print(f"[NEWS] Cache read error: {e}")
-    
-    # Fetch fresh data
+# ------------------------------------------------------------------
+# News caching layer (persistent, upcoming-only, two-source)
+# ------------------------------------------------------------------
+# This is the function the DASHBOARD calls. It must:
+#   1. Return only UPCOMING events (not past)
+#   2. Persist a cache to disk so it survives restarts
+#   3. Be cheap when called frequently (30s dashboard refresh)
+# ------------------------------------------------------------------
+NEWS_CACHE_FILE = "/tmp/workspace/news_upcoming_cache.json"
+NEWS_CACHE_TTL_S = 1800  # 30 min — dashboard polls every 30s, so this is safe
+
+def _save_news_cache(items):
     try:
-        url = "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-        headers = {"User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36"}
-        response = requests.get(url, headers=headers, timeout=10)
-        response.raise_for_status()
-        data = response.json()
-        
-        # Process and limit to top 50 events
-        processed = []
-        seen = set()
-        for item in data[:100]:  # Check first 100 to find 50 unique
-            title = item.get('title', 'No Title')
-            if title in seen:
-                continue
-            seen.add(title)
-            
-            impact = item.get('impact', 'Low')
-            color = '#3b82f6'  # Blue default
-            if impact == 'High':
-                color = '#ef4444'  # Red
-            elif impact == 'Medium':
-                color = '#f97316'  # Orange
-            
-            processed.append({
-                'date': item.get('date', ''),
-                'title': title,
-                'impact': impact,
-                'color': color,
-                'country': item.get('country', ''),
-                'currency': item.get('currency', ''),
-                'forecast': item.get('forecast', ''),
-                'previous': item.get('previous', '')
-            })
-            
-            if len(processed) >= 50:
-                break
-        
-        # Save to file cache
-        cache_data = {
-            'timestamp': now.isoformat(),
-            'items': processed
-        }
-        os.makedirs(os.path.dirname(cache_file), exist_ok=True)
-        with open(cache_file, 'w') as f:
-            json.dump(cache_data, f)
-            
-        print(f"[NEWS] Fetched {len(processed)} fresh items and saved to disk.")
-        return processed
-        
+        with open(NEWS_CACHE_FILE, "w") as f:
+            json.dump({"ts": int(time.time()), "items": items}, f)
     except Exception as e:
-        print(f"[NEWS] Fetch failed: {e}")
-        # Return empty list if fetch fails and no cache exists
-        return []
+        print(f"[NEWS] cache save error: {e}")
+
+def _load_news_cache():
+    try:
+        if not os.path.exists(NEWS_CACHE_FILE): return None
+        with open(NEWS_CACHE_FILE) as f:
+            data = json.load(f)
+        if int(time.time()) - int(data.get("ts", 0)) < NEWS_CACHE_TTL_S:
+            return data.get("items", [])
+    except Exception as e:
+        print(f"[NEWS] cache load error: {e}")
+    return None
+
+def get_cached_news():
+    """Return UPCOMING news events, served from disk cache when fresh.
+    Falls back to fetching from both this-week + next-week calendars and
+    filtering to events that have not yet started."""
+    # 1. Try disk cache
+    cached = _load_news_cache()
+    if cached is not None:
+        return cached
+
+    # 2. Fetch fresh (delegate to fetch_news if present, else inline)
+    try:
+        if "fetch_news" in globals() and callable(globals().get("fetch_news")):
+            items = fetch_news()
+        else:
+            items = _legacy_fetch_news()
+    except Exception as e:
+        print(f"[NEWS] fetch failed: {e}")
+        items = []
+
+    # 3. Normalize: ensure .date is ISO and impact is Title case for the dashboard
+    norm = []
+    now_ms = int(time.time() * 1000)
+    for ev in (items or []):
+        try:
+            d = ev.get("date", "")
+            if not d: continue
+            dt = _iso_to_ist_dt(d)
+            if not dt: continue
+            ts_ms = int(dt.timestamp() * 1000)
+            if ts_ms + 30 * 60 * 1000 < now_ms:
+                continue  # already past + 30 min grace
+            ev2 = dict(ev)
+            ev2["date"] = dt.isoformat()
+            ev2["impact"] = (ev.get("impact") or "Low")
+            norm.append(ev2)
+        except Exception:
+            continue
+    norm.sort(key=lambda x: x.get("date", ""))
+
+    _save_news_cache(norm)
+    return norm
+
+def _legacy_fetch_news():
+    """Inline fallback fetcher used only if `fetch_news` is not defined."""
+    out = []
+    for url in [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+    ]:
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code == 200 and r.text.strip():
+                data = r.json()
+                if isinstance(data, list): out.extend(data)
+        except Exception:
+            continue
+    now = datetime.now(IST)
+    upcoming = []
+    for ev in out:
+        d = ev.get("date", "")
+        if not d: continue
+        try:
+            dt = _iso_to_ist_dt(d)
+            if dt and dt >= now: upcoming.append(ev)
+        except Exception:
+            continue
+    return upcoming
 
 def is_news_pause_active():
     if not _news_pause_enabled: return False, ""
@@ -906,6 +927,10 @@ def cmd_newspause(m):
 def cmd_refreshnews(m):
     global NEWS_CACHE
     NEWS_CACHE["last_fetch"] = 0
+    # Bust the upcoming-events disk cache
+    try:
+        if os.path.exists(NEWS_CACHE_FILE): os.remove(NEWS_CACHE_FILE)
+    except Exception: pass
     news = get_cached_news()
     if news:
         preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])

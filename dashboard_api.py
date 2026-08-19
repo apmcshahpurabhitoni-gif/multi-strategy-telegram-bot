@@ -327,6 +327,56 @@ def _route_backtest(start_response, environ):
     except Exception as e:
         return _json_response(start_response, {"error": str(e)}, status="500 Internal Server Error")
 
+def _route_refresh_news(start_response, environ):
+    """Force-refresh the news cache by deleting the file and re-fetching."""
+    try:
+        # Bust BOTH old + new cache files (defensive — older code used the first name)
+        for cache_file in ("/tmp/workspace/news_cache.json", "/tmp/workspace/news_upcoming_cache.json"):
+            try:
+                if os.path.exists(cache_file): os.remove(cache_file)
+            except Exception as e:
+                print(f"[NEWS] Could not remove {cache_file}: {e}")
+        # Also invalidate in-memory cache if main module has one
+        main = _get_main_module()
+        if main is not None and hasattr(main, "news_cache"):
+            try: main.news_cache = None
+            except Exception: pass
+        # Force a fresh fetch now
+        items = []
+        if main is not None and hasattr(main, "fetch_news"):
+            try: items = main.fetch_news() or []
+            except Exception as e: print(f"[NEWS] Force-refresh fetch failed: {e}")
+        # Persist the upcoming-only result so the next /api/dashboard call has it
+        try:
+            now_ms = int(time.time() * 1000)
+            IST_tz = getattr(main, "IST", None)
+            norm = []
+            for ev in (items or []):
+                d = ev.get("date", "")
+                if not d: continue
+                ts_ms = 0
+                try:
+                    if IST_tz is not None:
+                        from datetime import datetime
+                        dt = datetime.fromisoformat(str(d).split(".")[0])
+                        if dt.tzinfo is None and IST_tz is not None: dt = IST_tz.localize(dt)
+                        ts_ms = int(dt.timestamp() * 1000)
+                except Exception: pass
+                if ts_ms and ts_ms + 30 * 60 * 1000 < now_ms: continue  # past
+                ev2 = dict(ev)
+                ev2["impact"] = (ev.get("impact") or "Low")
+                norm.append(ev2)
+            norm.sort(key=lambda x: x.get("date", ""))
+            import json as _json
+            with open("/tmp/workspace/news_upcoming_cache.json", "w") as f:
+                _json.dump({"ts": int(time.time()), "items": norm}, f)
+            items = norm
+        except Exception as e:
+            print(f"[NEWS] Could not persist upcoming cache: {e}")
+        return _json_response(start_response, {"ok": True, "items": len(items)})
+    except Exception as e:
+        return _json_response(start_response, {"ok": False, "error": str(e)}, status="500 Internal Server Error")
+
 def register_routes(path, start_response, environ):
     method = environ.get("REQUEST_METHOD", "GET")
     if path in ("/dashboard", "/dashboard/"): return _html_response(start_response, open(_HTML_PATH, "rb").read())
@@ -335,4 +385,5 @@ def register_routes(path, start_response, environ):
     if path.startswith("/api/prices"): return _json_response(start_response, {"prices": _batch_live_prices(parse_qs(environ.get("QUERY_STRING", "")).get("symbols", [""])[0].split(",")), "ts": int(time.time())})
     if path == "/api/health": return _json_response(start_response, {"ok": True, "ts": int(time.time())})
     if path == "/api/close-trade" and method == "POST": return _route_close_trade(start_response, environ)
+    if path == "/api/refresh-news" and method == "POST": return _route_refresh_news(start_response, environ)
     return None
