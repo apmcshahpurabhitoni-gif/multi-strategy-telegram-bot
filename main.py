@@ -931,12 +931,38 @@ def cmd_refreshnews(m):
     try:
         if os.path.exists(NEWS_CACHE_FILE): os.remove(NEWS_CACHE_FILE)
     except Exception: pass
-    news = get_cached_news()
-    if news:
-        preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])
-        safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(news)}` upcoming events\n\n{preview}\n\n{'...' if len(news) > 5 else ''}", parse_mode="Markdown")
-    else:
-        safe_send(m.chat.id, f"⚠️ *News API Unavailable*\n{BR}\nNo upcoming events found. The bot will retry automatically.", parse_mode="Markdown")
+    # Try direct fetch first so we can give a useful error if it fails
+    try:
+        raw = fetch_news() if "fetch_news" in dir() else None
+    except Exception as e:
+        raw = None
+        print(f"[NEWS /refreshnews] fetch_news raised: {e}")
+    if raw:
+        # Persist directly so the dashboard sees it
+        try:
+            with open(NEWS_CACHE_FILE, "w") as f:
+                json.dump({"ts": int(time.time()), "items": raw}, f)
+        except Exception: pass
+        # Get the (possibly filtered) upcoming view
+        news = get_cached_news()
+        if news:
+            preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])
+            safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(news)}` upcoming events\n\n{preview}\n\n{'...' if len(news) > 5 else ''}", parse_mode="Markdown")
+            return
+        else:
+            safe_send(m.chat.id, f"📰 *News Fetched*\n{BR}\nFetched `{len(raw)}` events but **none are upcoming** (all past or invalid dates). Dashboard will reflect this.", parse_mode="Markdown")
+            return
+    # If we got here, fetch_news failed
+    cache_status = "exists" if os.path.exists(NEWS_CACHE_FILE) else "missing"
+    safe_send(m.chat.id, (
+        f"⚠️ *News API Unavailable*\n{BR}\n"
+        f"❌ Could not reach `faireconomy.media` — this is common on cloud IPs (Render, AWS).\n\n"
+        f"🔍 *Debug:*\n"
+        f"• Cache file: `{cache_status}`\n"
+        f"• Try again in a few minutes\n"
+        f"• If it keeps failing, the API may be permanently blocked on this network.\n\n"
+        f"💡 *Workaround:* The bot will keep retrying automatically every 30 min."
+    ), parse_mode="Markdown")
 
 def send_chart(symbol, chat_id):
     with _chart_lock:
