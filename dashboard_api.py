@@ -15,7 +15,18 @@ _snapshot_cache = {"data": None, "ts": 0}
 _snapshot_lock = threading.RLock()
 
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_HTML_PATH = os.path.join(_HERE, "dashboard", "index.html")
+# Check templates or dashboard subfolder for index.html
+_HTML_PATH_PRIMARY = os.path.join(_HERE, "templates", "index.html")
+_HTML_PATH_FALLBACK = os.path.join(_HERE, "dashboard", "index.html")
+
+def _get_html_content() -> bytes:
+    if os.path.exists(_HTML_PATH_PRIMARY):
+        with open(_HTML_PATH_PRIMARY, "rb") as f:
+            return f.read()
+    if os.path.exists(_HTML_PATH_FALLBACK):
+        with open(_HTML_PATH_FALLBACK, "rb") as f:
+            return f.read()
+    return b"<h1>Dashboard template index.html not found.</h1>"
 
 def _get_main_module():
     main = sys.modules.get("__main__")
@@ -206,7 +217,6 @@ def _build_snapshot():
         
         if ts_ms < cutoff: continue
         
-        # Calculate age for FRESH/STALE tag
         age_ms = time.time() * 1000 - ts_ms
         age_hr = age_ms / 3600000
         if age_hr < 1:
@@ -318,7 +328,6 @@ def _route_backtest(start_response, environ):
         if strategy == "sweep": res = eng.backtest_sweep(symbol, days)
         else: res = eng.backtest_trendpulse(symbol, days)
         if not isinstance(res, dict): res = {"error": "backtest failed"}
-        # Wrap result in metrics key for dashboard compatibility
         if "error" not in res:
             res = {"metrics": res, "symbol": symbol, "strategy": strategy, "days": days}
         else:
@@ -328,25 +337,20 @@ def _route_backtest(start_response, environ):
         return _json_response(start_response, {"error": str(e)}, status="500 Internal Server Error")
 
 def _route_refresh_news(start_response, environ):
-    """Force-refresh the news cache by deleting the file and re-fetching."""
     try:
-        # Bust BOTH old + new cache files (defensive — older code used the first name)
         for cache_file in ("/tmp/workspace/news_cache.json", "/tmp/workspace/news_upcoming_cache.json"):
             try:
                 if os.path.exists(cache_file): os.remove(cache_file)
             except Exception as e:
                 print(f"[NEWS] Could not remove {cache_file}: {e}")
-        # Also invalidate in-memory cache if main module has one
         main = _get_main_module()
         if main is not None and hasattr(main, "news_cache"):
             try: main.news_cache = None
             except Exception: pass
-        # Force a fresh fetch now
         items = []
         if main is not None and hasattr(main, "fetch_news"):
             try: items = main.fetch_news() or []
             except Exception as e: print(f"[NEWS] Force-refresh fetch failed: {e}")
-        # Persist the upcoming-only result so the next /api/dashboard call has it
         try:
             now_ms = int(time.time() * 1000)
             IST_tz = getattr(main, "IST", None)
@@ -362,14 +366,13 @@ def _route_refresh_news(start_response, environ):
                         if dt.tzinfo is None and IST_tz is not None: dt = IST_tz.localize(dt)
                         ts_ms = int(dt.timestamp() * 1000)
                 except Exception: pass
-                if ts_ms and ts_ms + 30 * 60 * 1000 < now_ms: continue  # past
+                if ts_ms and ts_ms + 30 * 60 * 1000 < now_ms: continue
                 ev2 = dict(ev)
                 ev2["impact"] = (ev.get("impact") or "Low")
                 norm.append(ev2)
             norm.sort(key=lambda x: x.get("date", ""))
-            import json as _json
             with open("/tmp/workspace/news_upcoming_cache.json", "w") as f:
-                _json.dump({"ts": int(time.time()), "items": norm}, f)
+                json.dump({"ts": int(time.time()), "items": norm}, f)
             items = norm
         except Exception as e:
             print(f"[NEWS] Could not persist upcoming cache: {e}")
@@ -379,7 +382,7 @@ def _route_refresh_news(start_response, environ):
 
 def register_routes(path, start_response, environ):
     method = environ.get("REQUEST_METHOD", "GET")
-    if path in ("/dashboard", "/dashboard/"): return _html_response(start_response, open(_HTML_PATH, "rb").read())
+    if path in ("/dashboard", "/dashboard/"): return _html_response(start_response, _get_html_content())
     if path == "/api/dashboard": return _route_dashboard(start_response)
     if path.startswith("/api/backtest"): return _route_backtest(start_response, environ)
     if path.startswith("/api/prices"): return _json_response(start_response, {"prices": _batch_live_prices(parse_qs(environ.get("QUERY_STRING", "")).get("symbols", [""])[0].split(",")), "ts": int(time.time())})
