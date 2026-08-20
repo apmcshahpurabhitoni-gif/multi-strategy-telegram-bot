@@ -1,7 +1,8 @@
 import json
 import time
 import os
-import base64  # <-- ADD THIS LINE
+import base64
+import requests
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -50,6 +51,87 @@ class BacktestEngine:
             return 0.0 if (np.isnan(result) or np.isinf(result)) else result
         except (ValueError, TypeError): return 0.0
 
+    def _resolve_symbol(self, symbol: str) -> str:
+        s = symbol.strip().upper()
+        mapping = {
+            "BTCUSD": "BTC-USD",
+            "ETHUSD": "ETH-USD",
+            "SOLUSD": "SOL-USD",
+            "BNBUSD": "BNB-USD",
+            "XRPUSD": "XRP-USD",
+            "ADAUSD": "ADA-USD",
+            "DOGEUSD": "DOGE-USD",
+            "XAUUSD": "GC=F",
+            "EURUSD": "EURUSD=X",
+            "GBPUSD": "GBPUSD=X",
+            "USDJPY": "USDJPY=X",
+            "USDCHF": "USDCHF=X",
+            "AUDUSD": "AUDUSD=X",
+            "USDCAD": "USDCAD=X",
+            "NZDUSD": "NZDUSD=X"
+        }
+        if s in mapping:
+            return mapping[s]
+        if s.startswith("^") or s.endswith(".NS") or "-USD" in s or "-USDT" in s or "=" in s:
+            return s
+        if len(s) == 6 and not any(char.isdigit() for char in s):
+            return s + "=X"
+        return s
+
+    def _fetch_binance_klines(self, symbol: str = "BTCUSDT", days: int = 30) -> Optional[pd.DataFrame]:
+        try:
+            limit = min(days * 24, 1000)
+            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit={limit}"
+            r = requests.get(url, timeout=15)
+            if r.status_code != 200:
+                return None
+            df = pd.DataFrame(r.json(), columns=[
+                "Open time", "Open", "High", "Low", "Close", "Volume",
+                "Close time", "Quote asset volume", "Number of trades",
+                "Taker buy base asset volume", "Taker buy quote asset volume", "Ignore"
+            ])
+            df["Open time"] = pd.to_datetime(df["Open time"], unit="ms")
+            df.set_index("Open time", inplace=True)
+            return df[["Open", "High", "Low", "Close", "Volume"]].astype(float)
+        except Exception:
+            return None
+
+    def _download_candles(self, symbol: str, days: int) -> Optional[pd.DataFrame]:
+        yf_symbol = self._resolve_symbol(symbol)
+        safe_days = max(7, min(days + 30, 720))
+        end = datetime.now()
+        start = end - timedelta(days=safe_days)
+
+        try:
+            df = yf.download(
+                yf_symbol,
+                start=start.strftime("%Y-%m-%d"),
+                end=end.strftime("%Y-%m-%d"),
+                interval="1h",
+                progress=False,
+                auto_adjust=True,
+                threads=False
+            )
+            if df is not None and not df.empty:
+                if isinstance(df.columns, pd.MultiIndex):
+                    df.columns = df.columns.get_level_values(0)
+                if len(df) >= 30:
+                    return df
+        except Exception as e:
+            print(f"[BACKTEST DATA] yfinance download error for {yf_symbol}: {e}")
+
+        # Fallback to Binance if crypto yfinance request fails
+        if "BTC" in yf_symbol:
+            df_binance = self._fetch_binance_klines("BTCUSDT", days=safe_days)
+            if df_binance is not None and len(df_binance) >= 30:
+                return df_binance
+        elif "ETH" in yf_symbol:
+            df_binance = self._fetch_binance_klines("ETHUSDT", days=safe_days)
+            if df_binance is not None and len(df_binance) >= 30:
+                return df_binance
+
+        return None
+
     def _simulate_trade(self, entry: float, sl: float, tp: float, qty: float, direction: str, df_outcome: pd.DataFrame, max_bars: int = 100) -> Tuple[float, str, float]:
         if len(df_outcome) == 0: return 0.0, "BREAKEVEN", entry
         bars_to_check = min(len(df_outcome), max_bars)
@@ -67,35 +149,13 @@ class BacktestEngine:
 
     def backtest_trendpulse(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         print(f"[BACKTEST] TrendPulse on {symbol} for {days} days...")
-        end = datetime.now()
-        # Handle crypto symbols (BTCUSD -> BTC-USD) and forex/gold with Yahoo Finance format
-        yf_symbol = symbol
-        if symbol == "BTCUSD":
-            yf_symbol = "BTC-USD"
-        elif symbol == "XAUUSD":
-            yf_symbol = "GC=F"  # Gold futures
-        elif symbol == "EURUSD":
-            yf_symbol = "EURUSD=X"
-        elif symbol == "GBPUSD":
-            yf_symbol = "GBPUSD=X"
-        elif symbol == "USDJPY":
-            yf_symbol = "USDJPY=X"
-        elif symbol == "USDCHF":
-            yf_symbol = "USDCHF=X"
-        elif symbol == "AUDUSD":
-            yf_symbol = "AUDUSD=X"
-        elif symbol == "USDCAD":
-            yf_symbol = "USDCAD=X"
-        elif symbol == "NZDUSD":
-            yf_symbol = "NZDUSD=X"
-        # If symbol doesn't already have =X or = suffix, add =X for forex
-        elif "=" not in symbol and not symbol.endswith(".NS"):
-            yf_symbol = symbol + "=X"
-        df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
-        if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
-        if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
+        df_1h = self._download_candles(symbol, days)
+        if df_1h is None or len(df_1h) < 50:
+            return {"error": f"Insufficient historical data available for {symbol}."}
+
         df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 20: return {"error": "Insufficient 4H data after resampling"}
+        if len(df_4h) < 15:
+            return {"error": "Insufficient 4H timeframe data after candle resampling."}
 
         df_4h["EMA50"], df_4h["ATR"] = df_4h["Close"].ewm(span=50, adjust=False).mean(), self._calc_atr(df_4h, 14)
         df_1h["EMA20"], df_1h["RSI"], df_1h["ATR"] = df_1h["Close"].ewm(span=20, adjust=False).mean(), self._get_rsi(df_1h, 14), self._calc_atr(df_1h, 14)
@@ -106,7 +166,7 @@ class BacktestEngine:
         trades = []
         in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = False, 0.0, 0.0, 0.0, 0.0, "", 0
 
-        for i in range(60, len(df_1h) - 1):
+        for i in range(50, len(df_1h) - 1):
             if in_trade:
                 high, low, close = self._safe_float(df_1h.iloc[i]["High"]), self._safe_float(df_1h.iloc[i]["Low"]), self._safe_float(df_1h.iloc[i]["Close"])
                 exit_triggered, exit_price, pnl, result, exit_reason = False, 0.0, 0.0, "", ""
@@ -148,11 +208,6 @@ class BacktestEngine:
                     qty = self._calc_qty(balance, m1_close, sl)
                     if qty > 0: in_trade, trade_entry, trade_sl, trade_tp, trade_qty, trade_type, trade_entry_idx = True, m1_close, sl, tp, qty, "LONG", i
                 elif htf_close < htf_ema50 and mp >= sp and mc < sc and 20 < m1_rsi < 50 and m1_close < m1_ema20:
-                    # NOTE: do NOT inline `sl` into a tuple-unpacking assignment
-                    # together with `self._calc_qty(... sl)` — Python evaluates
-                    # the RHS left-to-right and `sl` is not yet bound when the
-                    # third value is evaluated, causing
-                    # "cannot access local variable 'sl' where it is not associated with a value".
                     sl = m1_close + m1_atr * 1.5
                     tp = m1_close - m1_atr * 3.0
                     qty = self._calc_qty(balance, m1_close, sl)
@@ -161,35 +216,13 @@ class BacktestEngine:
 
     def backtest_sweep(self, symbol: str, days: int = 30) -> Dict[str, Any]:
         print(f"[BACKTEST] Sweep on {symbol} for {days} days...")
-        end = datetime.now()
-        # Handle crypto symbols (BTCUSD -> BTC-USD) and forex/gold with Yahoo Finance format
-        yf_symbol = symbol
-        if symbol == "BTCUSD":
-            yf_symbol = "BTC-USD"
-        elif symbol == "XAUUSD":
-            yf_symbol = "GC=F"  # Gold futures
-        elif symbol == "EURUSD":
-            yf_symbol = "EURUSD=X"
-        elif symbol == "GBPUSD":
-            yf_symbol = "GBPUSD=X"
-        elif symbol == "USDJPY":
-            yf_symbol = "USDJPY=X"
-        elif symbol == "USDCHF":
-            yf_symbol = "USDCHF=X"
-        elif symbol == "AUDUSD":
-            yf_symbol = "AUDUSD=X"
-        elif symbol == "USDCAD":
-            yf_symbol = "USDCAD=X"
-        elif symbol == "NZDUSD":
-            yf_symbol = "NZDUSD=X"
-        # If symbol doesn't already have =X or = suffix, add =X for forex
-        elif "=" not in symbol and not symbol.endswith(".NS"):
-            yf_symbol = symbol + "=X"
-        df_1h = yf.download(yf_symbol, start=(end - timedelta(days=days + 30)).strftime("%Y-%m-%d"), end=end.strftime("%Y-%m-%d"), interval="1h", progress=False, auto_adjust=True)
-        if df_1h is None or len(df_1h) < 50: return {"error": f"Insufficient data for {symbol}. Try a longer duration or different pair."}
-        if isinstance(df_1h.columns, pd.MultiIndex): df_1h.columns = df_1h.columns.get_level_values(0)
+        df_1h = self._download_candles(symbol, days)
+        if df_1h is None or len(df_1h) < 50:
+            return {"error": f"Insufficient historical data available for {symbol}."}
+
         df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
-        if len(df_4h) < 10: return {"error": "Insufficient 4H data after resampling"}
+        if len(df_4h) < 10:
+            return {"error": "Insufficient 4H timeframe data after candle resampling."}
 
         balance, trades = self.starting_balance, []
         for i in range(5, len(df_4h) - 1):
@@ -276,3 +309,4 @@ class BacktestEngine:
             print(f"[WARN] Failed to generate backtest chart: {e}")
             
         return {"total_trades": len(trades), "wins": len(wins), "losses": len(losses), "win_rate": len(wins) / len(trades) * 100, "profit_factor": round(win_pnl / loss_pnl, 2) if loss_pnl > 0 else 999.99, "total_pnl": round(total_pnl, 2), "final_balance": round(final_balance, 2), "max_drawdown_pct": round(max_dd, 2), "sharpe": round(sharpe, 2), "avg_trade": round(total_pnl / len(trades), 2), "avg_win": round(win_pnl / len(wins), 2) if wins else 0, "avg_loss": round(loss_pnl / len(losses), 2) if losses else 0, "trades": trades[:50], "return_pct": round((final_balance - self.starting_balance) / self.starting_balance * 100, 2), "equity_points": equity_points}
+        
