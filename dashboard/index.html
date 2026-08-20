@@ -20,7 +20,6 @@
    ============================================================= */
 :root,
 html[data-theme="normal"] {
-  /* canvas */
   --bg:           #f6f8fb;
   --bg-elev:      #ffffff;
   --bg-soft:      #f1f4f9;
@@ -30,7 +29,6 @@ html[data-theme="normal"] {
   --line:         #e6ebf2;
   --line-soft:    #eef2f7;
 
-  /* status colors */
   --good:         #10b981;
   --good-soft:    #d1fae5;
   --bad:          #ef4444;
@@ -40,24 +38,20 @@ html[data-theme="normal"] {
   --info:         #3b82f6;
   --info-soft:    #dbeafe;
 
-  /* shadows (soft, layered) */
   --shadow-sm:    0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .05);
   --shadow:       0 1px 3px rgba(15, 23, 42, .04), 0 4px 12px rgba(15, 23, 42, .06);
   --shadow-lg:    0 4px 16px rgba(15, 23, 42, .08), 0 12px 32px rgba(15, 23, 42, .06);
   --shadow-press: inset 0 1px 2px rgba(15, 23, 42, .06);
 
-  /* radii (medium, friendly) */
   --radius:       12px;
   --radius-sm:    8px;
   --radius-lg:    16px;
 
-  /* default accent */
   --accent:       #10b981;
   --accent-hover: #059669;
   --accent-soft:  #d1fae5;
   --accent-ink:   #ffffff;
 
-  /* border + animation */
   --border-w:     1px;
   --border:       1px solid var(--line);
   --ease:         cubic-bezier(.22, 1, .36, 1);
@@ -69,13 +63,13 @@ html[data-theme="normal"] {
    LIGHT — neobrutalism on warm paper
    ============================================================= */
 html[data-theme="light"] {
-  --bg:           #f4f0e6;     /* warm paper */
-  --bg-elev:      #faf6ea;     /* slightly lighter paper */
-  --bg-soft:      #ebe4d2;     /* paper shadow / hovers */
+  --bg:           #f4f0e6;
+  --bg-elev:      #faf6ea;
+  --bg-soft:      #ebe4d2;
   --ink:          #0a0a0a;
   --ink-soft:     #2a2a2a;
   --muted:        #6b6b6b;
-  --line:         #0a0a0a;     /* hard black line in neobrutalism */
+  --line:         #0a0a0a;
   --line-soft:    #d6cfb8;
 
   --good-soft:    #bbf7d0;
@@ -98,10 +92,9 @@ html[data-theme="light"] {
 
 /* =============================================================
    DARK — neobrutalism on pickable dark background
-   The actual background is set by data-bg on <html>
    ============================================================= */
 html[data-theme="dark"] {
-  --bg-elev:      #1a1a24;     /* will be overridden by data-bg */
+  --bg-elev:      #1a1a24;
   --bg-soft:      #23232e;
   --ink:          #f5f5f5;
   --ink-soft:     #d4d4d4;
@@ -160,7 +153,7 @@ html[data-accent="amber"]   { --accent:#f59e0b; --accent-hover:#d97706; --accent
 html[data-accent="cyan"]    { --accent:#06b6d4; --accent-hover:#0891b2; --accent-soft:#cffafe; }
 html[data-accent="pink"]    { --accent:#ec4899; --accent-hover:#db2777; --accent-soft:#fce7f3; }
 
-/* Dark mode accent softs (deeper, less washed out) */
+/* Dark mode accent softs */
 html[data-theme="dark"][data-accent="emerald"] { --accent-soft:#064e3b; --accent-ink:#0a0a0a; }
 html[data-theme="dark"][data-accent="blue"]    { --accent-soft:#1e3a8a; --accent-ink:#fff; }
 html[data-theme="dark"][data-accent="indigo"]  { --accent-soft:#312e81; --accent-ink:#fff; }
@@ -235,7 +228,6 @@ a { color: inherit; }
 
 .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
 
-/* Segmented theme */
 .seg {
   display: inline-flex;
   background: var(--bg-soft);
@@ -264,7 +256,6 @@ a { color: inherit; }
   box-shadow: var(--shadow-sm);
 }
 
-/* Color picker (collapsible) */
 .picker { position: relative; }
 .picker-btn {
   height: 32px; min-width: 32px; padding: 0 8px;
@@ -341,7 +332,7 @@ a { color: inherit; }
   text-shadow: 0 1px 2px rgba(0,0,0,.5);
 }
 
-/* ===================== TABS ===================== */
+/* ===================== TABS (Desktop) ===================== */
 .tabs {
   display: flex; gap: 4px; flex-wrap: wrap;
   margin-bottom: 18px;
@@ -387,29 +378,41 @@ a { color: inherit; }
 }
 .tab.active .badge-count { background: rgba(255,255,255,.25); color: #fff; }
 
-/* Mobile bottom nav */
+/* ===================== BOTTOM NAV (Mobile 6-Tab Fluid) ===================== */
 .bottomnav {
   position: fixed;
-  left: 12px; right: 12px; bottom: 12px;
+  left: 8px; right: 8px; bottom: 10px;
   z-index: 50;
   display: none;
-  gap: 4px;
+  gap: 2px;
   background: var(--bg-elev);
   border: var(--border);
   border-radius: 16px;
-  padding: 6px;
+  padding: 5px 3px;
   box-shadow: var(--shadow-lg);
   backdrop-filter: blur(12px);
 }
 .bottomnav .tab {
-  flex: 1;
+  flex: 1 1 0px;
+  min-width: 0;
   flex-direction: column;
-  font-size: 10px;
-  padding: 8px 4px;
+  font-size: 9.5px;
+  padding: 6px 2px;
   border-radius: 10px;
   gap: 2px;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
 }
-.bottomnav .tab .icon { font-size: 18px; line-height: 1; }
+.bottomnav .tab .icon { font-size: 16px; line-height: 1; }
+.bottomnav .tab .badge-count {
+  position: absolute;
+  top: 2px;
+  right: 4px;
+  padding: 0px 4px;
+  font-size: 8.5px;
+  min-width: 14px;
+}
 
 @media (max-width: 768px) {
   .tabs.desktop { display: none; }
@@ -578,7 +581,6 @@ html[data-theme="dark"] .tag.info  { color: #93c5fd; }
 .btn.ghost:hover { background: var(--bg-soft); transform: none; box-shadow: none; }
 .btn.sm { padding: 5px 10px; font-size: 11px; }
 
-/* Inputs + selects */
 .input, select.input {
   background: var(--bg-elev);
   color: var(--ink);
@@ -760,7 +762,6 @@ canvas { max-width: 100%; height: auto; display: block; }
 .pnl-pos { color: var(--good); font-weight: 700; }
 .pnl-neg { color: var(--bad);  font-weight: 700; }
 
-/* fade in for tab switches */
 .panel { animation: fadeIn .25s var(--ease); }
 @keyframes fadeIn { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 </style>
@@ -821,7 +822,7 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- ============== TABS (desktop) ============== -->
+  <!-- ============== TABS (Desktop) ============== -->
   <div class="tabs desktop" id="tabsDesktop">
     <button class="tab active" data-tab="overview">🏠 Overview</button>
     <button class="tab" data-tab="trades">🔥 Trades <span class="badge-count" id="bc-trades" hidden>0</span></button>
@@ -987,12 +988,13 @@ canvas { max-width: 100%; height: auto; display: block; }
 
 </div>
 
-<!-- ============== BOTTOM NAV (mobile) ============== -->
+<!-- ============== BOTTOM NAV (Mobile 6-Tab Navigation) ============== -->
 <nav class="bottomnav" id="bottomnav">
   <button class="tab active" data-tab="overview"><span class="icon">🏠</span><span>Home</span></button>
-  <button class="tab" data-tab="trades"><span class="icon">🔥</span><span>Trades</span></button>
-  <button class="tab" data-tab="signals"><span class="icon">📡</span><span>Signals</span></button>
-  <button class="tab" data-tab="news"><span class="icon">📰</span><span>News</span></button>
+  <button class="tab" data-tab="trades"><span class="icon">🔥</span><span>Trades</span><span class="badge-count" id="bc-trades-m" hidden>0</span></button>
+  <button class="tab" data-tab="signals"><span class="icon">📡</span><span>Signals</span><span class="badge-count" id="bc-signals-m" hidden>0</span></button>
+  <button class="tab" data-tab="history"><span class="icon">📜</span><span>Hist</span><span class="badge-count" id="bc-history-m" hidden>0</span></button>
+  <button class="tab" data-tab="news"><span class="icon">📰</span><span>News</span><span class="badge-count" id="bc-news-m" hidden>0</span></button>
   <button class="tab" data-tab="backtest"><span class="icon">🧪</span><span>Test</span></button>
 </nav>
 
@@ -1008,13 +1010,11 @@ canvas { max-width: 100%; height: auto; display: block; }
 const $  = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 
-/* ---------- PERSISTENCE KEYS ---------- */
 const THEME_KEY  = "mavis.theme";
 const ACCENT_KEY = "mavis.accent";
 const BG_KEY     = "mavis.bg";
 const TAB_KEY    = "mavis.tab";
 
-/* ---------- BG SWATCHES (per theme) ---------- */
 const BG_SWATCHES = {
   dark: [
     { id:"navy",     label:"Navy",     color:"#0b1220" },
@@ -1043,12 +1043,10 @@ const ACCENT_MAP = {
   rose:"#f43f5e", amber:"#f59e0b", cyan:"#06b6d4", pink:"#ec4899"
 };
 
-/* ---------- THEME / ACCENT / BG ---------- */
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
   $$(".seg button").forEach(b => b.classList.toggle("active", b.dataset.themeVal === t));
   refreshBgSwatches();
-  // reset bg to first available if current bg doesn't exist for this theme
   const valid = BG_SWATCHES[t]?.map(s => s.id) || [];
   const cur = localStorage.getItem(BG_KEY) || "default";
   if (t === "normal") {
@@ -1133,7 +1131,6 @@ document.addEventListener("click", e => {
   if (!$("#picker").contains(e.target)) $("#picker").classList.remove("open");
 });
 
-/* ---------- TABS ---------- */
 function switchTab(name) {
   $$(".panel").forEach(p => p.hidden = true);
   const panel = $("#panel-" + name);
@@ -1146,7 +1143,6 @@ function switchTab(name) {
 $$(".tab[data-tab]").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
 switchTab(localStorage.getItem(TAB_KEY) || "overview");
 
-/* ---------- TOAST ---------- */
 let toastTimer;
 function toast(msg, kind="") {
   const el = $("#toast");
@@ -1156,7 +1152,6 @@ function toast(msg, kind="") {
   toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
 }
 
-/* ---------- FORMATTERS ---------- */
 const fmtINR = n => "₹" + Math.round(Number(n || 0)).toLocaleString("en-IN");
 const fmtNum = n => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 4 });
 const fmtPct = n => (Number(n || 0)).toFixed(2) + "%";
@@ -1194,7 +1189,6 @@ const fmtDateHeader = iso => {
   return d.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short" });
 };
 
-/* ---------- API ---------- */
 let STATE = null;
 async function api(path, opts={}) {
   try {
@@ -1203,10 +1197,6 @@ async function api(path, opts={}) {
     return await r.json();
   } catch (e) { console.warn("API fail", path, e); return null; }
 }
-
-/* =================================================================
-   RENDERERS
-   ================================================================= */
 
 function renderAccounts(snap) {
   const acc = snap?.accounts || {};
@@ -1294,7 +1284,6 @@ function renderExposure(snap) {
     </div>`;
 }
 
-/* ===================== EQUITY CHART ===================== */
 function drawEquity(canvas, points) {
   const wrap = canvas.parentElement;
   const cssW = (wrap?.clientWidth || 800) - 36;
@@ -1311,9 +1300,6 @@ function drawEquity(canvas, points) {
   ctx.clearRect(0, 0, cssW, cssH);
 
   const cs = getComputedStyle(document.body);
-  const accent     = (cs.getPropertyValue("--accent") || "#10b981").trim();
-  const accentSoft = (cs.getPropertyValue("--accent-soft") || "#d1fae5").trim();
-  const ink        = (cs.getPropertyValue("--ink") || "#0f172a").trim();
   const inkSoft    = (cs.getPropertyValue("--ink-soft") || "#475569").trim();
   const muted      = (cs.getPropertyValue("--muted") || "#94a3b8").trim();
   const line       = (cs.getPropertyValue("--line") || "#e2e8f0").trim();
@@ -1341,7 +1327,6 @@ function drawEquity(canvas, points) {
   const trendUp = vals[vals.length-1] >= vals[0];
   const lineCol = trendUp ? goodColor : badColor;
 
-  // grid + Y labels
   ctx.strokeStyle = line;
   ctx.lineWidth = 1;
   ctx.fillStyle = inkSoft;
@@ -1361,7 +1346,6 @@ function drawEquity(canvas, points) {
     ctx.fillText(compactMoney(v), padL - 8, yy);
   }
 
-  // area
   ctx.beginPath();
   ctx.moveTo(x(0), y(vals[0]));
   vals.forEach((v, i) => ctx.lineTo(x(i), y(v)));
@@ -1373,7 +1357,6 @@ function drawEquity(canvas, points) {
   ctx.fill();
   ctx.globalAlpha = 1;
 
-  // line
   ctx.beginPath();
   vals.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
   ctx.strokeStyle = lineCol;
@@ -1382,7 +1365,6 @@ function drawEquity(canvas, points) {
   ctx.lineCap = "round";
   ctx.stroke();
 
-  // end point
   const lastX = x(vals.length-1);
   const lastY = y(vals[vals.length-1]);
   ctx.beginPath();
@@ -1396,7 +1378,6 @@ function drawEquity(canvas, points) {
   ctx.fillStyle = lineCol;
   ctx.fill();
 
-  // x labels
   ctx.fillStyle = inkSoft;
   ctx.textBaseline = "top";
   ctx.font = "500 10px -apple-system, system-ui, sans-serif";
@@ -1425,7 +1406,6 @@ function pointLabel(p) {
   return "";
 }
 
-/* ===================== TRADES ===================== */
 function renderTrades(snap) {
   const trades = snap?.live_trades || [];
   $("#tradeCount").textContent = trades.length;
@@ -1489,7 +1469,6 @@ function renderPending(snap) {
   `).join("");
 }
 
-/* ===================== SIGNALS (collapsible) ===================== */
 function renderSignals(snap) {
   const list = snap?.today_signals || [];
   const wrap = $("#signalsList");
@@ -1529,7 +1508,6 @@ function renderSignals(snap) {
   wireCollapse();
 }
 
-/* ===================== HISTORY (collapsible) ===================== */
 function renderHistory(snap) {
   const list = snap?.history || [];
   $("#historyCount").textContent = snap?.history_total || list.length;
@@ -1592,7 +1570,6 @@ function wireCollapse() {
   });
 }
 
-/* ===================== NIFTY ===================== */
 async function loadNifty() {
   const wrap = $("#niftyList");
   if (!wrap) return;
@@ -1617,7 +1594,6 @@ async function loadNifty() {
   }
 }
 
-/* ===================== NEWS ===================== */
 function renderNews(news) {
   const wrap = $("#newsList");
   if (news === null || news === undefined) {
@@ -1628,7 +1604,6 @@ function renderNews(news) {
     wrap.innerHTML = '<div class="empty"><span class="emoji">📅</span><div class="title">No upcoming events right now</div><div>Could be: the API is blocked on this network, or no events scheduled in the next 24h. Try Refresh in a few minutes or check the bot logs.</div></div>';
     return;
   }
-  const now = Date.now();
   const upcoming = news
     .map(n => {
       let t = NaN;
@@ -1680,20 +1655,30 @@ function renderNews(news) {
   wireCollapse();
 }
 
-/* ===================== BADGES ===================== */
 function updateBadges(snap) {
   const trades = (snap?.live_trades || []).length + (snap?.pending || []).length;
   const signals = (snap?.today_signals || []).length;
   const history = snap?.history_total || (snap?.history || []).length;
   const newsHigh = (snap?.news_raw || []).filter(n => (n.impact || "").toLowerCase() === "high").length;
-  const set = (id, n) => { const el = $("#"+id); if (!el) return; if (n > 0) { el.hidden = false; el.textContent = n; } else { el.hidden = true; } };
+  
+  const set = (id, n) => { 
+    const el = $("#"+id); 
+    if (!el) return; 
+    if (n > 0) { el.hidden = false; el.textContent = n; } 
+    else { el.hidden = true; } 
+  };
+  
   set("bc-trades", trades);
   set("bc-signals", signals);
   set("bc-history", history);
   set("bc-news", newsHigh);
+
+  set("bc-trades-m", trades);
+  set("bc-signals-m", signals);
+  set("bc-history-m", history);
+  set("bc-news-m", newsHigh);
 }
 
-/* ===================== MAIN LOADER ===================== */
 async function loadDashboard() {
   const snap = await api("/api/dashboard");
   if (!snap || snap.error) {
@@ -1729,7 +1714,6 @@ async function refreshNews() {
 $("#refreshNews")?.addEventListener("click", refreshNews);
 $("#refreshTrades")?.addEventListener("click", () => loadDashboard());
 
-/* ===================== BACKTEST ===================== */
 const BT_SYMBOLS = {
   crypto: ["BTC-USD", "ETH-USD", "SOL-USD", "BNB-USD", "XRP-USD", "ADA-USD", "DOGE-USD"],
   forex:  ["EURUSD=X", "GBPUSD=X", "USDJPY=X", "USDCHF=X", "AUDUSD=X", "USDCAD=X", "NZDUSD=X"],
@@ -1805,7 +1789,6 @@ $("#runBacktest")?.addEventListener("click", async () => {
   renderBTTrades(metrics.trades || []);
 });
 
-/* ===================== BOOT ===================== */
 loadDashboard();
 setInterval(loadDashboard, 30000);
 
