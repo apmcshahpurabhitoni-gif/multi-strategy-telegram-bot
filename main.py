@@ -753,76 +753,63 @@ def _load_news_cache():
     return None
 
 def fetch_news() -> List[Dict[str, Any]]:
-    """Multi-source economic news calendar aggregator with public endpoints and fallbacks."""
+    """Fetches real-time economic data from public Forex Factory calendar JSON mirrors."""
+    mirror_urls = [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://raw.githubusercontent.com/everette/forexfactory-calendar-json/master/data.json"
+    ]
+    
+    all_events = []
     headers = {
         "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/plain, */*",
-        "Accept-Language": "en-US,en;q=0.9",
-        "Referer": "https://www.forexfactory.com/"
+        "Accept": "application/json"
     }
 
-    all_events: List[Dict[str, Any]] = []
-
-    # Source 1: FairEconomy ForexFactory JSON Feed
-    ff_urls = [
-        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
-        "https://nfs.faireconomy.media/ff_calendar_nextweek.json"
-    ]
-    for url in ff_urls:
+    for url in mirror_urls:
         try:
             r = requests.get(url, headers=headers, timeout=10)
             if r.status_code == 200 and r.text.strip():
                 data = r.json()
-                if isinstance(data, list):
+                if isinstance(data, list) and len(data) > 0:
                     for item in data:
                         all_events.append({
                             "title": item.get("title", "Economic Event"),
-                            "country": item.get("country", ""),
-                            "currency": item.get("country", ""),
+                            "country": item.get("country", "USD"),
+                            "currency": item.get("country", "USD"),
                             "date": item.get("date", ""),
                             "impact": item.get("impact", "Low"),
                             "forecast": item.get("forecast", ""),
                             "previous": item.get("previous", "")
                         })
+                    break
         except Exception as e:
-            print(f"[NEWS WARN] FairEconomy failed ({url}): {e}")
+            print(f"[NEWS WARN] Mirror failed ({url}): {e}")
 
-    # Source 2: CryptoCompare Public API (public-apis directory fallback)
-    if len(all_events) == 0:
+    # Fallback to Investing.com RSS bridge if mirrors fail
+    if not all_events:
         try:
-            print("[NEWS] Switching to public-apis CryptoCompare feed fallback...")
-            r = requests.get("https://min-api.cryptocompare.com/data/v2/news/?lang=EN", headers=headers, timeout=10)
+            r = requests.get("https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.investing.com%2Frss%2Fnews_25.rss", headers=headers, timeout=10)
             if r.status_code == 200:
-                news_items = r.json().get("Data", [])
-                for n in news_items[:35]:
-                    pub_ts = n.get("published_on", 0)
-                    dt_ist = datetime.fromtimestamp(pub_ts, tz=timezone.utc).astimezone(IST)
+                for item in r.json().get("items", []):
+                    dt_ist = _iso_to_ist_dt(item.get("pubDate", "")) or datetime.now(IST)
                     all_events.append({
-                        "title": n.get("title", "Market Update"),
+                        "title": item.get("title", "Market News"),
                         "country": "GLOBAL",
                         "currency": "USD",
                         "date": dt_ist.isoformat(),
-                        "impact": "Medium",
+                        "impact": "High" if "cpi" in item.get("title", "").lower() else "Medium",
                         "forecast": "",
                         "previous": ""
                     })
         except Exception as e:
-            print(f"[NEWS WARN] Public-apis CryptoCompare failed: {e}")
-
-    if not all_events:
-        print("[NEWS] ⚠️ All economic event endpoints returned empty.")
-        return []
+            print(f"[NEWS WARN] RSS Fallback failed: {e}")
 
     now_ist = datetime.now(IST)
     upcoming = []
-
     for ev in all_events:
         try:
-            raw_date = ev.get("date", "")
-            if not raw_date:
-                continue
-            ev_dt = _iso_to_ist_dt(raw_date)
-            if ev_dt and (ev_dt >= now_ist - timedelta(hours=2)):
+            ev_dt = _iso_to_ist_dt(ev.get("date", ""))
+            if ev_dt and (ev_dt >= now_ist - timedelta(hours=6)):
                 ev_copy = dict(ev)
                 ev_copy["date"] = ev_dt.isoformat()
                 upcoming.append(ev_copy)
@@ -830,7 +817,7 @@ def fetch_news() -> List[Dict[str, Any]]:
             continue
 
     upcoming.sort(key=lambda x: x.get("date", ""))
-    print(f"[NEWS] ✅ Loaded {len(upcoming)} economic events.")
+    print(f"[NEWS] ✅ Loaded {len(upcoming)} Forex Factory calendar events.")
     return upcoming
 
 def get_cached_news():
@@ -1023,7 +1010,6 @@ def monitor():
                 hit_tp = (long and live >= tp) or (not long and live <= tp)
                 hit_sl = (long and live <= trail_sl) or (not long and live >= trail_sl)
                 
-                # TrendPulse MACD Exit
                 if strat == "TrendPulse 1H" and not (hit_tp or hit_sl):
                     now = time.time()
                     if now - _ut_15m_cache.get(t["symbol"], (None, 0))[1] >= 120:
@@ -1173,10 +1159,6 @@ def build_weekly_digest_text(days=7):
     worst_sym, worst_pnl = min(per_symbol.items(), key=lambda kv: kv[1]) if per_symbol else (None, 0)
     total_equity = sum(float(accounts.get(a, {}).get("balance", 0)) for a in ["macro", "nifty", "ny_session", "sweep_4h"])
     return msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity)
-
-# =====================================================================
-# RESTORED TELEGRAM COMMAND CENTER HANDLERS
-# =====================================================================
 
 @bot.message_handler(commands=["start", "menu"])
 def cmd_start(m):
