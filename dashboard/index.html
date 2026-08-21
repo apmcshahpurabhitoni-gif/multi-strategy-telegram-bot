@@ -3,10 +3,10 @@
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
-<title>Mavis Trading Bot — Dashboard & Control Center</title>
+<title>Mavis Trading Bot — Dashboard</title>
 <style>
 /* =============================================================
-   Mavis Trading Dashboard — Full Feature Neobrutalism UI
+   Mavis Trading Dashboard — Full Feature Set
    ============================================================= */
 
 :root,
@@ -108,7 +108,7 @@ html[data-theme="dark"] {
   --accent-ink:   #0a0a0a;
 }
 
-/* Background Swatches */
+/* Background & Accent Swatches */
 html[data-theme="dark"][data-bg="navy"]    { --bg:#0b1220; --bg-elev:#131b2e; --bg-soft:#1a2440; }
 html[data-theme="dark"][data-bg="charcoal"]{ --bg:#18181b; --bg-elev:#27272a; --bg-soft:#3f3f46; }
 html[data-theme="dark"][data-bg="black"]   { --bg:#000000; --bg-elev:#0d0d0d; --bg-soft:#1a1a1a; }
@@ -127,7 +127,6 @@ html[data-theme="light"][data-bg="sky"]    { --bg:#e3f2fd; --bg-elev:#f0f8ff; --
 html[data-theme="light"][data-bg="sand"]   { --bg:#f5e6c8; --bg-elev:#fbf2dc; --bg-soft:#e6d2a3; }
 html[data-theme="light"][data-bg="rose"]   { --bg:#fce4ec; --bg-elev:#fff0f5; --bg-soft:#f0c5d4; }
 
-/* Accent Colors */
 html[data-accent="emerald"] { --accent:#10b981; --accent-hover:#059669; --accent-soft:#d1fae5; }
 html[data-accent="blue"]    { --accent:#3b82f6; --accent-hover:#2563eb; --accent-soft:#dbeafe; }
 html[data-accent="indigo"]  { --accent:#6366f1; --accent-hover:#4f46e5; --accent-soft:#e0e7ff; }
@@ -142,40 +141,29 @@ html, body { margin: 0; padding: 0; }
 
 body {
   font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
-  background: var(--bg);
-  color: var(--ink);
-  -webkit-font-smoothing: antialiased;
-  min-height: 100vh;
-  padding-bottom: 96px;
-  font-size: 14px;
-  line-height: 1.5;
+  background: var(--bg); color: var(--ink);
+  -webkit-font-smoothing: antialiased; min-height: 100vh;
+  padding-bottom: 96px; font-size: 14px; line-height: 1.5;
   transition: background var(--t) var(--ease-smooth), color var(--t) var(--ease-smooth);
 }
 a { color: inherit; }
 
 .app { max-width: 1380px; margin: 0 auto; padding: 18px; }
 
-/* Topbar Header */
+/* Topbar */
 .topbar {
-  display: flex; align-items: center; gap: 14px;
-  padding: 12px 18px;
-  background: var(--bg-elev);
-  border: var(--border);
-  border-radius: var(--radius);
-  box-shadow: var(--shadow);
-  margin-bottom: 18px;
-  flex-wrap: wrap;
+  display: flex; align-items: center; gap: 14px; padding: 12px 18px;
+  background: var(--bg-elev); border: var(--border); border-radius: var(--radius);
+  box-shadow: var(--shadow); margin-bottom: 18px; flex-wrap: wrap;
   transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease);
 }
 .topbar:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 
 .brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--ink); }
 .brand-logo {
-  width: 32px; height: 32px; background: var(--accent);
-  border: var(--border); border-radius: var(--radius-sm);
-  display: flex; align-items: center; justify-content: center;
-  color: var(--accent-ink); font-weight: 800; font-size: 15px;
-  box-shadow: var(--shadow-sm); transition: transform 0.4s var(--ease);
+  width: 32px; height: 32px; background: var(--accent); border: var(--border);
+  border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
+  color: var(--accent-ink); font-weight: 800; font-size: 15px; box-shadow: var(--shadow-sm); transition: transform 0.4s var(--ease);
 }
 .brand-logo:hover { transform: rotate(-15deg) scale(1.12); }
 .brand-tag { color: var(--muted); font-weight: 500; font-size: 13px; }
@@ -189,10 +177,7 @@ a { color: inherit; }
 @keyframes pulseDot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.7; } }
 
 .controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.seg {
-  display: inline-flex; background: var(--bg-soft); border: var(--border);
-  border-radius: var(--radius-sm); padding: 3px; gap: 2px; box-shadow: var(--shadow-sm);
-}
+.seg { display: inline-flex; background: var(--bg-soft); border: var(--border); border-radius: var(--radius-sm); padding: 3px; gap: 2px; box-shadow: var(--shadow-sm); }
 .seg button {
   background: transparent; color: var(--ink-soft); border: 0; padding: 6px 12px;
   font-weight: 600; font-size: 11px; cursor: pointer; border-radius: calc(var(--radius-sm) - 2px);
@@ -221,31 +206,19 @@ a { color: inherit; }
 @keyframes popIn { from { opacity: 0; transform: translateY(-10px) scale(0.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
 
 .swatches { display: flex; gap: 6px; flex-wrap: wrap; }
-.swatch {
-  width: 26px; height: 26px; border: var(--border); border-radius: 50%;
-  cursor: pointer; padding: 0; transition: transform var(--t-fast) var(--ease), box-shadow var(--t-fast) var(--ease);
-}
-.swatch:hover { transform: scale(1.25) rotate(-8deg); box-shadow: var(--shadow-sm); }
+.swatch { width: 26px; height: 26px; border: var(--border); border-radius: 50%; cursor: pointer; padding: 0; transition: transform var(--t-fast) var(--ease); }
+.swatch:hover { transform: scale(1.25) rotate(-8deg); }
 
-/* Tabs (Desktop & Mobile) */
-.tabs {
-  display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px;
-  background: var(--bg-elev); border: var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow-sm);
-}
+/* Tabs */
+.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; background: var(--bg-elev); border: var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow-sm); }
 .tab {
-  appearance: none; background: transparent; color: var(--ink-soft); border: 0;
-  border-radius: var(--radius-sm); padding: 9px 14px; font-weight: 600; font-size: 13px;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
+  appearance: none; background: transparent; color: var(--ink-soft); border: 0; border-radius: var(--radius-sm);
+  padding: 9px 14px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
   transition: all var(--t-fast) var(--ease); font-family: inherit; position: relative;
 }
 .tab:hover { background: var(--bg-soft); color: var(--ink); transform: translateY(-2px); }
 .tab.active { background: var(--accent); color: var(--accent-ink); transform: translateY(-3px) scale(1.02); box-shadow: var(--shadow); }
-.tab .badge-count {
-  background: var(--bg-soft); color: var(--ink-soft); border-radius: 999px;
-  padding: 1px 7px; font-size: 10px; font-weight: 700;
-  animation: bounceBadge 0.6s ease infinite alternate;
-}
-@keyframes bounceBadge { from { transform: translateY(0); } to { transform: translateY(-2px); } }
+.tab .badge-count { background: var(--bg-soft); color: var(--ink-soft); border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
 .tab.active .badge-count { background: rgba(255,255,255,0.3); color: #fff; }
 
 .bottomnav {
@@ -261,41 +234,29 @@ a { color: inherit; }
   body { padding-bottom: 96px; }
 }
 
-/* Cards & Grid */
+/* Cards & Layout */
 .grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
 .card {
   background: var(--bg-elev); border: var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: 18px;
-  transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease);
+  box-shadow: var(--shadow); padding: 18px; transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease);
   animation: cardEntry 0.4s var(--ease) backwards;
 }
-@keyframes cardEntry { from { opacity: 0; transform: translateY(16px) scale(0.98); } to { opacity: 1; transform: translateY(0) scale(1); } }
-.card:hover { transform: translateY(-4px); box-shadow: var(--shadow-lg); }
-.card h3 {
-  margin: 0 0 14px 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
-  color: var(--ink-soft); display: flex; align-items: center; gap: 8px;
-}
+@keyframes cardEntry { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
+.card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
+.card h3 { margin: 0 0 14px 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
 
-.col-12 { grid-column: span 12; } .col-8 { grid-column: span 8; } .col-6 { grid-column: span 6; } .col-4 { grid-column: span 4; } .col-3 { grid-column: span 3; }
-@media (max-width: 980px) { .col-8, .col-6, .col-4, .col-3 { grid-column: span 12; } }
+.col-12 { grid-column: span 12; } .col-8 { grid-column: span 8; } .col-6 { grid-column: span 6; } .col-4 { grid-column: span 4; }
+@media (max-width: 980px) { .col-8, .col-6, .col-4 { grid-column: span 12; } }
 
 /* KPIs */
-.kpi {
-  display: flex; flex-direction: column; gap: 4px; padding: 14px;
-  border: var(--border); border-radius: var(--radius-sm); background: var(--bg-soft);
-  transition: all var(--t-fast) var(--ease); position: relative; overflow: hidden;
-}
-.kpi::before {
-  content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent);
-  transform: scaleY(0); transform-origin: bottom; transition: transform var(--t-fast) var(--ease);
-}
+.kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px; border: var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); transition: all var(--t-fast) var(--ease); position: relative; overflow: hidden; }
+.kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); transform: scaleY(0); transform-origin: bottom; transition: transform var(--t-fast) var(--ease); }
 .kpi:hover::before { transform: scaleY(1); }
-.kpi:hover { transform: translateY(-3px) scale(1.01); box-shadow: var(--shadow-sm); }
+.kpi:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
 .kpi .label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
 .kpi .value { font-size: 22px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
-.kpi .sub { font-size: 11px; color: var(--ink-soft); font-weight: 500; font-variant-numeric: tabular-nums; }
+.kpi .sub { font-size: 11px; color: var(--ink-soft); font-weight: 500; }
 .kpi .sub.good { color: var(--good); } .kpi .sub.bad { color: var(--bad); }
-
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
 
@@ -304,24 +265,20 @@ a { color: inherit; }
 table.brut { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
 table.brut th, table.brut td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
 table.brut thead th { background: var(--bg-soft); color: var(--ink-soft); border-bottom: var(--border); text-transform: uppercase; font-size: 10px; letter-spacing: .08em; font-weight: 700; }
-table.brut tbody tr { transition: background var(--t-fast) var(--ease); }
 table.brut tbody tr:hover { background: var(--accent-soft); }
 
-.tag {
-  display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px;
-  border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase;
-  transition: transform var(--t-fast) var(--ease);
-}
-.tag:hover { transform: scale(1.1); }
+.tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
 .tag.long { background: var(--good-soft); color: var(--good); }
 .tag.short { background: var(--bad-soft); color: var(--bad); }
 .tag.info { background: var(--info-soft); color: var(--info); }
+.tag.warn { background: var(--warn-soft); color: var(--warn); }
+.tag.high { background: var(--bad-soft); color: var(--bad); }
+.tag.med { background: var(--warn-soft); color: var(--warn); }
 
 /* Buttons & Inputs */
 .btn {
-  appearance: none; background: var(--bg-elev); color: var(--ink); border: var(--border);
-  border-radius: var(--radius-sm); padding: 8px 14px; font-weight: 600; font-size: 12px;
-  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
+  appearance: none; background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
+  padding: 8px 14px; font-weight: 600; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
 }
 .btn:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
 .btn:active { transform: translateY(1px); box-shadow: var(--shadow-press); }
@@ -331,48 +288,45 @@ table.brut tbody tr:hover { background: var(--accent-soft); }
 
 .input, select.input {
   background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
-  padding: 9px 30px 9px 12px; font: inherit; font-size: 13px; width: 100%; appearance: none; -webkit-appearance: none;
-  transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
+  padding: 9px 30px 9px 12px; font: inherit; font-size: 13px; width: 100%; appearance: none; -webkit-appearance: none; transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
 }
 .input:focus, select.input:focus { outline: 0; border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 3px var(--accent-soft); transform: translateY(-1px); }
 
-/* Toast */
+/* Toast & Accordions */
 .toast {
-  position: fixed; right: 16px; top: 16px; background: var(--bg-elev); color: var(--ink);
-  border: var(--border); border-radius: var(--radius); padding: 12px 18px; box-shadow: var(--shadow-lg);
-  font-weight: 500; font-size: 13px; z-index: 100; display: none; max-width: 340px; animation: toastBounce 0.35s var(--ease);
+  position: fixed; right: 16px; top: 16px; background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius);
+  padding: 12px 18px; box-shadow: var(--shadow-lg); font-weight: 500; font-size: 13px; z-index: 100; display: none; max-width: 340px;
 }
-@keyframes toastBounce { from { opacity: 0; transform: translateY(-16px) scale(0.85); } to { opacity: 1; transform: translateY(0) scale(1); } }
 .toast.show { display: flex; align-items: center; gap: 8px; }
 .toast.good { border-left: 5px solid var(--good); } .toast.bad { border-left: 5px solid var(--bad); }
 
-/* Collapsibles & News */
 .collapse { border: var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow-sm); }
 .collapse-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; background: var(--bg-soft); transition: background var(--t-fast) var(--ease); }
 .collapse-head:hover { background: var(--accent-soft); }
 .collapse-head .chev { transition: transform var(--t) var(--ease); }
 .collapse.open .collapse-head .chev { transform: rotate(180deg); color: var(--accent); }
-.collapse-body { display: none; padding: 4px 0; animation: expandBody 0.3s var(--ease-smooth); }
+.collapse-body { display: none; padding: 4px 0; }
 .collapse.open .collapse-body { display: block; }
-@keyframes expandBody { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
+.day-pill { background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 3px 10px; font-weight: 700; font-size: 11px; text-transform: uppercase; }
 
 .news-item {
-  display: grid; grid-template-columns: 70px 1fr auto; gap: 14px; align-items: center;
-  padding: 12px 16px; border-bottom: 1px solid var(--line-soft); transition: transform var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+  display: grid; grid-template-columns: 80px 1fr auto; gap: 14px; align-items: center;
+  padding: 12px 16px; border-bottom: 1px solid var(--line-soft); transition: background var(--t-fast) var(--ease);
 }
-.news-item:hover { background: var(--bg-soft); transform: translateX(4px); }
+.news-item:hover { background: var(--bg-soft); }
 
 .chart-wrap { position: relative; width: 100%; height: 280px; }
 canvas { max-width: 100%; height: auto; display: block; }
+.pnl-pos { color: var(--good); font-weight: 700; } .pnl-neg { color: var(--bad); font-weight: 700; }
 .panel { animation: panelFade 0.3s var(--ease-smooth); }
-@keyframes panelFade { from { opacity: 0; transform: translateY(6px); } to { opacity: 1; transform: translateY(0); } }
+@keyframes panelFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
 </style>
 </head>
 <body>
 
 <div class="app">
 
-  <!-- TOPBAR HEADER -->
+  <!-- TOPBAR -->
   <div class="topbar">
     <div class="brand">
       <div class="brand-logo">M</div>
@@ -381,10 +335,8 @@ canvas { max-width: 100%; height: auto; display: block; }
         <span class="brand-tag"> · Trading Bot</span>
       </div>
     </div>
-    <div class="spacer" style="flex:1"></div>
-    <div class="meta" id="lastUpdate">
-      <span class="dot"></span><span id="lastUpdateText">connecting…</span>
-    </div>
+    <div style="flex:1"></div>
+    <div class="meta" id="lastUpdate"><span class="dot"></span><span id="lastUpdateText">connecting…</span></div>
     <div class="controls">
       <div class="seg" role="tablist">
         <button data-theme-val="normal">Normal</button>
@@ -430,7 +382,7 @@ canvas { max-width: 100%; height: auto; display: block; }
     <button class="tab" data-tab="backtest">🧪 Backtest</button>
   </div>
 
-  <!-- PANEL: OVERVIEW -->
+  <!-- PANELS -->
   <div id="panel-overview" class="panel">
     <div class="grid">
       <div class="card col-12">
@@ -456,7 +408,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: TRADES -->
   <div id="panel-trades" class="panel" hidden>
     <div class="card">
       <h3>🔥 Live Trades <span class="badge" id="tradeCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span>
@@ -478,7 +429,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: SIGNALS -->
   <div id="panel-signals" class="panel" hidden>
     <div class="card">
       <h3>📡 Recent Signals (24h)</h3>
@@ -486,7 +436,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: HISTORY -->
   <div id="panel-history" class="panel" hidden>
     <div class="card">
       <h3>📜 Trade History <span class="badge" id="historyCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span></h3>
@@ -494,7 +443,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: NIFTY -->
   <div id="panel-nifty" class="panel" hidden>
     <div class="card">
       <h3>📈 Nifty 50 + Bank Nifty Live Board</h3>
@@ -502,7 +450,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: NEWS -->
   <div id="panel-news" class="panel" hidden>
     <div class="card">
       <h3>📰 Upcoming Economic Events <span style="margin-left:auto"><button class="btn sm primary" id="refreshNews">↻ Refresh</button></span></h3>
@@ -510,7 +457,6 @@ canvas { max-width: 100%; height: auto; display: block; }
     </div>
   </div>
 
-  <!-- PANEL: BACKTEST -->
   <div id="panel-backtest" class="panel" hidden>
     <div class="card">
       <h3>🧪 Strategy Backtester Suite</h3>
@@ -524,6 +470,13 @@ canvas { max-width: 100%; height: auto; display: block; }
       <div id="btMetrics" class="kpi-row"></div>
       <div style="height:1px;background:var(--line);margin:12px 0"></div>
       <div class="chart-wrap"><canvas id="btChart"></canvas></div>
+      <div style="height:1px;background:var(--line);margin:12px 0"></div>
+      <div class="scroll-x">
+        <table class="brut" id="btTable">
+          <thead><tr><th>#</th><th>Type</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Result</th><th>Reason</th></tr></thead>
+          <tbody></tbody>
+        </table>
+      </div>
     </div>
   </div>
 
@@ -559,7 +512,6 @@ const BG_SWATCHES = {
     { id:"mint", label:"Mint", color:"#e8f5e9" }, { id:"sky", label:"Sky", color:"#e3f2fd" }
   ]
 };
-const ACCENT_MAP = { emerald:"#10b981", blue:"#3b82f6", indigo:"#6366f1", violet:"#8b5cf6", rose:"#f43f5e", amber:"#f59e0b", cyan:"#06b6d4", pink:"#ec4899" };
 
 function applyTheme(t) {
   document.documentElement.setAttribute("data-theme", t);
@@ -627,6 +579,12 @@ function toast(msg, kind="") {
 
 const fmtINR = n => "₹" + Math.round(Number(n || 0)).toLocaleString("en-IN");
 const fmtNum = n => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 4 });
+const fmtDateHeader = iso => {
+  const today = new Date(), yest = new Date(Date.now() - 864e5), d = new Date(iso);
+  if (today.toDateString() === d.toDateString()) return "Today";
+  if (yest.toDateString() === d.toDateString()) return "Yesterday";
+  return d.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short" });
+};
 
 async function api(path, opts={}) {
   try {
@@ -695,19 +653,53 @@ function renderTrades(snap) {
       if (r?.success) { toast("Trade closed", "good"); loadDashboard(); } else toast("Close failed", "bad");
     }));
   }
+  renderPending(snap);
+}
+
+function renderPending(snap) {
+  const list = snap?.pending || [];
+  $("#pendingCount").textContent = list.length;
+  const wrap = $("#pendingList");
+  if (!list.length) { wrap.innerHTML = '<div class="empty" style="padding:16px;color:var(--muted)">No pending sweeps.</div>'; return; }
+  wrap.innerHTML = list.map(p => `<div class="news-item"><div><b>${p.sym}</b></div><div>${p.dir} · ${p.status}</div><div><span class="tag warn">Pending</span></div></div>`).join("");
 }
 
 function renderSignals(snap) {
   const list = snap?.today_signals || [], wrap = $("#signalsList");
   if (!list.length) { wrap.innerHTML = '<div class="empty" style="text-align:center;padding:40px;color:var(--muted)">No signals in 24h</div>'; return; }
-  wrap.innerHTML = list.map(s => `<div class="news-item"><div><b>${s.sym}</b></div><div>${s.dir} · ${s.strategy}</div><div>${s.tag||''}</div></div>`).join("");
+  const groups = {};
+  list.forEach(s => { const k = fmtDateHeader(s.ts_ms ? new Date(s.ts_ms).toISOString() : new Date().toISOString()); (groups[k] = groups[k] || []).push(s); });
+  wrap.innerHTML = Object.entries(groups).map(([day, arr]) => `
+    <div class="collapse open">
+      <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} signal(s)</span><span class="chev" style="margin-left:auto">▼</span></div>
+      <div class="collapse-body">${arr.map(s => `<div class="news-item"><div><b>${s.sym}</b></div><div>${s.dir} · ${s.strategy}</div><div>${s.tag||''}</div></div>`).join("")}</div>
+    </div>`).join("");
+  wireCollapse();
 }
 
 function renderHistory(snap) {
   const list = snap?.history || [], wrap = $("#historyList");
   $("#historyCount").textContent = snap?.history_total || list.length;
   if (!list.length) { wrap.innerHTML = '<div class="empty" style="text-align:center;padding:40px;color:var(--muted)">No history</div>'; return; }
-  wrap.innerHTML = list.map(t => `<div class="news-item"><div><b>${t.symbol}</b></div><div>P/L: ${fmtINR(t.pnl)}</div><div>${t.result}</div></div>`).join("");
+  const groups = {};
+  list.forEach(t => { const k = fmtDateHeader(t.closed_at || t.close_time || new Date().toISOString()); (groups[k] = groups[k] || []).push(t); });
+  wrap.innerHTML = Object.entries(groups).map(([day, arr], idx) => {
+    const dayPnl = arr.reduce((a, t) => a + Number(t.pnl || 0), 0);
+    const wins = arr.filter(t => Number(t.pnl || 0) > 0).length, losses = arr.length - wins;
+    return `
+      <div class="collapse ${idx===0?'open':''}">
+        <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} trades (${wins}W/${losses}L)</span><span class="${dayPnl>=0?'pnl-pos':'pnl-neg'}" style="margin-left:auto;margin-right:12px">${dayPnl>=0?"+":""}${fmtINR(dayPnl)}</span><span class="chev">▼</span></div>
+        <div class="collapse-body"><table class="brut"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Result</th></tr></thead><tbody>${arr.map(t=>`<tr><td><b>${t.symbol}</b></td><td>${t.type||t.direction}</td><td>${fmtNum(t.entry)}</td><td>${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtINR(t.pnl)}</td><td>${t.result}</td></tr>`).join("")}</tbody></table></div>
+      </div>`;
+  }).join("");
+  wireCollapse();
+}
+
+function wireCollapse() {
+  $$("[data-collapse]").forEach(h => {
+    if (h._wired) return; h._wired = true;
+    h.addEventListener("click", () => h.parentElement.classList.toggle("open"));
+  });
 }
 
 async function loadNifty() {
@@ -726,13 +718,7 @@ function renderNews(news) {
   wrap.innerHTML = news.slice(0, 30).map(ev => `<div class="news-item"><div><b>${ev.country||"USD"}</b></div><div>${ev.title}</div><div><span class="tag info">${ev.impact}</span></div></div>`).join("");
 }
 
-const BT_SYMBOLS = {
-  crypto: ["BTC-USD", "ETH-USD", "SOL-USD"],
-  forex:  ["EURUSD=X", "GBPUSD=X", "USDJPY=X"],
-  metal:  ["GC=F", "SI=F"],
-  index:  ["^NSEI", "^NSEBANK", "^GSPC"]
-};
-
+const BT_SYMBOLS = { crypto: ["BTC-USD", "ETH-USD", "SOL-USD"], forex: ["EURUSD=X", "GBPUSD=X", "USDJPY=X"], metal: ["GC=F", "SI=F"], index: ["^NSEI", "^NSEBANK"] };
 function refreshSymbolDropdown() {
   const cls = $("#btClass").value, list = BT_SYMBOLS[cls] || [], sel = $("#btSymbol");
   sel.innerHTML = list.map(s => `<option value="${s}">${s}</option>`).join("");
@@ -746,7 +732,11 @@ $("#runBacktest")?.addEventListener("click", async () => {
   const r = await api(`/api/backtest?symbol=${encodeURIComponent(sym)}&strategy=${strat}&days=${days}`);
   if (!r || r.error) { toast("Backtest failed: " + (r?.error || "unknown"), "bad"); return; }
   toast("Backtest completed successfully", "good");
-  drawEquity($("#btChart"), r.metrics?.equity_points || []);
+  const m = r.metrics || r;
+  $("#btMetrics").innerHTML = `<div class="kpi"><div class="label">Trades</div><div class="value" style="font-size:16px">${m.total_trades}</div></div><div class="kpi"><div class="label">Win Rate</div><div class="value" style="font-size:16px">${(m.win_rate||0).toFixed(1)}%</div></div><div class="kpi"><div class="label">Net P/L</div><div class="value" style="font-size:16px">${fmtINR(m.total_pnl)}</div></div><div class="kpi"><div class="label">Max DD</div><div class="value" style="font-size:16px">${(m.max_drawdown_pct||0).toFixed(2)}%</div></div>`;
+  drawEquity($("#btChart"), m.equity_points || []);
+  const tbody = $("#btTable tbody");
+  tbody.innerHTML = (m.trades || []).map((t, i) => `<tr><td>${i+1}</td><td>${t.type}</td><td>${fmtNum(t.entry)}</td><td>${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtINR(t.pnl)}</td><td>${t.result}</td><td>${t.exit_reason||""}</td></tr>`).join("");
 });
 
 async function loadDashboard() {
