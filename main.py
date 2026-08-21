@@ -623,11 +623,14 @@ def register_pending_sweep(symbol, mtype, sweep):
     age_str, tag = get_signal_age_str(sweep_close_ts)
     name_str = display_name(symbol)
     
+    # 🟢 for Bullish / Long, 🔴 for Bearish / Short
     dot = "🟢" if direction == "BULLISH" else "🔴"
     dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
+    status_icon = "✅" if "FRESH" in tag else "⚠️"
     
+    # Updated Headline Format with specific layout
     sweep_alert_msg = (
-        f"{dot} [{tag}] *SWEEP DETECTED — WAITING FOR FVG*\n{BR}\n"
+        f"{dot} *SWEEP DETECTED — {name_str} — WAITING FOR FVG* · {status_icon}\n{BR}\n"
         f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
         f"📊 *Direction:* {dir_label}\n"
         f"🌐 *Market:* {mtype}\n{BR}\n"
