@@ -135,7 +135,7 @@ class BacktestEngine:
         return None
 
     def _find_timeframe_fvg(self, df_subset: pd.DataFrame, direction: str) -> Optional[Tuple[float, float, int]]:
-        """Finds the first unmitigated 3-candle FVG in the given slice[cite: 4]."""
+        """Finds the first unmitigated 3-candle FVG in the given slice."""
         if len(df_subset) < 3:
             return None
         for j in range(2, len(df_subset)):
@@ -249,19 +249,19 @@ class BacktestEngine:
         balance, trades = self.starting_balance, []
         for i in range(5, len(df_4h) - 1):
             c, m = df_4h.iloc[i-1], df_4h.iloc[i-2]
-            sweep = None
-            if c["Low"] < m["Low"] and c["High"] > m["High"]:
-                direction = "BULLISH" if c["Close"] >= c["Open"] else "BEARISH"
-                sweep = (direction, float(c["High"]), float(c["Low"]))
-            elif c["Low"] < m["Low"] and c["Close"] > m["Low"]:
-                sweep = ("BULLISH", float(c["High"]), float(c["Low"]))
-            elif c["High"] > m["High"] and c["Close"] < m["High"]:
-                sweep = ("BEARISH", float(c["High"]), float(c["Low"]))
             
-            if not sweep:
+            # Directional Sweep Conditions
+            direction = None
+            if c["Low"] < m["Low"] and c["High"] <= m["High"] and c["Close"] > m["Low"]:
+                direction = "BULLISH"
+            elif c["High"] > m["High"] and c["Low"] >= m["Low"] and c["Close"] < m["High"]:
+                direction = "BEARISH"
+            
+            # If neutral or no sweep, skip execution/trade search
+            if not direction:
                 continue
                 
-            direction, sweep_high, sweep_low = sweep
+            sweep_high, sweep_low = float(c["High"]), float(c["Low"])
             df_after_4h = df_4h[df_4h.index > df_4h.index[i-1]]
             df_after_1h = df_1h[df_1h.index > df_4h.index[i-1]]
 
