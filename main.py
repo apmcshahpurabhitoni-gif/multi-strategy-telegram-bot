@@ -54,6 +54,30 @@ NIFTY_STOCKS = [
     ("MARUTI.NS", "Maruti"), ("SUNPHARMA.NS", "Sun Pharma"),
 ]
 
+SYMBOL_NAMES = {
+    "BTC-USD": "Bitcoin (BTC)",
+    "GC=F": "Gold (XAU/USD)",
+    "SI=F": "Silver (XAG/USD)",
+    "HG=F": "Copper",
+    "EURUSD=X": "EUR/USD",
+    "GBPUSD=X": "GBP/USD",
+    "USDJPY=X": "USD/JPY",
+    "USDCHF=X": "USD/CHF",
+    "AUDUSD=X": "AUD/USD",
+    "USDCAD=X": "USD/CAD",
+    "NZDUSD=X": "NZD/USD",
+    "^NSEI": "NIFTY 50",
+    "^NSEBANK": "BANK NIFTY",
+    **{sym: name for sym, name in NIFTY_STOCKS}
+}
+
+def display_name(symbol: str) -> str:
+    """Returns a clean, readable name for any ticker."""
+    if symbol in SYMBOL_NAMES:
+        return SYMBOL_NAMES[symbol]
+    clean = symbol.replace("=X", "").replace(".NS", "").replace("^", "")
+    return clean
+
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
 
@@ -67,7 +91,7 @@ PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
 WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
 
 ACCOUNT_LIMITS = {"macro": 20, "nifty": 5, "ny_session": 3, "sweep_4h": 3}
-MAX_SIGNAL_AGE_HOURS = 12  # Signals older than 12 hours are dropped on restart
+MAX_SIGNAL_AGE_HOURS = 12
 
 accounts = {}
 active_trades = []
@@ -98,7 +122,7 @@ BR2 = "━━━━━━━━━━━━━━━━━━━━━━━━�
 
 def get_signal_age_str(ts_ms):
     if not ts_ms:
-        return "Unknown"
+        return "Unknown", "⚠️ STALE"
     now_ms = int(time.time() * 1000)
     diff_ms = now_ms - ts_ms
     diff_min = int(diff_ms / 60000)
@@ -109,10 +133,9 @@ def get_signal_age_str(ts_ms):
     else:
         age_str = f"{diff_hr} hr {diff_min % 60} min ago"
         tag = "✅ FRESH" if diff_hr < 4 else "⚠️ STALE"
-    return f"{age_str} {tag}"
+    return age_str, tag
 
 def is_signal_too_old(ts_ms, max_hours=MAX_SIGNAL_AGE_HOURS):
-    """Returns True if the candle closed more than max_hours ago[cite: 1]."""
     if not ts_ms:
         return False
     age_hours = (time.time() * 1000 - ts_ms) / (3600 * 1000)
@@ -123,22 +146,33 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
     dot = "🟢" if is_bullish else "🔴"
     dir_label = "LONG 📈" if is_bullish else "SHORT 📉"
     is_sweep = bool(strat and "Sweep" in strat)
-    header = f"{dot} *FVG Fill ({tf}) · {symbol}*" if is_sweep and fvg_zone else (f"{dot} *{strat} · {symbol}*" if not is_sweep else f"{dot} *4H Sweep · {symbol}*")
     curr = _currency(symbol)
-    fvg_line = f"🎯 *FVG Zone ({tf}):* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n" if fvg_zone and is_sweep else ""
+    name_str = display_name(symbol)
     
+    age_str, tag = get_signal_age_str(signal_ts_ms)
     dt = datetime.fromtimestamp(signal_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
-    age_str = get_signal_age_str(signal_ts_ms)
+    
+    header_title = f"FVG Fill ({tf}) · {name_str}" if is_sweep and fvg_zone else (f"{strat} · {name_str}" if not is_sweep else f"4H Sweep · {name_str}")
+    fvg_line = f"🎯 *FVG Zone ({tf}):* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n" if fvg_zone and is_sweep else ""
     
     return (
-        f"{header}\n{BR}\n"
-        f"🪙 *Asset:* `{symbol}`\n🌐 *Market:* {mtype}\n📊 *Direction:* {dir_label}\n⏱ *Timeframe:* {tf}\n{BR}\n"
-        f"⏰ *Signal Candle Closed At:*\n🔔 `{time_str}`\n"
-        f"⏳ *Signal Age:* `{age_str}`\n{BR}\n"
+        f"{dot} [{tag}] *{header_title}*\n{BR}\n"
+        f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
+        f"🌐 *Market:* {mtype}\n"
+        f"📊 *Direction:* {dir_label}\n"
+        f"⏱ *Timeframe:* {tf}\n{BR}\n"
+        f"⏳ *Signal Status:* `{tag}` ({age_str})\n"
+        f"⏰ *Candle Closed:* `{time_str}`\n{BR}\n"
         f"💼 *PAPER TRADE EXECUTED*\n{BR}\n"
-        f"🏢 *Account:* `{account.upper()}`\n📍 *Entry:* `{curr}{price:,.4f}`\n🛑 *Stop Loss:* `{curr}{actual_sl:,.4f}`\n🎯 *Take Profit:* `{curr}{actual_tp:,.4f}`\n"
-        f"{fvg_line}📦 *Quantity:* `{qty:.4f}`\n💸 *Risk:* `₹{risk_amt:,.2f}`\n{BR2}"
+        f"🏢 *Account:* `{account.upper()}`\n"
+        f"📍 *Entry:* `{curr}{price:,.4f}`\n"
+        f"🛑 *Stop Loss:* `{curr}{actual_sl:,.4f}`\n"
+        f"🎯 *Take Profit:* `{curr}{actual_tp:,.4f}`\n"
+        f"{fvg_line}"
+        f"📦 *Quantity:* `{qty:.4f}`\n"
+        f"💸 *Risk:* `₹{risk_amt:,.2f}`\n{BR}\n"
+        f"ℹ️ _✅ FRESH = Closed ≤1h ago | ⚠️ STALE = Closed >1h ago_\n{BR2}"
     )
 
 def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
@@ -147,7 +181,19 @@ def msg_trade_closed(trade, live, pnl, bal, is_long, hit_tp):
     money = "💰" if hit_tp else "💸"
     pnl_s = f"+₹{pnl:,.2f}" if hit_tp else f"-₹{abs(pnl):,.2f}"
     curr = _currency(trade['symbol'])
-    return f"{dot} *TRADE CLOSED — {result}*\n{BR}\n`{trade['symbol']}` | {'LONG' if is_long else 'SHORT'}\n🎯 *Strategy:* {trade.get('strat', 'N/A')}\n🏢 *Account:* `{trade.get('account', 'MACRO').upper()}`\n{BR}\n📍 *Entry:* `{curr}{trade['entry']:,.4f}`\n{'📈' if hit_tp else '📉'} *Exit:* `{curr}{live:,.4f}`\n🛑 *SL Hit:* `{curr}{trade['trail_sl']:,.4f}`\n🎯 *TP Target:* `{curr}{trade['tp']:,.4f}`\n{BR}\n{money} *P/L:* `{pnl_s}`\n🏦 *Balance:* `₹{bal:,.2f}`\n{BR2}"
+    name_str = display_name(trade['symbol'])
+    return (
+        f"{dot} *TRADE CLOSED — {result}*\n{BR}\n"
+        f"🪙 `{name_str}` | {'LONG' if is_long else 'SHORT'}\n"
+        f"🎯 *Strategy:* {trade.get('strat', 'N/A')}\n"
+        f"🏢 *Account:* `{trade.get('account', 'MACRO').upper()}`\n{BR}\n"
+        f"📍 *Entry:* `{curr}{trade['entry']:,.4f}`\n"
+        f"{'📈' if hit_tp else '📉'} *Exit:* `{curr}{live:,.4f}`\n"
+        f"🛑 *SL Hit:* `{curr}{trade['trail_sl']:,.4f}`\n"
+        f"🎯 *TP Target:* `{curr}{trade['tp']:,.4f}`\n{BR}\n"
+        f"{money} *P/L:* `{pnl_s}`\n"
+        f"🏦 *Balance:* `₹{bal:,.2f}`\n{BR2}"
+    )
 
 def msg_midnight_reset(day_pnl, macro_bal, nifty_bal, ny_bal, sweep_bal):
     pnl_icon = "📈" if day_pnl >= 0 else "📉"
@@ -159,8 +205,8 @@ def msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, wor
     win_rate = (wins / total_trades * 100.0) if total_trades else 0.0
     pnl_icon = "📈" if week_pnl >= 0 else "📉"
     pnl_sign = "+" if week_pnl >= 0 else ""
-    best_str = f"`{best_sym}` (`{'+' if best_pnl >= 0 else ''}₹{best_pnl:,.2f}`)" if best_sym else "—"
-    worst_str = f"`{worst_sym}` (`{'+' if worst_pnl >= 0 else ''}₹{worst_pnl:,.2f}`)" if worst_sym else "—"
+    best_str = f"`{display_name(best_sym)}` (`{'+' if best_pnl >= 0 else ''}₹{best_pnl:,.2f}`)" if best_sym else "—"
+    worst_str = f"`{display_name(worst_sym)}` (`{'+' if worst_pnl >= 0 else ''}₹{worst_pnl:,.2f}`)" if worst_sym else "—"
     return f"🗓️ *WEEKLY DIGEST*\n{BR}\n{pnl_icon} *Week P/L:* `{pnl_sign}₹{week_pnl:,.2f}`\n📊 *Trades:* `{total_trades}` · ✅ `{wins}W` · ❌ `{losses}L` · 🎯 `{win_rate:.1f}%`\n{BR}\n🏆 *Best Symbol:* {best_str}\n💔 *Worst Symbol:* {worst_str}\n{BR}\n🏦 *Total Equity:* `₹{total_equity:,.2f}`\n{BR2}"
 
 def msg_guide():
@@ -429,33 +475,32 @@ def fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=200):
         return None
 
 def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: float, sweep_ts_ms: int):
-    """Sends neutral 'sweep detected' alert (No direction, no dots, no FVG)[cite: 1]. Drops if >12h old."""
+    """Sends neutral 'sweep detected' alert[cite: 1]. Drops if >12h old."""
     if is_signal_too_old(sweep_ts_ms):
         print(f"[STALE SKIP] Suppressing neutral sweep on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
         return
         
     dt = datetime.fromtimestamp(sweep_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
-    age_str = get_signal_age_str(sweep_ts_ms)
+    age_str, tag = get_signal_age_str(sweep_ts_ms)
     curr = _currency(symbol)
+    name_str = display_name(symbol)
     
     msg = (
-        f"⚡ *SWEEP DETECTED*\n{BR}\n"
-        f"🪙 *Asset:* `{symbol}`\n"
+        f"⚡ [{tag}] *SWEEP DETECTED · {name_str}*\n{BR}\n"
+        f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
         f"🌐 *Market:* {mtype}\n"
         f"📍 *High:* `{curr}{sweep_high:,.4f}`\n"
-        f"📍 *Low:* `{curr}{sweep_low:,.4f}`\n"
-        f"⏰ *Time:* `{time_str}`\n"
-        f"⏳ *Age:* `{age_str}`\n"
-        f"ℹ️ *Status:* Informational — No trade pending\n{BR2}"
+        f"📍 *Low:* `{curr}{sweep_low:,.4f}`\n{BR}\n"
+        f"⏳ *Signal Status:* `{tag}` ({age_str})\n"
+        f"⏰ *Sweep Time:* `{time_str}`\n"
+        f"ℹ️ *Action:* Informational — No trade pending\n{BR}\n"
+        f"ℹ️ _✅ FRESH = Closed ≤1h ago | ⚠️ STALE = Closed >1h ago_\n{BR2}"
     )
     send_sweep_to_all(msg, parse_mode="Markdown")
 
 def check_sweep(ticker):
-    """
-    Differentiates between directional sweeps (which search for FVGs)
-    and neutral double-sweeps (which only fire an alert with NO trade/FVG)[cite: 1].
-    """
+    """Differentiates directional vs neutral sweeps[cite: 1]."""
     try:
         df = yf_download(ticker, "15d", "1h")
         if df is None or len(df) < 20:
@@ -476,7 +521,7 @@ def check_sweep(ticker):
         if c["High"] > m["High"] and c["Low"] >= m["Low"] and c["Close"] < m["High"]:
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
 
-        # 3. Neutral Sweep: Both sides swept (no clear single directional bias)
+        # 3. Neutral Sweep: Both sides swept
         if c["Low"] < m["Low"] and c["High"] > m["High"]:
             return ("NEUTRAL", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
 
@@ -485,7 +530,7 @@ def check_sweep(ticker):
     return None
 
 def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
-    """Scans a given DataFrame (1H or 4H) for an unmitigated 3-candle Fair Value Gap[cite: 1, 4]."""
+    """Scans for an unmitigated 3-candle Fair Value Gap[cite: 1, 4]."""
     try:
         if df is None or len(df) < 3:
             return None
@@ -503,13 +548,11 @@ def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) 
             c_prev2 = df_post.iloc[i - 2]
             c_curr = df_post.iloc[i]
             
-            # Bullish Imbalance: High of candle i-2 < Low of candle i[cite: 4]
             if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
                 zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["Low"].astype(float) < zl).any()):
                     return (zl, zh)
                     
-            # Bearish Imbalance: Low of candle i-2 > High of candle i[cite: 4]
             elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
                 zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["High"].astype(float) > zh).any()):
@@ -546,7 +589,6 @@ def register_pending_sweep(symbol, mtype, sweep):
     global pending_sweeps, _sweep_cooldown
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     
-    # Suppress sweeps older than 12 hours from alert/queue
     if is_signal_too_old(sweep_close_ts):
         print(f"[STALE SKIP] Suppressing sweep setup on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
         return
@@ -578,18 +620,20 @@ def register_pending_sweep(symbol, mtype, sweep):
     
     dt = datetime.fromtimestamp(sweep_close_ts / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
-    age_str = get_signal_age_str(sweep_close_ts)
+    age_str, tag = get_signal_age_str(sweep_close_ts)
+    name_str = display_name(symbol)
     
-    # 🟢 for Bullish / Long, 🔴 for Bearish / Short + Fresh/Stale Age
     dot = "🟢" if direction == "BULLISH" else "🔴"
     dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
     
     sweep_alert_msg = (
-        f"{dot} *SWEEP DETECTED — WAITING FOR FVG*\n{BR}\n"
-        f"🪙 *Asset:* `{symbol}`\n"
+        f"{dot} [{tag}] *SWEEP DETECTED — WAITING FOR FVG*\n{BR}\n"
+        f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
         f"📊 *Direction:* {dir_label}\n"
-        f"⏰ *Sweep Time:* `{time_str}`\n"
-        f"⏳ *Age:* `{age_str}`\n{BR2}"
+        f"🌐 *Market:* {mtype}\n{BR}\n"
+        f"⏳ *Signal Status:* `{tag}` ({age_str})\n"
+        f"⏰ *Sweep Time:* `{time_str}`\n{BR}\n"
+        f"ℹ️ _✅ FRESH = Closed ≤1h ago | ⚠️ STALE = Closed >1h ago_\n{BR2}"
     )
     send_sweep_to_all(sweep_alert_msg, parse_mode="Markdown")
 
@@ -612,7 +656,7 @@ def manage_pending_sweeps():
                     with _lock:
                         p["status"] = "expired"
                     to_remove.append(p)
-                    send_to_personal_only(f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{sym}` {p['direction']}\n{BR2}", parse_mode="Markdown")
+                    send_to_personal_only(f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{display_name(sym)}` {p['direction']}\n{BR2}", parse_mode="Markdown")
                     continue
                 if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
                     with _lock:
@@ -635,9 +679,10 @@ def manage_pending_sweeps():
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                         
                         curr = _currency(sym)
+                        name_str = display_name(sym)
                         fvg_notify_msg = (
-                            f"🎯 *{tf_label} FVG CONFIRMED*\n{BR}\n"
-                            f"🪙 *Asset:* `{sym}` ({p['direction']})\n"
+                            f"🎯 *{tf_label} FVG CONFIRMED · {name_str}*\n{BR}\n"
+                            f"🪙 *Asset:* `{name_str}` ({p['direction']})\n"
                             f"📊 *Timeframe:* `{tf_label}` Priority Gap\n"
                             f"📍 *Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
                             f"⏳ *Status:* Waiting for price retest\n{BR2}"
@@ -736,7 +781,7 @@ def _iso_to_ist_dt(iso_str):
     return None
 
 # ------------------------------------------------------------------
-# News caching layer (persistent, upcoming-only, two-source)
+# News caching layer
 # ------------------------------------------------------------------
 NEWS_CACHE_FILE = "/tmp/workspace/news_upcoming_cache.json"
 NEWS_CACHE_TTL_S = 1800
@@ -889,7 +934,7 @@ def force_close_trade(trade_id, reason="Dashboard"):
         send_sweep_to_all(msg, parse_mode="Markdown")
     else:
         send_to_personal_only(msg, parse_mode="Markdown")
-    return True, f"Closed {trade_to_close.get('symbol')} at {live:.4f}"
+    return True, f"Closed {display_name(trade_to_close.get('symbol'))} at {live:.4f}"
 
 def build_strategy_stats():
     hist = load_json(HISTORY_FILE, [])
@@ -918,7 +963,7 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
     paused, pause_reason = is_news_pause_active()
     if paused:
         print(f"[NEWS PAUSE] Skipping {symbol} {sig_type} — {pause_reason}")
-        send_to_personal_only(f"⏸️ *NEWS PAUSE*\n{BR}\n`{symbol}` {sig_type} skipped\n🛑 {pause_reason}\n{BR2}", parse_mode="Markdown")
+        send_to_personal_only(f"⏸️ *NEWS PAUSE*\n{BR}\n`{display_name(symbol)}` {sig_type} skipped\n🛑 {pause_reason}\n{BR2}", parse_mode="Markdown")
         return
 
     tf_label = fvg_entry.get("tf", "1H") if fvg_entry else ("4H" if (strat and "Sweep" in strat) else "1H")
@@ -935,7 +980,6 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         atr, ts = float(a1), a2
         sl, tp = calc_sl_tp(sig_type, price, atr)
 
-    # Suppress stale signals older than 12 hours from executing/alerting
     if is_signal_too_old(ts):
         print(f"[STALE SKIP] Suppressing trade execution for {symbol} (candle closed > {MAX_SIGNAL_AGE_HOURS}h ago)")
         return
@@ -972,7 +1016,7 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         save_json(ACTIVE_TRADES_FILE, active_trades)
         
         sig_msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf_label, price, sl, tp, qty, abs(price - sl) * qty, account, ts, fvg_entry.get("zone") if fvg_entry else None)
-        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {symbol}", callback_data=f"mute_{symbol}")]])
+        keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {display_name(symbol)}", callback_data=f"mute_{symbol}")]])
         
         if strat and "Sweep" in strat:
             send_sweep_to_all(sig_msg, parse_mode="Markdown", reply_markup=keyboard)
@@ -1277,7 +1321,7 @@ def cmd_test(m):
         start_t = time.time()
         p = get_price(s)
         lat = round((time.time() - start_t) * 1000)
-        status = f"✅ `{s}`: `{_currency(s)}{p:,.2f}` ({lat}ms)" if p else f"❌ `{s}`: Failed"
+        status = f"✅ `{display_name(s)}` (`{s}`): `{_currency(s)}{p:,.2f}` ({lat}ms)" if p else f"❌ `{display_name(s)}` (`{s}`): Failed"
         results.append(status)
     safe_send(m.chat.id, "📡 *Data Feed Status:*\n" + BR + "\n" + "\n".join(results) + "\n" + BR2, parse_mode="Markdown")
 
@@ -1329,10 +1373,10 @@ def cmd_pending(m):
             return
         items = []
         for p in pending_sweeps:
-            age = get_signal_age_str(p.get("sweep_close_ts", 0))
+            age_str, tag = get_signal_age_str(p.get("sweep_close_ts", 0))
             tf_tag = f"({p.get('fvg_tf', '1H')})" if p.get("fvg_tf") else ""
             zone = f"`{p['fvg_zone'][0]:,.2f} - {p['fvg_zone'][1]:,.2f}` {tf_tag}" if p.get("fvg_zone") else "Waiting for FVG"
-            items.append(f"• `{p['symbol']}` ({p['direction']})\n  └ Status: `{p['status']}` | Zone: {zone} | Age: `{age}`")
+            items.append(f"• `{display_name(p['symbol'])}` ({p['direction']})\n  └ Status: `{p['status']}` | Zone: {zone} | [{tag}] `{age_str}`")
     
     safe_send(m.chat.id, "⏳ *PENDING 4H SWEEPS:*\n" + BR + "\n" + "\n\n".join(items) + "\n" + BR2, parse_mode="Markdown")
 
@@ -1398,7 +1442,7 @@ def cmd_backtest(m):
     if strategy not in ("trendpulse", "sweep"):
         safe_send(m.chat.id, "❌ Strategy must be trendpulse or sweep", parse_mode="Markdown")
         return
-    safe_send(m.chat.id, f"📊 *Backtesting {strategy.upper()} on {symbol}...*", parse_mode="Markdown")
+    safe_send(m.chat.id, f"📊 *Backtesting {strategy.upper()} on {display_name(symbol)}...*", parse_mode="Markdown")
     def run():
         try:
             engine = BacktestEngine()
@@ -1410,7 +1454,7 @@ def cmd_backtest(m):
             chart_path = "/tmp/workspace/backtest_chart.png"
             caption = (
                 f"📊 *BACKTEST RESULTS*\n"
-                f"🪙 *Symbol:* `{symbol}`\n"
+                f"🪙 *Symbol:* `{display_name(symbol)}` (`{symbol}`)\n"
                 f"📈 *Trades:* `{res['total_trades']}`\n"
                 f"🎯 *Win Rate:* `{res['win_rate']:.1f}%`\n"
                 f"💰 *P/L:* `₹{res['total_pnl']:,.2f}`\n"
@@ -1482,18 +1526,18 @@ def send_chart(symbol, chat_id):
         try:
             df = yf_download(symbol, "5d", "1h")
             if df is None or df.empty:
-                safe_send(chat_id, f"⚠️ No chart data available for `{symbol}`", parse_mode="Markdown")
+                safe_send(chat_id, f"⚠️ No chart data available for `{display_name(symbol)}`", parse_mode="Markdown")
                 return
             close = df["Close"]
             if hasattr(close, "columns"):
                 close = close.iloc[:, 0]
             close = close.dropna()
             if close.empty:
-                safe_send(chat_id, f"⚠️ No chart data available for `{symbol}`", parse_mode="Markdown")
+                safe_send(chat_id, f"⚠️ No chart data available for `{display_name(symbol)}`", parse_mode="Markdown")
                 return
             fig, ax = plt.subplots(figsize=(10, 4))
             ax.plot(close.index, close.values, color="#7c6cff", linewidth=1.4)
-            ax.set_title(f"{symbol} — 5D / 1H", fontsize=12)
+            ax.set_title(f"{display_name(symbol)} — 5D / 1H", fontsize=12)
             ax.grid(alpha=0.2)
             ax.tick_params(labelsize=8)
             fig.tight_layout()
@@ -1501,18 +1545,19 @@ def send_chart(symbol, chat_id):
             fig.savefig(buf, format="png", dpi=110)
             plt.close(fig)
             buf.seek(0)
-            bot.send_photo(chat_id, buf, caption=f"📈 `{symbol}` — last 5 days (1H)", parse_mode="Markdown")
+            bot.send_photo(chat_id, buf, caption=f"📈 `{display_name(symbol)}` — last 5 days (1H)", parse_mode="Markdown")
         except Exception as e:
             print(f"[ERR] send_chart {symbol}: {e}")
-            safe_send(chat_id, f"⚠️ Failed to generate chart for `{symbol}`", parse_mode="Markdown")
+            safe_send(chat_id, f"⚠️ Failed to generate chart for `{display_name(symbol)}`", parse_mode="Markdown")
 
 @bot.callback_query_handler(func=lambda call: True)
 def on_callback(call):
     try:
         if call.data.startswith("mute_"):
+            sym = call.data.split("_", 1)[1]
             with _lock:
-                muted_assets.add(call.data.split("_", 1)[1])
-            bot.answer_callback_query(call.id, text=f"🔇 {call.data.split('_', 1)[1]} muted")
+                muted_assets.add(sym)
+            bot.answer_callback_query(call.id, text=f"🔇 {display_name(sym)} muted")
         elif call.data.startswith("chart_"):
             bot.answer_callback_query(call.id, text="📈 Generating chart...")
             threading.Thread(target=send_chart, args=(call.data.split("_", 1)[1], call.message.chat.id), daemon=True).start()
@@ -1542,7 +1587,7 @@ if __name__ == "__main__":
         f"✅ *BOT STARTED*\n"
         f"{BR}\n"
         f"🕒 *Started At:* `{start_time_str}`\n"
-        f"⚠️ *WARNING:* Any signal/sweep message older than this one is STALE — do not act on it.\n"
+        f"⚠️ *FILTER ACTIVE:* Stale signals older than {MAX_SIGNAL_AGE_HOURS}h are suppressed.\n"
         f"{BR2}"
     )
     send_to_personal_only(start_msg, parse_mode="Markdown")
@@ -1554,6 +1599,6 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=weekly_digest_loop, daemon=True).start()
     threading.Thread(target=warm_news_cache, daemon=True).start()
-    print("[INIT] Bot running with group messaging filter enabled.")
+    print("[INIT] Bot running with clean names, notification previews, and stale filter enabled.")
     while True:
         time.sleep(3600)
