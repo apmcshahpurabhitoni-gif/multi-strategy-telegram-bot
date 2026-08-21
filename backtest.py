@@ -1,14 +1,16 @@
 import json
 import time
 import os
-import base64
 import requests
 import numpy as np
 import pandas as pd
 import yfinance as yf
+import matplotlib
 import matplotlib.pyplot as plt
 from datetime import datetime, timedelta
 from typing import Dict, List, Optional, Tuple, Any
+
+matplotlib.use("Agg")
 
 class BacktestEngine:
     def __init__(self, starting_balance: float = 100000.0, risk_per_trade: float = 0.02):
@@ -83,7 +85,7 @@ class BacktestEngine:
     def _fetch_binance_klines(self, symbol: str = "BTCUSDT", days: int = 30) -> Optional[pd.DataFrame]:
         try:
             limit = min(days * 24, 1000)
-            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval=1h&limit={limit}"
+            url = f"https://api.binance.com/api/v3/klines?symbol={symbol}&interval={interval}&limit={limit}"
             r = requests.get(url, timeout=15)
             if r.status_code != 200:
                 return None
@@ -122,7 +124,6 @@ class BacktestEngine:
         except Exception as e:
             print(f"[BACKTEST DATA] yfinance download error for {yf_symbol}: {e}")
 
-        # Fallback to Binance if crypto yfinance request fails
         if "BTC" in yf_symbol:
             df_binance = self._fetch_binance_klines("BTCUSDT", days=safe_days)
             if df_binance is not None and len(df_binance) >= 30:
@@ -333,7 +334,6 @@ class BacktestEngine:
         returns = [t["pnl"] for t in trades]
         sharpe = (np.mean(returns) / np.std(returns) * np.sqrt(252)) if len(returns) > 1 and np.std(returns) > 0 else 0.0
         
-        # Generate equity curve chart
         try:
             os.makedirs("/tmp/workspace", exist_ok=True)
             color = "green" if equity_points[-1] >= self.starting_balance else "red"
