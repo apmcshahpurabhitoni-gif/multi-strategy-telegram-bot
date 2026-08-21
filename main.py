@@ -3,7 +3,7 @@ import json
 import time
 import threading
 import gc
-from datetime import datetime, timedelta, timezone
+from datetime import datetime, timedelta
 from io import BytesIO
 import io
 from typing import Dict, List, Optional, Tuple, Any
@@ -21,8 +21,6 @@ import matplotlib
 import matplotlib.pyplot as plt
 from telebot.types import InlineKeyboardMarkup, InlineKeyboardButton
 import urllib3
-
-from db import DatabaseManager
 
 urllib3.disable_warnings(urllib3.exceptions.InsecureRequestWarning)
 os.makedirs("/tmp/workspace", exist_ok=True)
@@ -83,25 +81,34 @@ def display_name(symbol: str) -> str:
 if not TOKEN:
     raise ValueError("TELEGRAM_BOT_TOKEN not set!")
 
+ACCOUNTS_FILE = "/tmp/workspace/accounts.json"
+RESET_STATE_FILE = "/tmp/workspace/reset_state.json"
+ACTIVE_TRADES_FILE = "/tmp/workspace/active_trades.json"
+HISTORY_FILE = "/tmp/workspace/trade_history.json"
+MUTE_FILE = "/tmp/workspace/muted_assets.json"
+SENT_SIGNALS_FILE = "/tmp/workspace/sent_signals.json"
+PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
+WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
+
 ACCOUNT_LIMITS = {"macro": 20, "nifty": 5, "ny_session": 3, "sweep_4h": 3}
 MAX_SIGNAL_AGE_HOURS = 6  # Strictly 6 hours maximum limit
 MAX_MSG_SEND_COUNT = 2    # Maximum identical message repeats allowed
 
-db = DatabaseManager()
 accounts = {}
+active_trades = []
 muted_assets = set()
+sent_signals = {}
+history = []
+pending_sweeps = []
 _lock = threading.RLock()
 
 _news_pause_enabled = True
 _chart_lock = threading.RLock()
 _price_cache = {}
-EST = pytz.timezone("America/New_York")
 IST = pytz.timezone("Asia/Kolkata")
 _sweep_cooldown = {}
 _ut_15m_cache = {}
 NEWS_CACHE = {"data": [], "last_fetch": 0, "initialized": False}
-NEWS_CACHE_FILE = "/tmp/workspace/news_upcoming_cache.json"
-NEWS_CACHE_TTL_S = 1800
 
 _yf_symbol_cache = {} 
 _YF_SYMBOL_TTL = 30.0
@@ -136,8 +143,24 @@ def is_signal_too_old(ts_ms, max_hours=MAX_SIGNAL_AGE_HOURS):
     return age_hours > max_hours
 
 def check_and_increment_msg_count(key: str) -> bool:
-    """Tracks message send count via SQLite/Supabase. Drops if sent >= MAX_MSG_SEND_COUNT."""
-    return db.check_and_increment_signal(key, max_count=MAX_MSG_SEND_COUNT)
+    """Tracks message send count across restarts and persists to sent_signals."""
+    global sent_signals
+    with _lock:
+        data = sent_signals.get(key)
+        if isinstance(data, dict):
+            cnt = data.get("send_count", 1)
+            if cnt >= MAX_MSG_SEND_COUNT:
+                return False
+            data["send_count"] = cnt + 1
+            data["last_sent_ts"] = int(time.time() * 1000)
+        else:
+            sent_signals[key] = {
+                "send_count": 1,
+                "created_ts": int(time.time() * 1000),
+                "last_sent_ts": int(time.time() * 1000)
+            }
+        save_json(SENT_SIGNALS_FILE, sent_signals)
+        return True
 
 def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_ts_ms, fvg_zone=None):
     is_bullish = "BULLISH" in sig_type
@@ -282,6 +305,46 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 def _currency(symbol):
     return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$"
 
+def load_json(fp, default):
+    key = os.path.basename(fp)
+    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
+    if sup_url and sup_key:
+        try:
+            r = requests.get(f"{sup_url}/rest/v1/bot_data?id=eq.{key}", headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}"}, timeout=15)
+            if r.status_code == 200 and r.json():
+                rows = r.json()
+                if rows:
+                    try:
+                        with open(fp, "w") as f:
+                            json.dump(rows[0]["data"], f, indent=4)
+                    except Exception:
+                        pass
+                    return rows[0]["data"]
+        except Exception as e:
+            print(f"[ERR] Supabase load {key}: {e}")
+    try:
+        if os.path.exists(fp):
+            with open(fp, "r") as f:
+                return json.load(f)
+    except Exception:
+        pass
+    return default
+
+def save_json(fp, data):
+    key = os.path.basename(fp)
+    try:
+        with open(fp + ".tmp", "w") as f:
+            json.dump(data, f, indent=4)
+        os.replace(fp + ".tmp", fp)
+    except Exception as e:
+        print(f"[ERR] local save {fp}: {e}")
+    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
+    if sup_url and sup_key:
+        try:
+            requests.post(f"{sup_url}/rest/v1/bot_data", headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}, json={"id": key, "data": data}, timeout=15)
+        except Exception as e:
+            print(f"[ERR] Supabase save {key}: {e}")
+
 def safe_send(chat_id, text, **kwargs):
     try:
         bot.send_message(chat_id, text, **kwargs)
@@ -317,9 +380,28 @@ def send_to_personal_only(message: str, **kwargs):
 
 def init_accounts():
     global accounts
-    defaults = {"macro": 100000.0, "nifty": 100000.0, "ny_session": 100000.0, "sweep_4h": 100000.0}
+    defaults = {
+        "macro": {"balance": 100000.0, "daily_trades": 0},
+        "nifty": {"balance": 100000.0, "daily_trades": 0},
+        "ny_session": {"balance": 100000.0, "daily_trades": 0},
+        "sweep_4h": {"balance": 100000.0, "daily_trades": 0}
+    }
+    raw_accounts = load_json(ACCOUNTS_FILE, {})
+    accounts = {k: v for k, v in raw_accounts.items() if isinstance(v, dict)}
+    for k, v in defaults.items():
+        if k not in accounts:
+            accounts[k] = v.copy()
+    
+    reset_state = load_json(RESET_STATE_FILE, {"last_reset_date": ""})
     today = datetime.now(IST).strftime("%Y-%m-%d")
-    accounts = db.init_accounts(defaults, today)
+    if reset_state.get("last_reset_date") != today:
+        for acc in accounts: 
+            if isinstance(accounts[acc], dict):
+                accounts[acc]["daily_trades"] = 0
+        reset_state["last_reset_date"] = today
+        save_json(RESET_STATE_FILE, reset_state)
+        
+    save_json(ACCOUNTS_FILE, accounts)
 
 def is_ny_session():
     h, m = datetime.now(IST).hour, datetime.now(IST).minute
@@ -532,7 +614,7 @@ def resolve_hierarchical_fvg(symbol: str, direction: str, sweep_open_ts: int) ->
 FVG_EXPIRY_HOURS = 24
 
 def register_pending_sweep(symbol, mtype, sweep):
-    global _sweep_cooldown
+    global pending_sweeps, _sweep_cooldown
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     
     if is_signal_too_old(sweep_close_ts):
@@ -550,27 +632,24 @@ def register_pending_sweep(symbol, mtype, sweep):
     if now_ts - _sweep_cooldown.get(cooldown_key, 0) < 4 * 3600 * 1000:
         return
     with _lock:
-        pending_list = db.get_pending_sweeps()
-        if any(p["symbol"] == symbol and p["direction"] == direction and p["sweep_close_ts"] == sweep_close_ts for p in pending_list):
+        if any(p["symbol"] == symbol and p["direction"] == direction and p["sweep_close_ts"] == sweep_close_ts for p in pending_sweeps):
             return
         if accounts[target_account]["daily_trades"] >= ACCOUNT_LIMITS.get(target_account, 3):
             return
-        active_list = db.get_active_trades()
-        if any(t["symbol"] == symbol and t["account"] == target_account for t in active_list):
+        if any(t["symbol"] == symbol and t["account"] == target_account for t in active_trades):
             return
-        if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill") for p in pending_list):
+        if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill") for p in pending_sweeps):
             return
         _sweep_cooldown[cooldown_key] = now_ts
-        
-        sweep_record = {
+        pending_sweeps.append({
             "symbol": symbol, "mtype": mtype, "direction": direction,
             "sweep_high": float(sweep_high), "sweep_low": float(sweep_low),
             "sweep_open_ts": int(sweep_open_ts), "sweep_close_ts": int(sweep_close_ts),
             "created_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
             "fvg_zone": None, "fvg_tf": None, "fvg_found_at": None, "status": "waiting_fvg",
             "target_account": target_account
-        }
-        db.add_pending_sweep(sweep_record)
+        })
+        save_json(PENDING_SWEEPS_FILE, pending_sweeps)
     
     dt = datetime.fromtimestamp(sweep_close_ts / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
@@ -581,6 +660,7 @@ def register_pending_sweep(symbol, mtype, sweep):
     dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
     status_icon = "✅" if "FRESH" in tag else "⚠️"
     
+    # Exact desired header format
     sweep_alert_msg = (
         f"{dot} *SWEEP DETECTED — {name_str} — WAITING FOR FVG* · {status_icon}\n{BR}\n"
         f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
@@ -593,13 +673,14 @@ def register_pending_sweep(symbol, mtype, sweep):
     send_sweep_to_all(sweep_alert_msg, parse_mode="Markdown")
 
 def manage_pending_sweeps():
+    global pending_sweeps
     while True:
         try:
             with _lock:
-                copy = db.get_pending_sweeps()
+                copy = list(pending_sweeps)
+            to_remove = []
             for p in copy:
                 sym = p["symbol"]
-                sid = p["id"]
                 live_df = yf_download(sym, "1d", "1m")
                 if live_df is None or live_df.empty:
                     continue
@@ -607,20 +688,31 @@ def manage_pending_sweeps():
                 age_hours = (time.time() * 1000 - p["sweep_close_ts"]) / (3600 * 1000)
                 
                 if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
-                    db.update_pending_sweep_status(sid, "expired")
+                    with _lock:
+                        p["status"] = "expired"
+                    to_remove.append(p)
                     send_to_personal_only(f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{display_name(sym)}` {p['direction']}\n{BR2}", parse_mode="Markdown")
                     continue
                 if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
-                    db.update_pending_sweep_status(sid, "invalidated")
+                    with _lock:
+                        p["status"] = "invalidated"
+                    to_remove.append(p)
                     continue
                 if p["direction"] == "BEARISH" and live >= p["sweep_high"]:
-                    db.update_pending_sweep_status(sid, "invalidated")
+                    with _lock:
+                        p["status"] = "invalidated"
+                    to_remove.append(p)
                     continue
                 if p["fvg_zone"] is None:
                     fvg_zone, tf_label = resolve_hierarchical_fvg(sym, p["direction"], p["sweep_open_ts"])
                     if fvg_zone:
                         fvg_key = f"fvg_confirmed_{sym}_{p['sweep_close_ts']}_{tf_label}"
-                        db.update_pending_sweep_status(sid, "waiting_fill", fvg_zone=[float(fvg_zone[0]), float(fvg_zone[1])], fvg_tf=tf_label)
+                        with _lock:
+                            p["fvg_zone"] = [float(fvg_zone[0]), float(fvg_zone[1])]
+                            p["fvg_tf"] = tf_label
+                            p["fvg_found_at"] = int(time.time() * 1000)
+                            p["status"] = "waiting_fill"
+                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                         
                         if check_and_increment_msg_count(fvg_key):
                             curr = _currency(sym)
@@ -637,8 +729,14 @@ def manage_pending_sweeps():
                 zl, zh = p["fvg_zone"]
                 if zl <= live <= zh:
                     fvg_entry = {"entry_price": live, "sl": p["sweep_low"] if p["direction"] == "BULLISH" else p["sweep_high"], "sweep_ts": p["sweep_close_ts"], "zone": p["fvg_zone"], "tf": p.get("fvg_tf", "1H")}
-                    db.update_pending_sweep_status(sid, "entered")
+                    with _lock:
+                        p["status"] = "entered"
+                    to_remove.append(p)
                     execute(sym, p["mtype"], p.get("target_account", "sweep_4h"), "4H Sweep", p["direction"], live, fvg_entry["sl"], 0, p["sweep_close_ts"], fvg_entry=fvg_entry)
+            if to_remove:
+                with _lock:
+                    pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
+                    save_json(PENDING_SWEEPS_FILE, pending_sweeps)
         except Exception as e:
             alert_error("Pending Sweeps Manager", e)
         time.sleep(90)
@@ -701,8 +799,7 @@ def calc_sl_tp(sig, entry, atr):
 def calc_qty(account, entry, sl):
     with _lock:
         dist = abs(entry - sl)
-        bal = accounts[account]["balance"] if account in accounts else 100000.0
-        return 0.0 if dist == 0 else float((bal * 0.02) / dist)
+        return 0.0 if dist == 0 else float((accounts[account]["balance"] * 0.02) / dist)
 
 def format_signal_time(ts_ms):
     try:
@@ -710,28 +807,21 @@ def format_signal_time(ts_ms):
     except Exception:
         return "Unknown"
 
-def _iso_to_ist_dt(date_str: str) -> Optional[datetime]:
-    """Parses timestamps (US Eastern, ISO, or UTC) and converts them to IST."""
-    if not date_str:
+def _iso_to_ist_dt(iso_str):
+    if not iso_str:
         return None
     try:
-        if "T" in str(date_str):
-            clean_str = str(date_str).split(".")[0].replace("Z", "+00:00")
-            dt = datetime.fromisoformat(clean_str)
-            if dt.tzinfo is None:
-                dt = timezone.utc.localize(dt)
-            return dt.astimezone(IST)
-
-        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d %H:%M", "%b %d, %Y %I:%M%p"):
-            try:
-                dt_naive = datetime.strptime(date_str.strip(), fmt)
-                dt_est = EST.localize(dt_naive)
-                return dt_est.astimezone(IST)
-            except ValueError:
-                continue
+        dt = datetime.fromisoformat(str(iso_str).split(".")[0])
+        return IST.localize(dt) if dt.tzinfo is None else dt.astimezone(IST)
     except Exception:
         pass
     return None
+
+# ------------------------------------------------------------------
+# News caching layer
+# ------------------------------------------------------------------
+NEWS_CACHE_FILE = "/tmp/workspace/news_upcoming_cache.json"
+NEWS_CACHE_TTL_S = 1800
 
 def _save_news_cache(items):
     try:
@@ -748,142 +838,77 @@ def _load_news_cache():
             data = json.load(f)
         if int(time.time()) - int(data.get("ts", 0)) < NEWS_CACHE_TTL_S:
             return data.get("items", [])
+    except (FileNotFoundError, json.JSONDecodeError) as e:
+        print(f"[NEWS] cache load/decode error: {e}")
     except Exception as e:
         print(f"[NEWS] cache load error: {e}")
     return None
-
-def fetch_news() -> List[Dict[str, Any]]:
-    """
-    Multi-Tier Fail-Safe Economic Calendar Fetcher:
-    Tier 1: Public JSON Mirrors
-    Tier 2: Finnhub Free Economic API (Optional key or public fallback)
-    Tier 3: Investing.com HTML Scraping Fallback
-    Tier 4: Local Workspace Cache (Last Resort)
-    """
-    all_events = []
-    headers = {
-        "User-Agent": "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-        "Accept": "application/json, text/html,application/xhtml+xml"
-    }
-
-    # -------------------------------------------------------------
-    # TIER 1: Public JSON Mirrors
-    # -------------------------------------------------------------
-    mirror_urls = [
-        "https://raw.githubusercontent.com/everette/forexfactory-calendar-json/master/data.json",
-        "https://nfs.faireconomy.media/ff_calendar_thisweek.json"
-    ]
-    for url in mirror_urls:
-        try:
-            r = requests.get(url, headers=headers, timeout=8)
-            if r.status_code == 200 and r.text.strip():
-                data = r.json()
-                if isinstance(data, list) and len(data) > 0:
-                    for item in data:
-                        all_events.append({
-                            "title": item.get("title", "Economic Event"),
-                            "country": item.get("country", "USD"),
-                            "currency": item.get("country", "USD"),
-                            "date": item.get("date", ""),
-                            "impact": item.get("impact", "Low"),
-                            "forecast": item.get("forecast", ""),
-                            "previous": item.get("previous", "")
-                        })
-                    if all_events:
-                        print(f"[NEWS] ✅ Loaded via Tier 1 (Mirrors)")
-                        break
-        except Exception:
-            continue
-
-    # -------------------------------------------------------------
-    # TIER 2: Finnhub Free Economic Calendar API (Fallback)
-    # -------------------------------------------------------------
-    if not all_events:
-        try:
-            # Using a public open demo token or user-provided env token
-            finnhub_key = os.environ.get("FINNHUB_API_KEY", "sandbox_c12345") 
-            api_url = f"https://finnhub.io/api/v1/calendar/economic?token={finnhub_key}"
-            r = requests.get(api_url, headers=headers, timeout=8)
-            if r.status_code == 200:
-                finnhub_data = r.json().get("economicCalendar", [])
-                for ev in finnhub_data:
-                    all_events.append({
-                        "title": ev.get("event", "Economic Event"),
-                        "country": ev.get("country", "US"),
-                        "currency": ev.get("country", "USD"),
-                        "date": ev.get("time", ""),
-                        "impact": "High" if ev.get("impact") == 3 else ("Medium" if ev.get("impact") == 2 else "Low"),
-                        "forecast": str(ev.get("estimate", "")),
-                        "previous": str(ev.get("prev", ""))
-                    })
-                if all_events:
-                    print(f"[NEWS] ✅ Loaded via Tier 2 (Finnhub API)")
-        except Exception:
-            pass
-
-    # -------------------------------------------------------------
-    # TIER 3: RSS / Public News Bridge Fallback
-    # -------------------------------------------------------------
-    if not all_events:
-        try:
-            r = requests.get("https://api.rss2json.com/v1/api.json?rss_url=https%3A%2F%2Fwww.investing.com%2Frss%2Fnews_25.rss", headers=headers, timeout=8)
-            if r.status_code == 200:
-                for item in r.json().get("items", []):
-                    dt_ist = _iso_to_ist_dt(item.get("pubDate", "")) or datetime.now(IST)
-                    all_events.append({
-                        "title": item.get("title", "Market News"),
-                        "country": "GLOBAL",
-                        "currency": "USD",
-                        "date": dt_ist.isoformat(),
-                        "impact": "High" if any(k in item.get("title", "").lower() for k in ["cpi", "fomc", "rate"]) else "Medium",
-                        "forecast": "",
-                        "previous": ""
-                    })
-                if all_events:
-                    print(f"[NEWS] ✅ Loaded via Tier 3 (RSS Bridge)")
-        except Exception:
-            pass
-
-    # -------------------------------------------------------------
-    # TIER 4: Local Workspace Cache (Absolute Last Resort)
-    # -------------------------------------------------------------
-    if not all_events:
-        print(f"[NEWS WARN] All live tiers failed. Falling back to local cache.")
-        cached_fallback = _load_news_cache()
-        if cached_fallback:
-            return cached_fallback
-        return []
-
-    # Process and filter valid upcoming dates
-    now_ist = datetime.now(IST)
-    upcoming = []
-    for ev in all_events:
-        try:
-            ev_dt = _iso_to_ist_dt(ev.get("date", ""))
-            if ev_dt and (ev_dt >= now_ist - timedelta(hours=6)):
-                ev_copy = dict(ev)
-                ev_copy["date"] = ev_dt.isoformat()
-                upcoming.append(ev_copy)
-        except Exception:
-            continue
-
-    upcoming.sort(key=lambda x: x.get("date", ""))
-    
-    # Save successful pull to local cache file for Tier 4 safety
-    if upcoming:
-        _save_news_cache(upcoming)
-        
-    return upcoming
 
 def get_cached_news():
     cached = _load_news_cache()
     if cached is not None:
         return cached
 
-    items = fetch_news()
-    if items:
-        _save_news_cache(items)
-    return items
+    try:
+        if "fetch_news" in globals() and callable(globals().get("fetch_news")):
+            items = fetch_news()
+        else:
+            items = _legacy_fetch_news()
+    except Exception as e:
+        print(f"[NEWS] fetch failed: {e}")
+        items = []
+
+    norm = []
+    now_ms = int(time.time() * 1000)
+    for ev in (items or []):
+        try:
+            d = ev.get("date", "")
+            if not d:
+                continue
+            dt = _iso_to_ist_dt(d)
+            if not dt:
+                continue
+            ts_ms = int(dt.timestamp() * 1000)
+            if ts_ms + 30 * 60 * 1000 < now_ms:
+                continue
+            ev2 = dict(ev)
+            ev2["date"] = dt.isoformat()
+            ev2["impact"] = (ev.get("impact") or "Low")
+            norm.append(ev2)
+        except Exception:
+            continue
+    norm.sort(key=lambda x: x.get("date", ""))
+
+    _save_news_cache(norm)
+    return norm
+
+def _legacy_fetch_news():
+    out = []
+    for url in [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+    ]:
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code == 200 and r.text.strip():
+                data = r.json()
+                if isinstance(data, list):
+                    out.extend(data)
+        except Exception:
+            continue
+    now = datetime.now(IST)
+    upcoming = []
+    for ev in out:
+        d = ev.get("date", "")
+        if not d:
+            continue
+        try:
+            dt = _iso_to_ist_dt(d)
+            if dt and dt >= now:
+                upcoming.append(ev)
+        except Exception:
+            continue
+    return upcoming
 
 def is_news_pause_active():
     if not _news_pause_enabled:
@@ -901,13 +926,13 @@ def is_news_pause_active():
     return False, ""
 
 def force_close_trade(trade_id, reason="Dashboard"):
-    global accounts
-    active_trades = db.get_active_trades()
+    global active_trades, history, accounts
     trade_to_close = None
-    for t in active_trades:
-        if t.get("id") == trade_id:
-            trade_to_close = t
-            break
+    with _lock:
+        for t in list(active_trades):
+            if t.get("id") == trade_id:
+                trade_to_close = t
+                break
     if not trade_to_close:
         return False, f"Trade {trade_id} not found"
     
@@ -918,23 +943,27 @@ def force_close_trade(trade_id, reason="Dashboard"):
     live, is_long = float(p), trade_to_close.get("type") == "LONG"
     entry, qty = trade_to_close.get("entry", 0), trade_to_close.get("qty", 0)
     pnl = (live - entry) * qty if is_long else (entry - live) * qty
-    acc_name = trade_to_close.get("account", "macro")
     
     with _lock:
-        db.update_account_balance(acc_name, pnl)
+        if trade_to_close not in active_trades:
+            return False, "Trade already closed"
+        acc_name = trade_to_close.get("account", "macro")
         if acc_name in accounts:
             accounts[acc_name]["balance"] += pnl
-        
         trade_to_close.update({
             "exit_price": live,
             "pnl": float(pnl),
             "result": "FORCE_CLOSE",
-            "exit_reason": reason,
             "close_time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
             "closed_at": datetime.now(IST).isoformat(),
+            "force_close_reason": reason,
             "trail_sl": trade_to_close.get("sl", live)
         })
-        db.close_active_trade(trade_id, trade_to_close)
+        active_trades.remove(trade_to_close)
+        history.append(trade_to_close)
+        save_json(ACCOUNTS_FILE, accounts)
+        save_json(ACTIVE_TRADES_FILE, active_trades)
+        save_json(HISTORY_FILE, history)
         bal = accounts.get(acc_name, {}).get("balance", 0)
     
     msg = msg_trade_closed(trade_to_close, live, pnl, bal, is_long, pnl > 0)
@@ -945,7 +974,7 @@ def force_close_trade(trade_id, reason="Dashboard"):
     return True, f"Closed {display_name(trade_to_close.get('symbol'))} at {live:.4f}"
 
 def build_strategy_stats():
-    hist = db.get_trade_history(limit=500)
+    hist = load_json(HISTORY_FILE, [])
     strategies = {}
     for t in hist:
         strat = t.get("strat", "Unknown")
@@ -967,6 +996,7 @@ def build_strategy_stats():
     return strategies
 
 def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg_entry=None):
+    global active_trades
     paused, pause_reason = is_news_pause_active()
     if paused:
         print(f"[NEWS PAUSE] Skipping {symbol} {sig_type} — {pause_reason}")
@@ -998,10 +1028,9 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
 
     with _lock:
         lim = ACCOUNT_LIMITS.get(account, 3)
-        if accounts.get(account, {}).get("daily_trades", 0) >= lim:
+        if accounts[account]["daily_trades"] >= lim:
             return
-        active_list = db.get_active_trades()
-        if any(t["symbol"] == symbol and t["account"] == account for t in active_list):
+        if any(t["symbol"] == symbol and t["account"] == account for t in active_trades):
             return
         qty = calc_qty(account, price, sl)
         if qty <= 0:
@@ -1017,10 +1046,10 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
             "opened_at": datetime.now(IST).isoformat(),
             "time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)")
         }
-        db.add_active_trade(trade)
-        db.increment_daily_trades(account)
-        if account in accounts:
-            accounts[account]["daily_trades"] += 1
+        active_trades.append(trade)
+        accounts[account]["daily_trades"] += 1
+        save_json(ACCOUNTS_FILE, accounts)
+        save_json(ACTIVE_TRADES_FILE, active_trades)
         
         sig_msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf_label, price, sl, tp, qty, abs(price - sl) * qty, account, ts, fvg_entry.get("zone") if fvg_entry else None)
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {display_name(symbol)}", callback_data=f"mute_{symbol}")]])
@@ -1031,12 +1060,15 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
             send_to_personal_only(sig_msg, parse_mode="Markdown", reply_markup=keyboard)
 
 def monitor():
+    global active_trades
     while True:
-        active_trades = db.get_active_trades()
         if not active_trades:
             time.sleep(15)
             continue
-        for t in active_trades:
+        to_close = []
+        with _lock:
+            copy = list(active_trades)
+        for t in copy:
             try:
                 df = yf_download(t["symbol"], "1d", "1m")
                 if df is None or df.empty:
@@ -1045,25 +1077,25 @@ def monitor():
                 with _lock:
                     _price_cache[t["symbol"]] = (live, time.time())
                 
-                long, entry, tp, qty = t["type"] == "LONG", t["entry"], t["tp"], t["qty"]
-                account, strat = t["account"], t.get("strat")
-                
-                pct = ((live - entry) / entry * 100) if long else ((entry - live) / entry * 100)
-                
-                trail_sl = t["trail_sl"]
-                if pct >= 1.0:
-                    trail_sl = max(trail_sl, entry) if long else min(trail_sl, entry)
-                if pct >= 3.0:
-                    trail_sl = max(trail_sl, entry + (live - entry) * 0.3) if long else min(trail_sl, entry - (entry - live) * 0.3)
-                if pct >= 5.0:
-                    trail_sl = max(trail_sl, entry + (live - entry) * 0.5) if long else min(trail_sl, entry - (entry - live) * 0.5)
-                
-                if trail_sl != t["trail_sl"]:
-                    db.update_trade_trail_sl(t["id"], trail_sl)
-                    t["trail_sl"] = trail_sl
-                
-                hit_tp = (long and live >= tp) or (not long and live <= tp)
-                hit_sl = (long and live <= trail_sl) or (not long and live >= trail_sl)
+                with _lock:
+                    long, entry, tp, qty = t["type"] == "LONG", t["entry"], t["tp"], t["qty"]
+                    account, strat = t["account"], t.get("strat")
+                    
+                    if long:
+                        pct = (live - entry) / entry * 100
+                    else:
+                        pct = (entry - live) / entry * 100
+                    
+                    if pct >= 1.0:
+                        t["trail_sl"] = max(t["trail_sl"], entry) if long else min(t["trail_sl"], entry)
+                    if pct >= 3.0:
+                        t["trail_sl"] = max(t["trail_sl"], entry + (live - entry) * 0.3) if long else min(t["trail_sl"], entry - (entry - live) * 0.3)
+                    if pct >= 5.0:
+                        t["trail_sl"] = max(t["trail_sl"], entry + (live - entry) * 0.5) if long else min(t["trail_sl"], entry - (entry - live) * 0.5)
+                    
+                    trail_sl = t["trail_sl"]
+                    hit_tp = (long and live >= tp) or (not long and live <= tp)
+                    hit_sl = (long and live <= trail_sl) or (not long and live >= trail_sl)
                 
                 if strat == "TrendPulse 1H" and not (hit_tp or hit_sl):
                     now = time.time()
@@ -1073,16 +1105,16 @@ def monitor():
                         if exit_sig == "EXIT":
                             pnl = (live - entry) * qty * (1 if long else -1)
                             with _lock:
-                                db.update_account_balance(account, pnl)
-                                if account in accounts:
-                                    accounts[account]["balance"] += pnl
+                                accounts[account]["balance"] += pnl
                                 t.update({
                                     "exit_price": live, "pnl": float(pnl), "result": "MACD EXIT",
-                                    "exit_reason": "MACD EXIT",
                                     "close_time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
                                     "closed_at": datetime.now(IST).isoformat()
                                 })
-                                db.close_active_trade(t["id"], t)
+                                to_close.append(t)
+                                history.append(t)
+                                save_json(ACCOUNTS_FILE, accounts)
+                                save_json(HISTORY_FILE, history)
                                 bal = accounts[account]["balance"]
                             
                             c_msg = msg_trade_closed(t, live, pnl, bal, long, pnl > 0)
@@ -1095,19 +1127,22 @@ def monitor():
                 if not (hit_tp or hit_sl):
                     continue
 
-                pnl = (tp - entry) * qty * (1 if long else -1) if hit_tp else (trail_sl - entry) * qty * (1 if long else -1)
+                if hit_tp:
+                    pnl = (tp - entry) * qty * (1 if long else -1)
+                else:
+                    pnl = (trail_sl - entry) * qty * (1 if long else -1)
                 
                 with _lock:
-                    db.update_account_balance(account, pnl)
-                    if account in accounts:
-                        accounts[account]["balance"] += pnl
+                    accounts[account]["balance"] += pnl
                     t.update({
                         "exit_price": live, "pnl": float(pnl), "result": "WIN" if hit_tp else "LOSS",
-                        "exit_reason": "TP" if hit_tp else "SL",
                         "close_time": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST (+5:30)"),
                         "closed_at": datetime.now(IST).isoformat()
                     })
-                    db.close_active_trade(t["id"], t)
+                    to_close.append(t)
+                    history.append(t)
+                    save_json(ACCOUNTS_FILE, accounts)
+                    save_json(HISTORY_FILE, history)
                     bal = accounts[account]["balance"]
                 
                 c_msg = msg_trade_closed(t, live, pnl, bal, long, hit_tp)
@@ -1117,6 +1152,12 @@ def monitor():
                     send_to_personal_only(c_msg, parse_mode="Markdown")
             except Exception as e:
                 alert_error(f"Monitor: {t.get('symbol','?')}", e)
+        if to_close:
+            with _lock:
+                for x in to_close:
+                    if x in active_trades:
+                        active_trades.remove(x)
+                save_json(ACTIVE_TRADES_FILE, active_trades)
         time.sleep(20)
 
 MONITORED = [("BTC-USD", "Crypto"), ("GC=F", "Gold"), ("EURUSD=X", "Forex"), ("GBPUSD=X", "Forex"), ("USDJPY=X", "Forex"), ("^NSEI", "NIFTY 50"), ("^NSEBANK", "BANK NIFTY")] + [(sym, "NSE") for sym, _ in NIFTY_STOCKS]
@@ -1159,17 +1200,29 @@ def scanner():
             time.sleep(300)
 
 def daily_reset():
-    today = datetime.now(IST).strftime("%Y-%m-%d")
-    last = today
+    global sent_signals, history
+    reset_state = load_json(RESET_STATE_FILE, {"last_reset_date": ""})
+    last = reset_state.get("last_reset_date", "")
     while True:
         try:
             today = datetime.now(IST).strftime("%Y-%m-%d")
             if last != today:
                 with _lock:
-                    init_accounts()
-                    hist = db.get_trade_history(limit=100)
-                    day_pnl = sum(float(t["pnl"]) for t in hist if t.get("close_time", "").startswith(last))
+                    for acc in accounts: 
+                        if isinstance(accounts[acc], dict):
+                            accounts[acc]["daily_trades"] = 0
+                    reset_state["last_reset_date"] = today
+                    save_json(RESET_STATE_FILE, reset_state)
+                    save_json(ACCOUNTS_FILE, accounts)
+                    if len(sent_signals) > 500:
+                        sent_signals = {k: sent_signals[k] for k in list(sent_signals.keys())[-500:]}
+                    save_json(SENT_SIGNALS_FILE, sent_signals)
+                    history = load_json(HISTORY_FILE, [])
+                    day_pnl = sum(float(t["pnl"]) for t in history if t.get("close_time", "").startswith(last))
                     send_to_personal_only(msg_midnight_reset(day_pnl, accounts["macro"]["balance"], accounts["nifty"]["balance"], accounts["ny_session"]["balance"], accounts["sweep_4h"]["balance"]), parse_mode="Markdown")
+                    if len(history) > 500:
+                        history = history[-500:]
+                    save_json(HISTORY_FILE, history)
                 last = today
                 gc.collect()
         except Exception as e:
@@ -1182,22 +1235,17 @@ def weekly_digest_loop():
             now = datetime.now(IST)
             if now.weekday() == 6 and now.hour >= 21:
                 week_label = f"{now.isocalendar()[0]}-W{now.isocalendar()[1]:02d}"
-                state_file = "/tmp/workspace/weekly_digest_state.json"
-                state = {}
-                if os.path.exists(state_file):
-                    try:
-                        with open(state_file) as f: state = json.load(f)
-                    except: pass
+                state = load_json(WEEKLY_DIGEST_FILE, {"last_sent_week": None})
                 if state.get("last_sent_week") != week_label:
                     send_to_personal_only(build_weekly_digest_text(7), parse_mode="Markdown")
                     state["last_sent_week"] = week_label
-                    with open(state_file, "w") as f: json.dump(state, f)
+                    save_json(WEEKLY_DIGEST_FILE, state)
         except Exception as e:
             alert_error("Weekly Digest", e)
         time.sleep(600)
 
 def build_weekly_digest_text(days=7):
-    hist = db.get_trade_history(limit=500)
+    hist = load_json(HISTORY_FILE, [])
     cutoff = (datetime.now(IST) - timedelta(days=days)).strftime("%Y-%m-%d")
     week_trades = [t for t in hist if str(t.get("closed_at", ""))[:10] >= cutoff]
     week_pnl, wins, losses, per_symbol = 0.0, 0, 0, {}
@@ -1215,12 +1263,57 @@ def build_weekly_digest_text(days=7):
     total_equity = sum(float(accounts.get(a, {}).get("balance", 0)) for a in ["macro", "nifty", "ny_session", "sweep_4h"])
     return msg_weekly_digest(week_pnl, wins, losses, best_sym, best_pnl, worst_sym, worst_pnl, total_equity)
 
+def fetch_news():
+    sources = [
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
+        "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
+    ]
+    
+    all_events = []
+    for url in sources:
+        try:
+            print(f"[NEWS] Fetching from {url}...")
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=20)
+            if r.status_code == 200 and r.text.strip():
+                data = r.json()
+                if isinstance(data, list) and len(data) > 0:
+                    all_events.extend(data)
+                    print(f"[NEWS] Got {len(data)} events from {url}")
+        except Exception as e:
+            print(f"[NEWS] Failed {url}: {e}")
+    
+    if not all_events:
+        print("[NEWS] ⚠️ All sources failed — no events available")
+        return []
+    
+    now = datetime.now(IST)
+    upcoming = []
+    for ev in all_events:
+        try:
+            ev_date_str = ev.get("date", "")
+            if not ev_date_str:
+                continue
+            ev_dt = _iso_to_ist_dt(ev_date_str)
+            if ev_dt and ev_dt >= now:
+                upcoming.append(ev)
+        except Exception as e:
+            print(f"[NEWS] Failed to parse event: {e}")
+            continue
+    
+    print(f"[NEWS] ✅ {len(upcoming)} upcoming events (filtered from {len(all_events)} total)")
+    return upcoming
+
+# =====================================================================
+# RESTORED TELEGRAM COMMAND CENTER HANDLERS
+# =====================================================================
+
 @bot.message_handler(commands=["start", "menu"])
 def cmd_start(m):
     safe_send(m.chat.id, msg_guide(), parse_mode="Markdown")
 
 @bot.message_handler(commands=["check", "scan"])
 def cmd_check(m):
+    """Force an immediate scan across all monitored assets."""
     safe_send(m.chat.id, "🔍 *Running immediate market scan across all pairs...*", parse_mode="Markdown")
     def run_scan():
         found = 0
@@ -1256,6 +1349,7 @@ def cmd_check(m):
 
 @bot.message_handler(commands=["test"])
 def cmd_test(m):
+    """Test live data feeds & latency."""
     safe_send(m.chat.id, "🧪 *Testing live data feeds...*", parse_mode="Markdown")
     test_symbols = ["BTC-USD", "GC=F", "EURUSD=X", "^NSEI", "RELIANCE.NS"]
     results = []
@@ -1269,10 +1363,11 @@ def cmd_test(m):
 
 @bot.message_handler(commands=["summary"])
 def cmd_summary(m):
+    """Display real-time summary of open positions and active market states."""
     with _lock:
-        open_count = len(db.get_active_trades())
-        pending_count = len(db.get_pending_sweeps())
-        total_pnl = sum(float(t.get("pnl", 0)) for t in db.get_active_trades())
+        open_count = len(active_trades)
+        pending_count = len(pending_sweeps)
+        total_pnl = sum(float(t.get("pnl", 0)) for t in active_trades)
     
     msg = (
         f"📊 *SYSTEM SUMMARY*\n{BR}\n"
@@ -1287,6 +1382,7 @@ def cmd_summary(m):
 
 @bot.message_handler(commands=["balance", "accounts"])
 def cmd_balance(m):
+    """Display virtual portfolio balances and daily execution limits."""
     lines = []
     total_eq = 0.0
     with _lock:
@@ -1306,8 +1402,8 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["pending"])
 def cmd_pending(m):
+    """List all 4H sweeps waiting for 1H/4H FVG formation."""
     with _lock:
-        pending_sweeps = db.get_pending_sweeps()
         if not pending_sweeps:
             safe_send(m.chat.id, "⏳ *No pending liquidity sweeps right now.*", parse_mode="Markdown")
             return
@@ -1322,9 +1418,10 @@ def cmd_pending(m):
 
 @bot.message_handler(commands=["risk"])
 def cmd_risk(m):
+    """Display current portfolio risk and maximum drawdowns."""
     with _lock:
         total_risk = 0.0
-        for t in db.get_active_trades():
+        for t in active_trades:
             entry, sl, qty = float(t.get("entry", 0)), float(t.get("sl", 0)), float(t.get("qty", 0))
             total_risk += abs(entry - sl) * qty
     
@@ -1342,6 +1439,7 @@ def cmd_risk(m):
 
 @bot.message_handler(commands=["stats"])
 def cmd_stats(m):
+    """Display per-strategy performance statistics."""
     strategies = build_strategy_stats()
     if not strategies:
         safe_send(m.chat.id, "📊 *No closed trade statistics recorded yet.*", parse_mode="Markdown")
@@ -1358,6 +1456,7 @@ def cmd_stats(m):
 
 @bot.message_handler(commands=["weekly"])
 def cmd_weekly(m):
+    """Display 7-day weekly performance digest."""
     digest_text = build_weekly_digest_text(7)
     safe_send(m.chat.id, digest_text, parse_mode="Markdown")
 
@@ -1428,13 +1527,35 @@ def cmd_refreshnews(m):
             os.remove(NEWS_CACHE_FILE)
     except Exception:
         pass
-    raw = fetch_news()
+    try:
+        raw = fetch_news() if "fetch_news" in dir() else None
+    except Exception as e:
+        raw = None
+        print(f"[NEWS /refreshnews] fetch_news raised: {e}")
     if raw:
-        _save_news_cache(raw)
-        preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in raw[:5]])
-        safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(raw)}` upcoming events\n\n{preview}\n\n{'...' if len(raw) > 5 else ''}", parse_mode="Markdown")
-    else:
-        safe_send(m.chat.id, "⚠️ *News API Unavailable* — Could not fetch economic calendar. Retrying automatically in background.", parse_mode="Markdown")
+        try:
+            with open(NEWS_CACHE_FILE, "w") as f:
+                json.dump({"ts": int(time.time()), "items": raw}, f)
+        except Exception:
+            pass
+        news = get_cached_news()
+        if news:
+            preview = "\n".join([f"• `{ev.get('title', 'Unknown')}` ({ev.get('impact', 'Low')})" for ev in news[:5]])
+            safe_send(m.chat.id, f"📰 *News Refreshed*\n{BR}\nFound `{len(news)}` upcoming events\n\n{preview}\n\n{'...' if len(news) > 5 else ''}", parse_mode="Markdown")
+            return
+        else:
+            safe_send(m.chat.id, f"📰 *News Fetched*\n{BR}\nFetched `{len(raw)}` events but **none are upcoming** (all past or invalid dates). Dashboard will reflect this.", parse_mode="Markdown")
+            return
+    cache_status = "exists" if os.path.exists(NEWS_CACHE_FILE) else "missing"
+    safe_send(m.chat.id, (
+        f"⚠️ *News API Unavailable*\n{BR}\n"
+        f"❌ Could not reach `faireconomy.media` — this is common on cloud IPs (Render, AWS).\n\n"
+        f"🔍 *Debug:*\n"
+        f"• Cache file: `{cache_status}`\n"
+        f"• Try again in a few minutes\n"
+        f"• If it keeps failing, the API may be permanently blocked on this network.\n\n"
+        f"💡 *Workaround:* The bot will keep retrying automatically every 30 min."
+    ), parse_mode="Markdown")
 
 def send_chart(symbol, chat_id):
     with _chart_lock:
@@ -1492,6 +1613,10 @@ def warm_news_cache():
 if __name__ == "__main__":
     print("[INIT] Starting bot...")
     init_accounts()
+    history = load_json(HISTORY_FILE, [])
+    sent_signals = load_json(SENT_SIGNALS_FILE, {})
+    muted_assets = set(load_json(MUTE_FILE, []))
+    pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
     
     start_time_str = datetime.now(IST).strftime("%d-%b-%Y %H:%M IST")
     start_msg = (
