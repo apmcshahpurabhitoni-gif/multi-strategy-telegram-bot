@@ -280,7 +280,7 @@ def safe_send(chat_id, text, **kwargs):
             pass
 
 def send_sweep_to_all(message: str, **kwargs):
-    """Sends sweep signals to ALL registered chats including group IDs[cite: 1]."""
+    """Sends sweep signals to ALL registered chats including group IDs."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -291,7 +291,7 @@ def send_sweep_to_all(message: str, **kwargs):
             print(f"[ERR] [SWEEP→ALL] Failed to send to chat {cid}: {e}")
 
 def send_to_personal_only(message: str, **kwargs):
-    """Sends non-sweep and system notifications only to personal chats[cite: 1]."""
+    """Sends non-sweep and system notifications only to personal chats."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -421,7 +421,7 @@ def fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=200):
         return None
 
 def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: float, sweep_ts_ms: int):
-    """Sends a standalone 'sweep detected' alert when no directional trade is setup[cite: 1]."""
+    """Sends neutral 'sweep detected' alert (No direction, no dots, no FVG)."""
     dt = datetime.fromtimestamp(sweep_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str = get_signal_age_str(sweep_ts_ms)
@@ -440,7 +440,10 @@ def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: 
     send_sweep_to_all(msg, parse_mode="Markdown")
 
 def check_sweep(ticker):
-    """Detects 4H sweep setups across prior candle highs and lows[cite: 1]."""
+    """
+    Differentiates between directional sweeps (which search for FVGs)
+    and neutral double-sweeps (which only fire an alert with NO trade/FVG).
+    """
     try:
         df = yf_download(ticker, "15d", "1h")
         if df is None or len(df) < 20:
@@ -453,20 +456,24 @@ def check_sweep(ticker):
         c, m = df.iloc[-2], df.iloc[-3]
         ts = int(df.index[-2].timestamp() * 1000)
 
-        # Bullish sweep setup (wicks low, closes back above prior low or wicks both sides)
-        if c["Low"] < m["Low"] and c["High"] > m["High"]:
-            direction = "BULLISH" if c["Close"] >= c["Open"] else "BEARISH"
-            return (direction, float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-        elif c["Low"] < m["Low"] and c["Close"] > m["Low"]:
+        # 1. Clear Directional Bullish Sweep: Swept low, closed inside
+        if c["Low"] < m["Low"] and c["High"] <= m["High"] and c["Close"] > m["Low"]:
             return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-        elif c["High"] > m["High"] and c["Close"] < m["High"]:
+
+        # 2. Clear Directional Bearish Sweep: Swept high, closed inside
+        if c["High"] > m["High"] and c["Low"] >= m["Low"] and c["Close"] < m["High"]:
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
+
+        # 3. Neutral Sweep: Both sides swept (no clear single directional bias)
+        if c["Low"] < m["Low"] and c["High"] > m["High"]:
+            return ("NEUTRAL", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
+
     except Exception:
         pass
     return None
 
 def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
-    """Scans a given DataFrame (1H or 4H) for an unmitigated 3-candle Fair Value Gap[cite: 1, 4]."""
+    """Scans a given DataFrame (1H or 4H) for an unmitigated 3-candle Fair Value Gap."""
     try:
         if df is None or len(df) < 3:
             return None
@@ -484,13 +491,13 @@ def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) 
             c_prev2 = df_post.iloc[i - 2]
             c_curr = df_post.iloc[i]
             
-            # Bullish Imbalance: High of candle i-2 < Low of candle i[cite: 4]
+            # Bullish Imbalance: High of candle i-2 < Low of candle i
             if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
                 zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["Low"].astype(float) < zl).any()):
                     return (zl, zh)
                     
-            # Bearish Imbalance: Low of candle i-2 > High of candle i[cite: 4]
+            # Bearish Imbalance: Low of candle i-2 > High of candle i
             elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
                 zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["High"].astype(float) > zh).any()):
@@ -555,7 +562,18 @@ def register_pending_sweep(symbol, mtype, sweep):
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str = get_signal_age_str(sweep_close_ts)
     
-    send_sweep_to_all(f"⚡ *SWEEP DETECTED — WAITING FOR FVG*\n{BR}\n🪙 *Asset:* `{symbol}`\n📊 *Direction:* {'LONG 📈' if direction=='BULLISH' else 'SHORT 📉'}\n⏰ *Sweep Time:* `{time_str}`\n⏳ *Age:* `{age_str}`\n{BR2}", parse_mode="Markdown")
+    # 🟢 for Bullish / Long, 🔴 for Bearish / Short
+    dot = "🟢" if direction == "BULLISH" else "🔴"
+    dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
+    
+    sweep_alert_msg = (
+        f"{dot} *SWEEP DETECTED — WAITING FOR FVG*\n{BR}\n"
+        f"🪙 *Asset:* `{symbol}`\n"
+        f"📊 *Direction:* {dir_label}\n"
+        f"⏰ *Sweep Time:* `{time_str}`\n"
+        f"⏳ *Age:* `{age_str}`\n{BR2}"
+    )
+    send_sweep_to_all(sweep_alert_msg, parse_mode="Markdown")
 
 def manage_pending_sweeps():
     global pending_sweeps
@@ -1049,17 +1067,29 @@ def scanner():
                     if symbol in muted_assets or not is_market_open(symbol):
                         continue
                 is_nse = "^NSE" in symbol or symbol.endswith(".NS")
+                
                 if not is_nse:
                     tp = check_trendpulse(symbol, mtype)
                     if tp:
                         execute(symbol, mtype, "ny_session" if is_ny_session() else "macro", "TrendPulse 1H", tp[0], tp[1], tp[2], tp[3])
+                    
                     sweep = check_sweep(symbol)
                     if sweep:
-                        register_pending_sweep(symbol, mtype, sweep)
+                        direction = sweep[0]
+                        if direction == "NEUTRAL":
+                            notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
+                        else:
+                            register_pending_sweep(symbol, mtype, sweep)
+
                 elif is_nifty_open():
                     sweep = check_sweep(symbol)
                     if sweep:
-                        register_pending_sweep(symbol, mtype, sweep)
+                        direction = sweep[0]
+                        if direction == "NEUTRAL":
+                            notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
+                        else:
+                            register_pending_sweep(symbol, mtype, sweep)
+
                 time.sleep(2)
                 gc.collect()
         except Exception as e:
@@ -1196,13 +1226,21 @@ def cmd_check(m):
                     execute(symbol, mtype, "ny_session" if is_ny_session() else "macro", "TrendPulse 1H", tp[0], tp[1], tp[2], tp[3])
                 sweep = check_sweep(symbol)
                 if sweep:
-                    found += 1
-                    register_pending_sweep(symbol, mtype, sweep)
+                    direction = sweep[0]
+                    if direction == "NEUTRAL":
+                        notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
+                    else:
+                        found += 1
+                        register_pending_sweep(symbol, mtype, sweep)
             elif is_nifty_open():
                 sweep = check_sweep(symbol)
                 if sweep:
-                    found += 1
-                    register_pending_sweep(symbol, mtype, sweep)
+                    direction = sweep[0]
+                    if direction == "NEUTRAL":
+                        notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
+                    else:
+                        found += 1
+                        register_pending_sweep(symbol, mtype, sweep)
         safe_send(m.chat.id, f"✅ *Scan Complete.* Found `{found}` active setups/signals.", parse_mode="Markdown")
     threading.Thread(target=run_scan, daemon=True).start()
 
