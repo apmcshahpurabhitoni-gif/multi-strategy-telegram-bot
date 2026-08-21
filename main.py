@@ -67,6 +67,7 @@ PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
 WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
 
 ACCOUNT_LIMITS = {"macro": 20, "nifty": 5, "ny_session": 3, "sweep_4h": 3}
+MAX_SIGNAL_AGE_HOURS = 12  # Signals older than 12 hours are dropped on restart
 
 accounts = {}
 active_trades = []
@@ -109,6 +110,13 @@ def get_signal_age_str(ts_ms):
         age_str = f"{diff_hr} hr {diff_min % 60} min ago"
         tag = "✅ FRESH" if diff_hr < 4 else "⚠️ STALE"
     return f"{age_str} {tag}"
+
+def is_signal_too_old(ts_ms, max_hours=MAX_SIGNAL_AGE_HOURS):
+    """Returns True if the candle closed more than max_hours ago[cite: 1]."""
+    if not ts_ms:
+        return False
+    age_hours = (time.time() * 1000 - ts_ms) / (3600 * 1000)
+    return age_hours > max_hours
 
 def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_ts_ms, fvg_zone=None):
     is_bullish = "BULLISH" in sig_type
@@ -280,7 +288,7 @@ def safe_send(chat_id, text, **kwargs):
             pass
 
 def send_sweep_to_all(message: str, **kwargs):
-    """Sends sweep signals to ALL registered chats including group IDs."""
+    """Sends sweep signals to ALL registered chats including group IDs[cite: 1]."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -291,7 +299,7 @@ def send_sweep_to_all(message: str, **kwargs):
             print(f"[ERR] [SWEEP→ALL] Failed to send to chat {cid}: {e}")
 
 def send_to_personal_only(message: str, **kwargs):
-    """Sends non-sweep and system notifications only to personal chats."""
+    """Sends non-sweep and system notifications only to personal chats[cite: 1]."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -421,7 +429,11 @@ def fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=200):
         return None
 
 def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: float, sweep_ts_ms: int):
-    """Sends neutral 'sweep detected' alert (No direction, no dots, no FVG)."""
+    """Sends neutral 'sweep detected' alert (No direction, no dots, no FVG)[cite: 1]. Drops if >12h old."""
+    if is_signal_too_old(sweep_ts_ms):
+        print(f"[STALE SKIP] Suppressing neutral sweep on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
+        return
+        
     dt = datetime.fromtimestamp(sweep_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str = get_signal_age_str(sweep_ts_ms)
@@ -442,7 +454,7 @@ def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: 
 def check_sweep(ticker):
     """
     Differentiates between directional sweeps (which search for FVGs)
-    and neutral double-sweeps (which only fire an alert with NO trade/FVG).
+    and neutral double-sweeps (which only fire an alert with NO trade/FVG)[cite: 1].
     """
     try:
         df = yf_download(ticker, "15d", "1h")
@@ -473,7 +485,7 @@ def check_sweep(ticker):
     return None
 
 def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
-    """Scans a given DataFrame (1H or 4H) for an unmitigated 3-candle Fair Value Gap."""
+    """Scans a given DataFrame (1H or 4H) for an unmitigated 3-candle Fair Value Gap[cite: 1, 4]."""
     try:
         if df is None or len(df) < 3:
             return None
@@ -491,13 +503,13 @@ def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) 
             c_prev2 = df_post.iloc[i - 2]
             c_curr = df_post.iloc[i]
             
-            # Bullish Imbalance: High of candle i-2 < Low of candle i
+            # Bullish Imbalance: High of candle i-2 < Low of candle i[cite: 4]
             if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
                 zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["Low"].astype(float) < zl).any()):
                     return (zl, zh)
                     
-            # Bearish Imbalance: Low of candle i-2 > High of candle i
+            # Bearish Imbalance: Low of candle i-2 > High of candle i[cite: 4]
             elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
                 zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["High"].astype(float) > zh).any()):
@@ -533,6 +545,12 @@ FVG_EXPIRY_HOURS = 24
 def register_pending_sweep(symbol, mtype, sweep):
     global pending_sweeps, _sweep_cooldown
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
+    
+    # Suppress sweeps older than 12 hours from alert/queue
+    if is_signal_too_old(sweep_close_ts):
+        print(f"[STALE SKIP] Suppressing sweep setup on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
+        return
+        
     target_account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
     cooldown_key = f"{symbol}_{direction}"
     now_ts = int(time.time() * 1000)
@@ -562,7 +580,7 @@ def register_pending_sweep(symbol, mtype, sweep):
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str = get_signal_age_str(sweep_close_ts)
     
-    # 🟢 for Bullish / Long, 🔴 for Bearish / Short
+    # 🟢 for Bullish / Long, 🔴 for Bearish / Short + Fresh/Stale Age
     dot = "🟢" if direction == "BULLISH" else "🔴"
     dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
     
@@ -916,6 +934,11 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
     else:
         atr, ts = float(a1), a2
         sl, tp = calc_sl_tp(sig_type, price, atr)
+
+    # Suppress stale signals older than 12 hours from executing/alerting
+    if is_signal_too_old(ts):
+        print(f"[STALE SKIP] Suppressing trade execution for {symbol} (candle closed > {MAX_SIGNAL_AGE_HOURS}h ago)")
+        return
         
     with _lock:
         key = f"{symbol}_{ts}_{sig_type}_{account}_fvg_{price:.6f}" if fvg_entry else f"{symbol}_{ts}_{sig_type}_{account}"
