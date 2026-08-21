@@ -91,7 +91,8 @@ PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
 WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
 
 ACCOUNT_LIMITS = {"macro": 20, "nifty": 5, "ny_session": 3, "sweep_4h": 3}
-MAX_SIGNAL_AGE_HOURS = 12
+MAX_SIGNAL_AGE_HOURS = 6  # Strictly 6 hours maximum limit
+MAX_MSG_SEND_COUNT = 2    # Maximum identical message repeats allowed
 
 accounts = {}
 active_trades = []
@@ -132,7 +133,7 @@ def get_signal_age_str(ts_ms):
         tag = "✅ FRESH" if diff_min <= 60 else "⚠️ STALE"
     else:
         age_str = f"{diff_hr} hr {diff_min % 60} min ago"
-        tag = "✅ FRESH" if diff_hr < 4 else "⚠️ STALE"
+        tag = "✅ FRESH" if diff_hr < 2 else "⚠️ STALE"
     return age_str, tag
 
 def is_signal_too_old(ts_ms, max_hours=MAX_SIGNAL_AGE_HOURS):
@@ -140,6 +141,26 @@ def is_signal_too_old(ts_ms, max_hours=MAX_SIGNAL_AGE_HOURS):
         return False
     age_hours = (time.time() * 1000 - ts_ms) / (3600 * 1000)
     return age_hours > max_hours
+
+def check_and_increment_msg_count(key: str) -> bool:
+    """Tracks message send count across restarts. Drops if sent >= MAX_MSG_SEND_COUNT."""
+    global sent_signals
+    with _lock:
+        data = sent_signals.get(key)
+        if isinstance(data, dict):
+            cnt = data.get("send_count", 1)
+            if cnt >= MAX_MSG_SEND_COUNT:
+                return False
+            data["send_count"] = cnt + 1
+            data["last_sent_ts"] = int(time.time() * 1000)
+        else:
+            sent_signals[key] = {
+                "send_count": 1,
+                "created_ts": int(time.time() * 1000),
+                "last_sent_ts": int(time.time() * 1000)
+            }
+        save_json(SENT_SIGNALS_FILE, sent_signals)
+        return True
 
 def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_ts_ms, fvg_zone=None):
     is_bullish = "BULLISH" in sig_type
@@ -152,12 +173,13 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
     age_str, tag = get_signal_age_str(signal_ts_ms)
     dt = datetime.fromtimestamp(signal_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
+    status_icon = "✅" if "FRESH" in tag else "⚠️"
     
     header_title = f"FVG Fill ({tf}) · {name_str}" if is_sweep and fvg_zone else (f"{strat} · {name_str}" if not is_sweep else f"4H Sweep · {name_str}")
     fvg_line = f"🎯 *FVG Zone ({tf}):* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n" if fvg_zone and is_sweep else ""
     
     return (
-        f"{dot} [{tag}] *{header_title}*\n{BR}\n"
+        f"{dot} *{header_title}* · {status_icon}\n{BR}\n"
         f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
         f"🌐 *Market:* {mtype}\n"
         f"📊 *Direction:* {dir_label}\n"
@@ -334,7 +356,7 @@ def safe_send(chat_id, text, **kwargs):
             pass
 
 def send_sweep_to_all(message: str, **kwargs):
-    """Sends sweep signals to ALL registered chats including group IDs[cite: 1]."""
+    """Sends sweep signals to ALL registered chats including group IDs."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -345,7 +367,7 @@ def send_sweep_to_all(message: str, **kwargs):
             print(f"[ERR] [SWEEP→ALL] Failed to send to chat {cid}: {e}")
 
 def send_to_personal_only(message: str, **kwargs):
-    """Sends non-sweep and system notifications only to personal chats[cite: 1]."""
+    """Sends non-sweep and system notifications only to personal chats."""
     if not CHAT_IDS:
         return
     for cid in CHAT_IDS:
@@ -475,19 +497,25 @@ def fetch_binance_klines(symbol="BTCUSDT", interval="1h", limit=200):
         return None
 
 def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: float, sweep_ts_ms: int):
-    """Sends neutral 'sweep detected' alert[cite: 1]. Drops if >12h old."""
+    """Sends neutral 'sweep detected' alert. Drops if >6h old or already sent 2 times."""
     if is_signal_too_old(sweep_ts_ms):
-        print(f"[STALE SKIP] Suppressing neutral sweep on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
+        print(f"[STALE SKIP] Suppressing neutral sweep on {symbol} (> {MAX_SIGNAL_AGE_HOURS}h old)")
         return
         
+    msg_key = f"neutral_sweep_{symbol}_{sweep_ts_ms}"
+    if not check_and_increment_msg_count(msg_key):
+        print(f"[REPEAT SKIP] Neutral sweep for {symbol} already sent {MAX_MSG_SEND_COUNT} times.")
+        return
+
     dt = datetime.fromtimestamp(sweep_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     age_str, tag = get_signal_age_str(sweep_ts_ms)
     curr = _currency(symbol)
     name_str = display_name(symbol)
+    status_icon = "✅" if "FRESH" in tag else "⚠️"
     
     msg = (
-        f"⚡ [{tag}] *SWEEP DETECTED · {name_str}*\n{BR}\n"
+        f"⚡ *SWEEP DETECTED · {name_str}* · {status_icon}\n{BR}\n"
         f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
         f"🌐 *Market:* {mtype}\n"
         f"📍 *High:* `{curr}{sweep_high:,.4f}`\n"
@@ -500,7 +528,7 @@ def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: 
     send_sweep_to_all(msg, parse_mode="Markdown")
 
 def check_sweep(ticker):
-    """Differentiates directional vs neutral sweeps[cite: 1]."""
+    """Differentiates directional vs neutral sweeps."""
     try:
         df = yf_download(ticker, "15d", "1h")
         if df is None or len(df) < 20:
@@ -530,7 +558,7 @@ def check_sweep(ticker):
     return None
 
 def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
-    """Scans for an unmitigated 3-candle Fair Value Gap[cite: 1, 4]."""
+    """Scans for an unmitigated 3-candle Fair Value Gap."""
     try:
         if df is None or len(df) < 3:
             return None
@@ -590,9 +618,14 @@ def register_pending_sweep(symbol, mtype, sweep):
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
     
     if is_signal_too_old(sweep_close_ts):
-        print(f"[STALE SKIP] Suppressing sweep setup on {symbol} (older than {MAX_SIGNAL_AGE_HOURS}h)")
+        print(f"[STALE SKIP] Suppressing sweep setup on {symbol} (> {MAX_SIGNAL_AGE_HOURS}h old)")
         return
         
+    msg_key = f"sweep_waiting_{symbol}_{sweep_close_ts}_{direction}"
+    if not check_and_increment_msg_count(msg_key):
+        print(f"[REPEAT SKIP] Sweep alert for {symbol} already sent {MAX_MSG_SEND_COUNT} times.")
+        return
+
     target_account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
     cooldown_key = f"{symbol}_{direction}"
     now_ts = int(time.time() * 1000)
@@ -623,12 +656,11 @@ def register_pending_sweep(symbol, mtype, sweep):
     age_str, tag = get_signal_age_str(sweep_close_ts)
     name_str = display_name(symbol)
     
-    # 🟢 for Bullish / Long, 🔴 for Bearish / Short
     dot = "🟢" if direction == "BULLISH" else "🔴"
     dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
     status_icon = "✅" if "FRESH" in tag else "⚠️"
     
-    # Updated Headline Format with specific layout
+    # Exact desired header format
     sweep_alert_msg = (
         f"{dot} *SWEEP DETECTED — {name_str} — WAITING FOR FVG* · {status_icon}\n{BR}\n"
         f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
@@ -674,6 +706,7 @@ def manage_pending_sweeps():
                 if p["fvg_zone"] is None:
                     fvg_zone, tf_label = resolve_hierarchical_fvg(sym, p["direction"], p["sweep_open_ts"])
                     if fvg_zone:
+                        fvg_key = f"fvg_confirmed_{sym}_{p['sweep_close_ts']}_{tf_label}"
                         with _lock:
                             p["fvg_zone"] = [float(fvg_zone[0]), float(fvg_zone[1])]
                             p["fvg_tf"] = tf_label
@@ -681,16 +714,17 @@ def manage_pending_sweeps():
                             p["status"] = "waiting_fill"
                             save_json(PENDING_SWEEPS_FILE, pending_sweeps)
                         
-                        curr = _currency(sym)
-                        name_str = display_name(sym)
-                        fvg_notify_msg = (
-                            f"🎯 *{tf_label} FVG CONFIRMED · {name_str}*\n{BR}\n"
-                            f"🪙 *Asset:* `{name_str}` ({p['direction']})\n"
-                            f"📊 *Timeframe:* `{tf_label}` Priority Gap\n"
-                            f"📍 *Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
-                            f"⏳ *Status:* Waiting for price retest\n{BR2}"
-                        )
-                        send_sweep_to_all(fvg_notify_msg, parse_mode="Markdown")
+                        if check_and_increment_msg_count(fvg_key):
+                            curr = _currency(sym)
+                            name_str = display_name(sym)
+                            fvg_notify_msg = (
+                                f"🎯 *{tf_label} FVG CONFIRMED · {name_str}*\n{BR}\n"
+                                f"🪙 *Asset:* `{name_str}` ({p['direction']})\n"
+                                f"📊 *Timeframe:* `{tf_label}` Priority Gap\n"
+                                f"📍 *Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
+                                f"⏳ *Status:* Waiting for price retest\n{BR2}"
+                            )
+                            send_sweep_to_all(fvg_notify_msg, parse_mode="Markdown")
                     continue
                 zl, zh = p["fvg_zone"]
                 if zl <= live <= zh:
@@ -984,16 +1018,15 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         sl, tp = calc_sl_tp(sig_type, price, atr)
 
     if is_signal_too_old(ts):
-        print(f"[STALE SKIP] Suppressing trade execution for {symbol} (candle closed > {MAX_SIGNAL_AGE_HOURS}h ago)")
+        print(f"[STALE SKIP] Suppressing trade execution for {symbol} (> {MAX_SIGNAL_AGE_HOURS}h old)")
         return
-        
+
+    exec_key = f"exec_{symbol}_{ts}_{sig_type}_{account}"
+    if not check_and_increment_msg_count(exec_key):
+        print(f"[REPEAT SKIP] Trade execution for {symbol} already fired.")
+        return
+
     with _lock:
-        key = f"{symbol}_{ts}_{sig_type}_{account}_fvg_{price:.6f}" if fvg_entry else f"{symbol}_{ts}_{sig_type}_{account}"
-        if key in sent_signals:
-            return
-        sent_signals[key] = {"ts_ms": int(time.time() * 1000), "symbol": symbol, "sig_type": sig_type, "strat": strat, "account": account, "status": "open", "pnl": 0, "hint": "", "time_str": datetime.now(IST).strftime("%H:%M")}
-        save_json(SENT_SIGNALS_FILE, sent_signals)
-        
         lim = ACCOUNT_LIMITS.get(account, 3)
         if accounts[account]["daily_trades"] >= lim:
             return
@@ -1590,7 +1623,7 @@ if __name__ == "__main__":
         f"✅ *BOT STARTED*\n"
         f"{BR}\n"
         f"🕒 *Started At:* `{start_time_str}`\n"
-        f"⚠️ *FILTER ACTIVE:* Stale signals older than {MAX_SIGNAL_AGE_HOURS}h are suppressed.\n"
+        f"⚠️ *FILTER ACTIVE:* Stale signals older than {MAX_SIGNAL_AGE_HOURS}h or sent >={MAX_MSG_SEND_COUNT}x are suppressed.\n"
         f"{BR2}"
     )
     send_to_personal_only(start_msg, parse_mode="Markdown")
@@ -1602,6 +1635,6 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=weekly_digest_loop, daemon=True).start()
     threading.Thread(target=warm_news_cache, daemon=True).start()
-    print("[INIT] Bot running with clean names, notification previews, and stale filter enabled.")
+    print(f"[INIT] Bot running with clean names, {MAX_SIGNAL_AGE_HOURS}h stale limit, and {MAX_MSG_SEND_COUNT}x repetition cap.")
     while True:
         time.sleep(3600)
