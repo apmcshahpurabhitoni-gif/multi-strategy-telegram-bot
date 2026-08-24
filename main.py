@@ -85,7 +85,6 @@ ACTIVE_TRADES_FILE = "/tmp/workspace/active_trades.json"
 HISTORY_FILE = "/tmp/workspace/trade_history.json"
 MUTE_FILE = "/tmp/workspace/muted_assets.json"
 SENT_SIGNALS_FILE = "/tmp/workspace/sent_signals.json"
-PENDING_SWEEPS_FILE = "/tmp/workspace/pending_sweeps.json"
 WEEKLY_DIGEST_FILE = "/tmp/workspace/weekly_digest_state.json"
 
 ACCOUNT_LIMITS = {"macro": 20, "nifty": 5, "ny_session": 3, "sweep_4h": 3}
@@ -97,7 +96,6 @@ active_trades = []
 muted_assets = set()
 sent_signals = {}
 history = []
-pending_sweeps = []
 _lock = threading.RLock()
 
 _news_pause_enabled = True
@@ -167,21 +165,19 @@ def check_and_increment_msg_count(key: str) -> bool:
         save_json(SENT_SIGNALS_FILE, sent_signals)
         return True
 
-def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_ts_ms, fvg_zone=None):
+def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actual_tp, qty, risk_amt, account, signal_ts_ms):
     is_bullish = "BULLISH" in sig_type
     dot = "🟢" if is_bullish else "🔴"
     dir_label = "LONG 📈" if is_bullish else "SHORT 📉"
-    is_sweep = bool(strat and "Sweep" in strat)
     curr = _currency(symbol)
     name_str = display_name(symbol)
-    
+
     age_str, tag = get_signal_age_str(signal_ts_ms)
     dt = datetime.fromtimestamp(signal_ts_ms / 1000, tz=IST)
     time_str = dt.strftime("%d-%b-%Y %H:%M IST")
     status_icon = "✅" if "FRESH" in tag else "⚠️"
-    
-    header_title = f"FVG Fill ({tf}) · {name_str}" if is_sweep and fvg_zone else (f"{strat} · {name_str}" if not is_sweep else f"4H Sweep · {name_str}")
-    fvg_line = f"🎯 *FVG Zone ({tf}):* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n" if fvg_zone and is_sweep else ""
+
+    header_title = f"{strat} · {name_str}"
     
     return (
         f"{dot} *{header_title}* · {status_icon}\n{BR}\n"
@@ -196,7 +192,6 @@ def msg_trade_signal(symbol, mtype, strat, sig_type, tf, price, actual_sl, actua
         f"📍 *Entry:* `{curr}{price:,.4f}`\n"
         f"🛑 *Stop Loss:* `{curr}{actual_sl:,.4f}`\n"
         f"🎯 *Take Profit:* `{curr}{actual_tp:,.4f}`\n"
-        f"{fvg_line}"
         f"📦 *Quantity:* `{qty:.4f}`\n"
         f"💸 *Risk:* `₹{risk_amt:,.2f}`\n{BR}\n"
         f"ℹ️ _✅ FRESH = Closed ≤1h ago | ⚠️ STALE = Closed >1h ago_\n{BR2}"
@@ -245,7 +240,6 @@ def msg_guide():
         f"├ `/test` — Test data feeds & latency\n"
         f"├ `/summary` — Open trades & floating P/L\n"
         f"├ `/balance` — View virtual account equity\n"
-        f"├ `/pending` — Show 4H sweeps waiting for FVG\n"
         f"├ `/stats` — Strategy win-rate & P/L report\n"
         f"├ `/risk` — Portfolio exposure & 1R metrics\n"
         f"├ `/weekly` — 7-day performance digest\n"
@@ -603,63 +597,17 @@ def check_sweep(ticker, df=None):
         print(f"[ERR] check_sweep {ticker}: {e}")
     return None
 
-def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
-    try:
-        if df is None or len(df) < 3:
-            return None
-        sweep_open = pd.to_datetime(int(sweep_open_ts_ms), unit="ms")
-        idx = df.index
-        if getattr(idx, "tz", None) is not None:
-            sweep_open = sweep_open.tz_localize("UTC") if sweep_open.tz is None else sweep_open.tz_convert(idx.tz)
-        df_post = df[idx >= sweep_open].reset_index(drop=True)
-        if len(df_post) < 3:
-            return None
-
-        for i in range(2, len(df_post)):
-            c_prev2 = df_post.iloc[i - 2]
-            c_curr = df_post.iloc[i]
-            if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
-                zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
-                if zh > zl and not ((df_post.iloc[i + 1:]["Low"].astype(float) < zl).any()):
-                    return (zl, zh)
-            elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
-                zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
-                if zh > zl and not ((df_post.iloc[i + 1:]["High"].astype(float) > zh).any()):
-                    return (zl, zh)
-    except Exception as e:
-        print(f"[ERR] find_timeframe_fvg {direction}: {e}")
-    return None
-
-def resolve_hierarchical_fvg(symbol: str, direction: str, sweep_open_ts: int) -> Tuple[Optional[Tuple[float, float]], Optional[str]]:
-    df_1h = yf_download(symbol, "15d", "1h")
-    if df_1h is None and symbol == "BTC-USD":
-        df_1h = fetch_binance_klines("BTCUSDT", "1h", 400)
-    if df_1h is None or len(df_1h) < 10:
-        return None, None
-    df_4h = resample_4h(df_1h, symbol)
-    if df_4h is None:
-        return None, None
-    fvg_4h = find_timeframe_fvg(df_4h, direction, sweep_open_ts)
-    if fvg_4h:
-        return fvg_4h, "4H"
-    fvg_1h = find_timeframe_fvg(df_1h, direction, sweep_open_ts)
-    if fvg_1h:
-        return fvg_1h, "1H"
-    return None, None
-
-FVG_EXPIRY_HOURS = 24
-
-def register_pending_sweep(symbol, mtype, sweep):
-    global pending_sweeps, _sweep_cooldown
+def handle_sweep(symbol, mtype, sweep):
+    """Directional sweep detected -> enter trade immediately. No FVG wait."""
     direction, sweep_high, sweep_low, sweep_open_ts, sweep_close_ts = sweep
-    
+
     if is_signal_too_old(sweep_close_ts):
-        print(f"[STALE SKIP] Suppressing sweep setup on {symbol} (> {MAX_SIGNAL_AGE_HOURS}h old)")
+        print(f"[STALE SKIP] Suppressing sweep signal on {symbol} (> {MAX_SIGNAL_AGE_HOURS}h old)")
         return
-        
-    msg_key = f"sweep_waiting_{symbol}_{sweep_close_ts}_{direction}"
+
+    msg_key = f"sweep_exec_{symbol}_{sweep_close_ts}_{direction}"
     if not check_and_increment_msg_count(msg_key):
-        print(f"[REPEAT SKIP] Sweep alert for {symbol} already sent {MAX_MSG_SEND_COUNT} times.")
+        print(f"[REPEAT SKIP] Sweep signal for {symbol} already sent {MAX_MSG_SEND_COUNT} times.")
         return
 
     target_account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
@@ -667,115 +615,15 @@ def register_pending_sweep(symbol, mtype, sweep):
     now_ts = int(time.time() * 1000)
     if now_ts - _sweep_cooldown.get(cooldown_key, 0) < 4 * 3600 * 1000:
         return
-    with _lock:
-        if any(p["symbol"] == symbol and p["direction"] == direction and p["sweep_close_ts"] == sweep_close_ts for p in pending_sweeps):
-            return
-        if accounts[target_account]["daily_trades"] >= ACCOUNT_LIMITS.get(target_account, 3):
-            return
-        if any(t["symbol"] == symbol and t["account"] == target_account for t in active_trades):
-            return
-        if any(p["symbol"] == symbol and p["status"] in ("waiting_fvg", "waiting_fill") for p in pending_sweeps):
-            return
-        _sweep_cooldown[cooldown_key] = now_ts
-        pending_sweeps.append({
-            "symbol": symbol, "mtype": mtype, "direction": direction,
-            "sweep_high": float(sweep_high), "sweep_low": float(sweep_low),
-            "sweep_open_ts": int(sweep_open_ts), "sweep_close_ts": int(sweep_close_ts),
-            "created_at": datetime.now(IST).strftime("%Y-%m-%d %H:%M IST"),
-            "fvg_zone": None, "fvg_tf": None, "fvg_found_at": None, "status": "waiting_fvg",
-            "target_account": target_account
-        })
-        save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-    
-    dt = datetime.fromtimestamp(sweep_close_ts / 1000, tz=IST)
-    time_str = dt.strftime("%d-%b-%Y %H:%M IST")
-    age_str, tag = get_signal_age_str(sweep_close_ts)
-    name_str = display_name(symbol)
-    
-    dot = "🟢" if direction == "BULLISH" else "🔴"
-    dir_label = "LONG 📈" if direction == "BULLISH" else "SHORT 📉"
-    status_icon = "✅" if "FRESH" in tag else "⚠️"
-    
-    sweep_alert_msg = (
-        f"{dot} *SWEEP DETECTED — {name_str} — WAITING FOR FVG* · {status_icon}\n{BR}\n"
-        f"🪙 *Asset:* `{name_str}` (`{symbol}`)\n"
-        f"📊 *Direction:* {dir_label}\n"
-        f"🌐 *Market:* {mtype}\n{BR}\n"
-        f"⏳ *Signal Status:* `{tag}` ({age_str})\n"
-        f"⏰ *Sweep Time:* `{time_str}`\n{BR}\n"
-        f"ℹ️ _✅ FRESH = Closed ≤1h ago | ⚠️ STALE = Closed >1h ago_\n{BR2}"
-    )
-    send_sweep_to_all(sweep_alert_msg, parse_mode="Markdown")
+    _sweep_cooldown[cooldown_key] = now_ts
 
-def manage_pending_sweeps():
-    global pending_sweeps
-    while True:
-        try:
-            with _lock:
-                copy = list(pending_sweeps)
-            to_remove = []
-            for p in copy:
-                sym = p["symbol"]
-                live = get_price(sym)  # 60s cached, BTC/Gold fallbacks included
-                if live is None:
-                    continue
-                age_hours = (time.time() * 1000 - p["sweep_close_ts"]) / (3600 * 1000)
-                
-                if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
-                    with _lock:
-                        p["status"] = "expired"
-                    to_remove.append(p)
-                    send_to_personal_only(f"⏰ *PENDING SWEEP EXPIRED*\n{BR}\n`{display_name(sym)}` {p['direction']}\n{BR2}", parse_mode="Markdown")
-                    continue
-                if p["direction"] == "BULLISH" and live <= p["sweep_low"]:
-                    with _lock:
-                        p["status"] = "invalidated"
-                    to_remove.append(p)
-                    continue
-                if p["direction"] == "BEARISH" and live >= p["sweep_high"]:
-                    with _lock:
-                        p["status"] = "invalidated"
-                    to_remove.append(p)
-                    continue
-                if p["fvg_zone"] is None:
-                    fvg_zone, tf_label = resolve_hierarchical_fvg(sym, p["direction"], p["sweep_open_ts"])
-                    if fvg_zone:
-                        fvg_key = f"fvg_confirmed_{sym}_{p['sweep_close_ts']}_{tf_label}"
-                        with _lock:
-                            p["fvg_zone"] = [float(fvg_zone[0]), float(fvg_zone[1])]
-                            p["fvg_tf"] = tf_label
-                            p["fvg_found_at"] = int(time.time() * 1000)
-                            p["status"] = "waiting_fill"
-                            save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-                        
-                        if check_and_increment_msg_count(fvg_key):
-                            curr = _currency(sym)
-                            name_str = display_name(sym)
-                            fvg_notify_msg = (
-                                f"🎯 *{tf_label} FVG CONFIRMED · {name_str}*\n{BR}\n"
-                                f"🪙 *Asset:* `{name_str}` ({p['direction']})\n"
-                                f"📊 *Timeframe:* `{tf_label}` Priority Gap\n"
-                                f"📍 *Zone:* `{curr}{fvg_zone[0]:,.4f} — {curr}{fvg_zone[1]:,.4f}`\n"
-                                f"⏳ *Status:* Waiting for price retest\n{BR2}"
-                            )
-                            send_sweep_to_all(fvg_notify_msg, parse_mode="Markdown")
-                    continue
-                zl, zh = p["fvg_zone"]
-                if zl <= live <= zh:
-                    if not is_market_open(sym):
-                        continue  # never enter on stale/off-hours prices
-                    fvg_entry = {"entry_price": live, "sl": p["sweep_low"] if p["direction"] == "BULLISH" else p["sweep_high"], "sweep_ts": p["sweep_close_ts"], "zone": p["fvg_zone"], "tf": p.get("fvg_tf", "1H")}
-                    with _lock:
-                        p["status"] = "entered"
-                    to_remove.append(p)
-                    execute(sym, p["mtype"], p.get("target_account", "sweep_4h"), "4H Sweep", p["direction"], live, fvg_entry["sl"], 0, p["sweep_close_ts"], fvg_entry=fvg_entry)
-            if to_remove:
-                with _lock:
-                    pending_sweeps = [pp for pp in pending_sweeps if pp not in to_remove]
-                    save_json(PENDING_SWEEPS_FILE, pending_sweeps)
-        except Exception as e:
-            alert_error("Pending Sweeps Manager", e)
-        time.sleep(90)
+    # Entry at current market price; SL just beyond the sweep extreme.
+    entry = get_price(symbol)
+    if entry is None:
+        print(f"[ERR] handle_sweep {symbol}: no live price, skipping")
+        return
+    sl = sweep_low * 0.999 if direction == "BULLISH" else sweep_high * 1.001
+    execute(symbol, mtype, target_account, "4H Sweep", direction, entry, sl, sweep_close_ts)
 
 def calc_macd(series, fast=12, slow=26, signal=9):
     ema_f, ema_s = series.ewm(span=fast, adjust=False).mean(), series.ewm(span=slow, adjust=False).mean()
@@ -1006,7 +854,7 @@ def build_strategy_stats():
         d["avg_pnl"] = round((d["pnl"] / total), 2) if total > 0 else 0
     return strategies
 
-def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg_entry=None):
+def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None):
     global active_trades
     paused, pause_reason = is_news_pause_active()
     if paused:
@@ -1014,18 +862,17 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         send_to_personal_only(f"⏸️ *NEWS PAUSE*\n{BR}\n`{display_name(symbol)}` {sig_type} skipped\n🛑 {pause_reason}\n{BR2}", parse_mode="Markdown")
         return
 
-    tf_label = fvg_entry.get("tf", "1H") if fvg_entry else ("4H" if (strat and "Sweep" in strat) else "1H")
+    tf_label = "4H" if (strat and "Sweep" in strat) else "1H"
 
-    if fvg_entry is not None:
-        sl, ts = float(fvg_entry["sl"]), fvg_entry["sweep_ts"]
+    if strat and "Sweep" in strat:
+        # a1 = SL (beyond sweep extreme), a2 = sweep close timestamp
+        sl, ts = float(a1), a2
         risk = abs(price - sl)
         if risk <= 0 or risk < price * 0.001:
             # SL glued to entry -> qty would explode. Skip degenerate setups.
             print(f"[RISK SKIP] {symbol}: risk {risk:.6f} too small vs price {price}")
             return
         tp = price + risk * 2.0 if "BULLISH" in sig_type else price - risk * 2.0
-    elif strat and "Sweep" in strat:
-        sl, tp, ts = float(a1), float(a2), a3
     else:
         atr, ts = float(a1), a2
         sl, tp = calc_sl_tp(sig_type, price, atr)
@@ -1064,7 +911,7 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
         save_json(ACCOUNTS_FILE, accounts)
         save_json(ACTIVE_TRADES_FILE, active_trades)
         
-        sig_msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf_label, price, sl, tp, qty, abs(price - sl) * qty, account, ts, fvg_entry.get("zone") if fvg_entry else None)
+        sig_msg = msg_trade_signal(symbol, mtype, strat, sig_type, tf_label, price, sl, tp, qty, abs(price - sl) * qty, account, ts)
         keyboard = InlineKeyboardMarkup([[InlineKeyboardButton("📈 Chart", callback_data=f"chart_{symbol}"), InlineKeyboardButton(f"🔇 Mute {display_name(symbol)}", callback_data=f"mute_{symbol}")]])
         
         if strat and "Sweep" in strat:
@@ -1200,7 +1047,7 @@ def scanner():
                         if direction == "NEUTRAL":
                             notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
                         else:
-                            register_pending_sweep(symbol, mtype, sweep)
+                            handle_sweep(symbol, mtype, sweep)
 
                 elif is_nifty_open():
                     sweep = check_sweep(symbol, df_1h)
@@ -1209,7 +1056,7 @@ def scanner():
                         if direction == "NEUTRAL":
                             notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
                         else:
-                            register_pending_sweep(symbol, mtype, sweep)
+                            handle_sweep(symbol, mtype, sweep)
 
                 time.sleep(2)
                 gc.collect()
@@ -1316,7 +1163,7 @@ def cmd_check(m):
                         notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
                     else:
                         found += 1
-                        register_pending_sweep(symbol, mtype, sweep)
+                        handle_sweep(symbol, mtype, sweep)
             elif is_nifty_open():
                 sweep = check_sweep(symbol, df_1h)
                 if sweep:
@@ -1325,7 +1172,7 @@ def cmd_check(m):
                         notify_neutral_sweep(symbol, mtype, sweep[1], sweep[2], sweep[3])
                     else:
                         found += 1
-                        register_pending_sweep(symbol, mtype, sweep)
+                        handle_sweep(symbol, mtype, sweep)
         safe_send(m.chat.id, f"✅ *Scan Complete.* Found `{found}` active setups/signals.", parse_mode="Markdown")
     threading.Thread(target=run_scan, daemon=True).start()
 
@@ -1348,13 +1195,11 @@ def cmd_summary(m):
     """Display real-time summary of open positions and active market states."""
     with _lock:
         open_count = len(active_trades)
-        pending_count = len(pending_sweeps)
         total_pnl = sum(float(t.get("pnl", 0)) for t in active_trades)
-    
+
     msg = (
         f"📊 *SYSTEM SUMMARY*\n{BR}\n"
         f"🔥 *Active Trades:* `{open_count}`\n"
-        f"⏳ *Pending Sweeps:* `{pending_count}`\n"
         f"💰 *Floating P/L:* `{'₹' if total_pnl>=0 else '-₹'}{abs(total_pnl):,.2f}`\n"
         f"🌐 *NY Session:* `{'ACTIVE ✅' if is_ny_session() else 'INACTIVE 🛑'}`\n"
         f"🇮🇳 *NSE Session:* `{'OPEN ✅' if is_nifty_open() else 'CLOSED 🛑'}`\n"
@@ -1384,19 +1229,8 @@ def cmd_balance(m):
 
 @bot.message_handler(commands=["pending"])
 def cmd_pending(m):
-    """List all 4H sweeps waiting for 1H/4H FVG formation."""
-    with _lock:
-        if not pending_sweeps:
-            safe_send(m.chat.id, "⏳ *No pending liquidity sweeps right now.*", parse_mode="Markdown")
-            return
-        items = []
-        for p in pending_sweeps:
-            age_str, tag = get_signal_age_str(p.get("sweep_close_ts", 0))
-            tf_tag = f"({p.get('fvg_tf', '1H')})" if p.get("fvg_tf") else ""
-            zone = f"`{p['fvg_zone'][0]:,.2f} - {p['fvg_zone'][1]:,.2f}` {tf_tag}" if p.get("fvg_zone") else "Waiting for FVG"
-            items.append(f"• `{display_name(p['symbol'])}` ({p['direction']})\n  └ Status: `{p['status']}` | Zone: {zone} | [{tag}] `{age_str}`")
-    
-    safe_send(m.chat.id, "⏳ *PENDING 4H SWEEPS:*\n" + BR + "\n" + "\n\n".join(items) + "\n" + BR2, parse_mode="Markdown")
+    """FVG waiting removed — sweeps now execute immediately on detection."""
+    safe_send(m.chat.id, "ℹ️ *No pending sweeps anymore.*\n4H sweeps now enter trades immediately when detected.", parse_mode="Markdown")
 
 @bot.message_handler(commands=["risk"])
 def cmd_risk(m):
@@ -1575,7 +1409,6 @@ if __name__ == "__main__":
     history = load_json(HISTORY_FILE, [])
     sent_signals = load_json(SENT_SIGNALS_FILE, {})
     muted_assets = set(load_json(MUTE_FILE, []))
-    pending_sweeps = load_json(PENDING_SWEEPS_FILE, [])
     
     start_time_str = datetime.now(IST).strftime("%d-%b-%Y %H:%M IST")
     start_msg = (
@@ -1590,7 +1423,6 @@ if __name__ == "__main__":
     threading.Thread(target=run_web, daemon=True).start()
     threading.Thread(target=monitor, daemon=True).start()
     threading.Thread(target=scanner, daemon=True).start()
-    threading.Thread(target=manage_pending_sweeps, daemon=True).start()
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=weekly_digest_loop, daemon=True).start()
     threading.Thread(target=warm_news_cache, daemon=True).start()
