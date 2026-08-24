@@ -135,23 +135,6 @@ class BacktestEngine:
 
         return None
 
-    def _find_timeframe_fvg(self, df_subset: pd.DataFrame, direction: str) -> Optional[Tuple[float, float, int]]:
-        """Finds the first unmitigated 3-candle FVG in the given slice."""
-        if len(df_subset) < 3:
-            return None
-        for j in range(2, len(df_subset)):
-            c_prev2 = df_subset.iloc[j - 2]
-            c_curr = df_subset.iloc[j]
-            if direction == "BULLISH" and float(c_curr["Low"]) > float(c_prev2["High"]):
-                zl, zh = float(c_prev2["High"]), float(c_curr["Low"])
-                if zh > zl and not ((df_subset.iloc[j + 1:]["Low"].astype(float) < zl).any()):
-                    return (zl, zh, j)
-            elif direction == "BEARISH" and float(c_curr["High"]) < float(c_prev2["Low"]):
-                zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
-                if zh > zl and not ((df_subset.iloc[j + 1:]["High"].astype(float) > zh).any()):
-                    return (zl, zh, j)
-        return None
-
     def _simulate_trade(self, entry: float, sl: float, tp: float, qty: float, direction: str, df_outcome: pd.DataFrame, max_bars: int = 100) -> Tuple[float, str, float]:
         if len(df_outcome) == 0:
             return 0.0, "BREAKEVEN", entry
@@ -238,7 +221,7 @@ class BacktestEngine:
         return self._compute_metrics(trades, balance)
 
     def backtest_sweep(self, symbol: str, days: int = 30) -> Dict[str, Any]:
-        print(f"[BACKTEST] Hierarchical 4H/1H Sweep on {symbol} for {days} days...")
+        print(f"[BACKTEST] 4H Sweep (immediate entry) on {symbol} for {days} days...")
         df_1h = self._download_candles(symbol, days)
         if df_1h is None or len(df_1h) < 50:
             return {"error": f"Insufficient historical data available for {symbol}."}
@@ -250,71 +233,47 @@ class BacktestEngine:
         balance, trades = self.starting_balance, []
         for i in range(5, len(df_4h) - 1):
             c, m = df_4h.iloc[i-1], df_4h.iloc[i-2]
-            
+
             # Directional Sweep Conditions
             direction = None
             if c["Low"] < m["Low"] and c["High"] <= m["High"] and c["Close"] > m["Low"]:
                 direction = "BULLISH"
             elif c["High"] > m["High"] and c["Low"] >= m["Low"] and c["Close"] < m["High"]:
                 direction = "BEARISH"
-            
-            # If neutral or no sweep, skip execution/trade search
+
             if not direction:
                 continue
-                
+
             sweep_high, sweep_low = float(c["High"]), float(c["Low"])
-            df_after_4h = df_4h[df_4h.index > df_4h.index[i-1]]
+
+            # Immediate entry: first 1H bar after the sweep candle closed.
             df_after_1h = df_1h[df_1h.index > df_4h.index[i-1]]
-
-            # 1. Prioritize 4H FVG
-            fvg_res = self._find_timeframe_fvg(df_after_4h, direction)
-            selected_zone = None
-            if fvg_res:
-                selected_zone = (fvg_res[0], fvg_res[1], "4H")
-            else:
-                # 2. Fallback to 1H FVG
-                fvg_1h_res = self._find_timeframe_fvg(df_after_1h, direction)
-                if fvg_1h_res:
-                    selected_zone = (fvg_1h_res[0], fvg_1h_res[1], "1H")
-
-            if not selected_zone:
+            if len(df_after_1h) < 2:
                 continue
+            entry_price = self._safe_float(df_after_1h.iloc[0]["Open"])
 
-            zl, zh, tf_used = selected_zone
-            fvg_found = False
-
-            # Check 1H candle retest inside FVG zone
-            for k in range(min(len(df_after_1h), 48)):
-                bar = df_after_1h.iloc[k]
-                high_val, low_val, close_val = float(bar["High"]), float(bar["Low"]), float(bar["Close"])
-                
-                # Long entry condition
-                if direction == "BULLISH" and low_val <= zh and close_val >= zl:
-                    entry_price = close_val
-                    sl_price = sweep_low
-                    risk = abs(entry_price - sweep_low)
-                    if risk > 0:
-                        qty = self._calc_qty(balance, entry_price, sl_price)
-                        if qty > 0:
-                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price + risk * 2.0, qty, "LONG", df_after_1h.iloc[k+1:])
-                            balance += pnl
-                            trades.append({"type": "LONG", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": f"TP ({tf_used})" if result == "WIN" else f"SL ({tf_used})"})
-                            fvg_found = True
-                            break
-
-                # Short entry condition
-                elif direction == "BEARISH" and high_val >= zl and close_val <= zh:
-                    entry_price = close_val
-                    sl_price = sweep_high
-                    risk = abs(sweep_high - entry_price)
-                    if risk > 0:
-                        qty = self._calc_qty(balance, entry_price, sl_price)
-                        if qty > 0:
-                            pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price - risk * 2.0, qty, "SHORT", df_after_1h.iloc[k+1:])
-                            balance += pnl
-                            trades.append({"type": "SHORT", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": f"TP ({tf_used})" if result == "WIN" else f"SL ({tf_used})"})
-                            fvg_found = True
-                            break
+            if direction == "BULLISH":
+                sl_price = sweep_low * 0.999
+                risk = abs(entry_price - sl_price)
+                if risk <= 0:
+                    continue
+                qty = self._calc_qty(balance, entry_price, sl_price)
+                if qty <= 0:
+                    continue
+                pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price + risk * 2.0, qty, "LONG", df_after_1h.iloc[1:])
+                balance += pnl
+                trades.append({"type": "LONG", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
+            else:
+                sl_price = sweep_high * 1.001
+                risk = abs(sl_price - entry_price)
+                if risk <= 0:
+                    continue
+                qty = self._calc_qty(balance, entry_price, sl_price)
+                if qty <= 0:
+                    continue
+                pnl, result, exit_price = self._simulate_trade(entry_price, sl_price, entry_price - risk * 2.0, qty, "SHORT", df_after_1h.iloc[1:])
+                balance += pnl
+                trades.append({"type": "SHORT", "entry": entry_price, "exit": exit_price, "pnl": pnl, "result": result, "exit_reason": "TP" if result == "WIN" else "SL"})
 
         return self._compute_metrics(trades, balance)
 
