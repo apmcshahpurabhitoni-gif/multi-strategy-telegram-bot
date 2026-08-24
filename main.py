@@ -1,5 +1,6 @@
 import os
 import json
+import re
 import time
 import threading
 import gc
@@ -697,26 +698,100 @@ def format_signal_time(ts_ms):
 def _iso_to_ist_dt(iso_str):
     if not iso_str:
         return None
+    s = str(iso_str).strip()
+    if not s:
+        return None
+    if s.endswith("Z"):
+        s = s[:-1] + "+00:00"
     try:
-        dt = datetime.fromisoformat(str(iso_str).split(".")[0])
+        dt = datetime.fromisoformat(s)
+    except Exception:
+        # strip fractional seconds while keeping any tz offset
+        s2 = re.sub(r"\.\d+(?=(?:[+-]\d{2}:?\d{2})?$)", "", s)
+        try:
+            dt = datetime.fromisoformat(s2)
+        except Exception:
+            return None
+    try:
         return IST.localize(dt) if dt.tzinfo is None else dt.astimezone(IST)
     except Exception:
-        pass
-    return None
+        return None
 
 # ------------------------------------------------------------------
-# Robust News Caching Layer with Built-in Fallback Simulator
+# Robust News Caching Layer — JSON mirrors, XML mirrors, last-good cache
 # ------------------------------------------------------------------
 NEWS_CACHE_FILE = "/tmp/workspace/news_upcoming_cache.json"
+NEWS_LASTGOOD_FILE = "/tmp/workspace/news_lastgood.json"
 NEWS_CACHE_TTL_S = 1800
+NEWS_LASTGOOD_MAX_AGE_S = 48 * 3600  # serve real (stale) events up to 48h before falling back to simulator
+
+def _fetch_news_xml():
+    """ForexFactory-style weekly XML mirrors. Different endpoint shape than the
+    JSON mirrors — survives when Cloudflare blocks the JSON host from cloud IPs.
+    Note: XML event times are UTC (JSON times carry a US/Eastern offset)."""
+    import xml.etree.ElementTree as ET
+    events = []
+    for url in (
+        "https://nfs.faireconomy.media/ff_calendar_thisweek.xml",
+        "https://nfs.faireconomy.media/ff_calendar_nextweek.xml",
+    ):
+        try:
+            r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
+            if r.status_code != 200 or not r.content:
+                continue
+            root = ET.fromstring(r.content)
+            for ev in root.findall("event"):
+                def _tx(tag):
+                    el = ev.find(tag)
+                    return (el.text or "").strip() if el is not None else ""
+                dstr, tstr = _tx("date"), _tx("time")
+                try:
+                    d = datetime.strptime(dstr, "%m-%d-%Y")
+                except Exception:
+                    continue
+                try:
+                    t = datetime.strptime(tstr.lower().replace(" ", ""), "%I:%M%p")
+                    d = d.replace(hour=t.hour, minute=t.minute)
+                except Exception:
+                    # All-day/tentative events: keep them visible until end of day
+                    d = d.replace(hour=23, minute=59)
+                events.append({
+                    "title": _tx("title"),
+                    "country": _tx("country"),
+                    "date": pytz.UTC.localize(d).isoformat(),
+                    "impact": _tx("impact") or "Low",
+                    "forecast": _tx("forecast"),
+                    "previous": _tx("previous"),
+                })
+        except Exception as e:
+            print(f"[NEWS] XML source {url} failed: {e}")
+    return events
+
+def _save_news_lastgood(items):
+    try:
+        with open(NEWS_LASTGOOD_FILE, "w") as f:
+            json.dump({"ts": int(time.time()), "items": items}, f)
+    except Exception:
+        pass
+
+def _load_news_lastgood():
+    try:
+        if os.path.exists(NEWS_LASTGOOD_FILE):
+            with open(NEWS_LASTGOOD_FILE, "r") as f:
+                cached = json.load(f)
+            if int(time.time()) - int(cached.get("ts", 0)) < NEWS_LASTGOOD_MAX_AGE_S:
+                return cached.get("items", [])
+    except Exception:
+        pass
+    return []
 
 def fetch_news():
-    sources = [
+    # Source 1: JSON mirrors (thisweek + nextweek)
+    all_events = []
+    for url in (
         "https://nfs.faireconomy.media/ff_calendar_thisweek.json",
         "https://nfs.faireconomy.media/ff_calendar_nextweek.json",
-    ]
-    all_events = []
-    for url in sources:
+    ):
         try:
             r = requests.get(url, headers={"User-Agent": "Mozilla/5.0"}, timeout=10)
             if r.status_code == 200 and r.text.strip():
@@ -725,8 +800,21 @@ def fetch_news():
                     all_events.extend(data)
         except Exception as e:
             print(f"[NEWS] Source {url} failed: {e}")
-            
-    # Fallback if network blocked on Render/Cloud IP
+
+    # Source 2: XML mirrors (different payload shape, often not blocked when JSON is)
+    if not all_events:
+        all_events = _fetch_news_xml()
+
+    # Source 3: last-good real cache — stale real events beat fake simulated ones
+    if all_events:
+        _save_news_lastgood(all_events)
+    else:
+        stale = _load_news_lastgood()
+        if stale:
+            print(f"[NEWS] ⚠️ Live fetch failed — serving last-good cache ({len(stale)} events).")
+            all_events = stale
+
+    # Source 4: simulated calendar, last resort only
     if not all_events:
         print("[NEWS] ⚠️ Using live simulated macroeconomic calendar fallback.")
         now_dt = datetime.now(IST)
@@ -736,7 +824,7 @@ def fetch_news():
             {"title": "GBP Retail Sales m/m", "country": "GBP", "date": (now_dt + timedelta(days=1, hours=2)).isoformat(), "impact": "High", "currency": "GBP"},
             {"title": "USD Non-Farm Employment Change", "country": "USD", "date": (now_dt + timedelta(days=2, hours=5)).isoformat(), "impact": "High", "currency": "USD"}
         ]
-        
+
     now = datetime.now(IST)
     upcoming = []
     for ev in all_events:
@@ -749,6 +837,17 @@ def fetch_news():
                 upcoming.append(ev)
         except Exception:
             continue
+    upcoming.sort(key=lambda ev: str(ev.get("date", "")))
+    if not upcoming:
+        # Everything already happened (weekend/holiday) — never show an empty board.
+        print("[NEWS] ⚠️ No upcoming events after filtering — serving simulated calendar.")
+        now_dt = datetime.now(IST)
+        upcoming = [
+            {"title": "USD FOMC Meeting Minutes", "country": "USD", "date": (now_dt + timedelta(hours=4)).isoformat(), "impact": "High", "currency": "USD"},
+            {"title": "EUR ECB President Lagarde Speech", "country": "EUR", "date": (now_dt + timedelta(hours=9)).isoformat(), "impact": "Medium", "currency": "EUR"},
+            {"title": "GBP Retail Sales m/m", "country": "GBP", "date": (now_dt + timedelta(days=1, hours=2)).isoformat(), "impact": "High", "currency": "GBP"},
+            {"title": "USD Non-Farm Employment Change", "country": "USD", "date": (now_dt + timedelta(days=2, hours=5)).isoformat(), "impact": "High", "currency": "USD"}
+        ]
     return upcoming
 
 def get_cached_news():
