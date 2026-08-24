@@ -1,325 +1,353 @@
 <!DOCTYPE html>
-<html lang="en" data-theme="normal" data-accent="emerald" data-bg="default">
+<html lang="en" data-theme="dark" data-accent="emerald">
 <head>
 <meta charset="UTF-8" />
 <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
 <title>Mavis Trading Bot — Dashboard</title>
+<link rel="icon" href="data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 32 32'%3E%3Crect width='32' height='32' rx='7' fill='%2310b981'/%3E%3Ctext x='16' y='22' font-family='monospace' font-size='17' font-weight='700' text-anchor='middle' fill='%230b0e11'%3EM%3C/text%3E%3C/svg%3E" />
+<link rel="preconnect" href="https://fonts.googleapis.com" />
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+<link href="https://fonts.googleapis.com/css2?family=IBM+Plex+Mono:wght@400;500;600&family=IBM+Plex+Sans:wght@400;500;600;700&display=swap" rel="stylesheet" />
 <style>
 /* =============================================================
-   Mavis Trading Dashboard — Full Feature Set
+   Mavis Trading Dashboard — Terminal design system
+   Dark-first, numbers in IBM Plex Mono, hairline borders,
+   semantic color. One design language across dark + light.
    ============================================================= */
 
-:root,
-html[data-theme="normal"] {
-  --bg:           #f6f8fb;
-  --bg-elev:      #ffffff;
-  --bg-soft:      #f1f4f9;
-  --ink:          #0f172a;
-  --ink-soft:     #475569;
-  --muted:        #94a3b8;
-  --line:         #e6ebf2;
-  --line-soft:    #eef2f7;
+:root {
+  --font-ui:   "IBM Plex Sans", -apple-system, BlinkMacSystemFont, "Segoe UI", sans-serif;
+  --font-num:  "IBM Plex Mono", ui-monospace, "SF Mono", Menlo, monospace;
 
-  --good:         #10b981;
-  --good-soft:    #d1fae5;
-  --bad:          #ef4444;
-  --bad-soft:     #fee2e2;
-  --warn:         #f59e0b;
-  --warn-soft:    #fef3c7;
-  --info:         #3b82f6;
-  --info-soft:    #dbeafe;
+  --radius:     10px;
+  --radius-sm:  7px;
 
-  --shadow-sm:    0 1px 2px rgba(15, 23, 42, .04), 0 1px 3px rgba(15, 23, 42, .05);
-  --shadow:       0 1px 3px rgba(15, 23, 42, .04), 0 4px 12px rgba(15, 23, 42, .06);
-  --shadow-lg:    0 8px 24px rgba(15, 23, 42, .1), 0 16px 48px rgba(15, 23, 42, .08);
-  --shadow-press: inset 0 1px 2px rgba(15, 23, 42, .06);
-
-  --radius:       14px;
-  --radius-sm:    10px;
-  --radius-lg:    20px;
-
-  --accent:       #10b981;
-  --accent-hover: #059669;
-  --accent-soft:  #d1fae5;
-  --accent-ink:   #ffffff;
-
-  --border-w:     1px;
-  --border:       1px solid var(--line);
-  --ease:         cubic-bezier(.34, 1.56, .64, 1);
-  --ease-smooth:  cubic-bezier(.22, 1, .36, 1);
-  --t-fast:       180ms;
-  --t:            320ms;
-}
-
-html[data-theme="light"] {
-  --bg:           #f4f0e6;
-  --bg-elev:      #faf6ea;
-  --bg-soft:      #ebe4d2;
-  --ink:          #0a0a0a;
-  --ink-soft:     #2a2a2a;
-  --muted:        #6b6b6b;
-  --line:         #0a0a0a;
-  --line-soft:    #d6cfb8;
-
-  --good-soft:    #bbf7d0;
-  --bad-soft:     #fecaca;
-  --warn-soft:    #fde68a;
-  --info-soft:    #bae6fd;
-
-  --shadow-sm:    3px 3px 0 #0a0a0a;
-  --shadow:       5px 5px 0 #0a0a0a;
-  --shadow-lg:    8px 8px 0 #0a0a0a;
-  --shadow-press: 2px 2px 0 #0a0a0a;
-
-  --radius:       12px;
-  --radius-sm:    8px;
-  --border-w:     3px;
-  --border:       3px solid #0a0a0a;
-  --accent-ink:   #0a0a0a;
+  --ease:       cubic-bezier(.22, 1, .36, 1);
+  --t-fast:     150ms;
+  --t:          260ms;
 }
 
 html[data-theme="dark"] {
-  --bg-elev:      #1a1a24;
-  --bg-soft:      #23232e;
-  --ink:          #f5f5f5;
-  --ink-soft:     #d4d4d4;
-  --muted:        #9a9a9a;
-  --line:         #f5f5f5;
-  --line-soft:    #3a3a3a;
+  color-scheme: dark;
+  --bg:           #0b0e11;
+  --bg-elev:      #131820;
+  --bg-soft:      #1a212b;
+  --bg-inset:     #0e1218;
+  --ink:          #e6eaf0;
+  --ink-soft:     #9aa6b2;
+  --muted:        #5e6b7a;
+  --line:         rgba(148, 163, 184, .14);
+  --line-soft:    rgba(148, 163, 184, .08);
 
   --good:         #34d399;
-  --good-soft:    #14532d;
   --bad:          #f87171;
-  --bad-soft:     #7f1d1d;
   --warn:         #fbbf24;
-  --warn-soft:    #78350f;
   --info:         #60a5fa;
-  --info-soft:    #1e3a8a;
 
-  --shadow-sm:    3px 3px 0 #f5f5f5;
-  --shadow:       5px 5px 0 #f5f5f5;
-  --shadow-lg:    8px 8px 0 #f5f5f5;
-  --shadow-press: 2px 2px 0 #f5f5f5;
-
-  --radius:       12px;
-  --radius-sm:    8px;
-  --border-w:     3px;
-  --border:       3px solid #f5f5f5;
-  --accent-ink:   #0a0a0a;
+  --shadow:       0 1px 2px rgba(0, 0, 0, .35);
+  --shadow-lg:    0 8px 28px rgba(0, 0, 0, .45);
+  --grid-line:    rgba(148, 163, 184, .09);
 }
 
-/* Background & Accent Swatches */
-html[data-theme="dark"][data-bg="navy"]    { --bg:#0b1220; --bg-elev:#131b2e; --bg-soft:#1a2440; }
-html[data-theme="dark"][data-bg="charcoal"]{ --bg:#18181b; --bg-elev:#27272a; --bg-soft:#3f3f46; }
-html[data-theme="dark"][data-bg="black"]   { --bg:#000000; --bg-elev:#0d0d0d; --bg-soft:#1a1a1a; }
-html[data-theme="dark"][data-bg="purple"]  { --bg:#1a0f2e; --bg-elev:#271541; --bg-soft:#3a2057; }
-html[data-theme="dark"][data-bg="forest"]  { --bg:#0a1f15; --bg-elev:#133024; --bg-soft:#1d4535; }
-html[data-theme="dark"][data-bg="ocean"]   { --bg:#0a1e2e; --bg-elev:#102a40; --bg-soft:#1a3f5e; }
-html[data-theme="dark"][data-bg="wine"]    { --bg:#240a14; --bg-elev:#36131f; --bg-soft:#4a1c2c; }
-html[data-theme="dark"][data-bg="slate"]   { --bg:#1e293b; --bg-elev:#334155; --bg-soft:#475569; }
+html[data-theme="light"] {
+  color-scheme: light;
+  --bg:           #e3e8ee;
+  --bg-elev:      #ffffff;
+  --bg-soft:      #eef2f6;
+  --bg-inset:     #edf1f6;
+  --ink:          #10151c;
+  --ink-soft:     #455262;
+  --muted:        #8491a1;
+  --line:         rgba(16, 24, 40, .18);
+  --line-soft:    rgba(16, 24, 40, .09);
 
-html[data-theme="light"][data-bg="paper"]  { --bg:#f4f0e6; --bg-elev:#faf6ea; --bg-soft:#ebe4d2; }
-html[data-theme="light"][data-bg="cream"]  { --bg:#faf6e8; --bg-elev:#fffceb; --bg-soft:#f0e8c8; }
-html[data-theme="light"][data-bg="white"]  { --bg:#ffffff; --bg-elev:#ffffff; --bg-soft:#f1f3f6; }
-html[data-theme="light"][data-bg="blush"]  { --bg:#fbe9e7; --bg-elev:#fff5f3; --bg-soft:#f0d4ce; }
-html[data-theme="light"][data-bg="mint"]   { --bg:#e8f5e9; --bg-elev:#f4faf5; --bg-soft:#cce5d0; }
-html[data-theme="light"][data-bg="sky"]    { --bg:#e3f2fd; --bg-elev:#f0f8ff; --bg-soft:#c8dff0; }
-html[data-theme="light"][data-bg="sand"]   { --bg:#f5e6c8; --bg-elev:#fbf2dc; --bg-soft:#e6d2a3; }
-html[data-theme="light"][data-bg="rose"]   { --bg:#fce4ec; --bg-elev:#fff0f5; --bg-soft:#f0c5d4; }
+  --good:         #0d9f6e;
+  --bad:          #dc2626;
+  --warn:         #b45309;
+  --info:         #2563eb;
 
-html[data-accent="emerald"] { --accent:#10b981; --accent-hover:#059669; --accent-soft:#d1fae5; }
-html[data-accent="blue"]    { --accent:#3b82f6; --accent-hover:#2563eb; --accent-soft:#dbeafe; }
-html[data-accent="indigo"]  { --accent:#6366f1; --accent-hover:#4f46e5; --accent-soft:#e0e7ff; }
-html[data-accent="violet"]  { --accent:#8b5cf6; --accent-hover:#7c3aed; --accent-soft:#ede9fe; }
-html[data-accent="rose"]    { --accent:#f43f5e; --accent-hover:#e11d48; --accent-soft:#ffe4e6; }
-html[data-accent="amber"]   { --accent:#f59e0b; --accent-hover:#d97706; --accent-soft:#fef3c7; }
-html[data-accent="cyan"]    { --accent:#06b6d4; --accent-hover:#0891b2; --accent-soft:#cffafe; }
-html[data-accent="pink"]    { --accent:#ec4899; --accent-hover:#db2777; --accent-soft:#fce7f3; }
+  --shadow:       0 1px 2px rgba(16, 24, 40, .06), 0 1px 3px rgba(16, 24, 40, .05);
+  --shadow-lg:    0 8px 24px rgba(16, 24, 40, .12);
+  --grid-line:    rgba(16, 24, 40, .08);
+}
+
+html[data-accent="emerald"] { --accent:#10b981; --accent-hover:#0d9f6e; }
+html[data-accent="blue"]    { --accent:#3b82f6; --accent-hover:#2563eb; }
+html[data-accent="indigo"]  { --accent:#6366f1; --accent-hover:#4f46e5; }
+html[data-accent="violet"]  { --accent:#8b5cf6; --accent-hover:#7c3aed; }
+html[data-accent="rose"]    { --accent:#f43f5e; --accent-hover:#e11d48; }
+html[data-accent="amber"]   { --accent:#f59e0b; --accent-hover:#d97706; }
+html[data-accent="cyan"]    { --accent:#06b6d4; --accent-hover:#0891b2; }
+html[data-accent="pink"]    { --accent:#ec4899; --accent-hover:#db2777; }
+
+/* soft/accent derived tints — alpha works in both themes */
+:root {
+  --accent-soft:  color-mix(in srgb, var(--accent) 15%, transparent);
+  --good-soft:    color-mix(in srgb, var(--good) 16%, transparent);
+  --bad-soft:     color-mix(in srgb, var(--bad) 16%, transparent);
+  --warn-soft:    color-mix(in srgb, var(--warn) 18%, transparent);
+  --info-soft:    color-mix(in srgb, var(--info) 16%, transparent);
+}
 
 * { box-sizing: border-box; }
 html, body { margin: 0; padding: 0; }
 
 body {
-  font-family: -apple-system, BlinkMacSystemFont, "Inter", "Segoe UI", Roboto, sans-serif;
+  font-family: var(--font-ui);
   background: var(--bg); color: var(--ink);
   -webkit-font-smoothing: antialiased; min-height: 100vh;
-  padding-bottom: 96px; font-size: 14px; line-height: 1.5;
-  transition: background var(--t) var(--ease-smooth), color var(--t) var(--ease-smooth);
+  padding-bottom: 40px; font-size: 14px; line-height: 1.5;
+  transition: background var(--t) var(--ease), color var(--t) var(--ease);
 }
 a { color: inherit; }
+.num { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
 
-.app { max-width: 1380px; margin: 0 auto; padding: 18px; }
+.app { max-width: 1360px; margin: 0 auto; padding: 16px 18px; }
 
-/* Topbar */
+/* ---------- Topbar (sticky) ---------- */
 .topbar {
-  display: flex; align-items: center; gap: 14px; padding: 12px 18px;
-  background: var(--bg-elev); border: var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); margin-bottom: 18px; flex-wrap: wrap;
-  transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease);
+  position: sticky; top: 10px; z-index: 40;
+  display: flex; align-items: center; gap: 14px; padding: 10px 16px;
+  background: color-mix(in srgb, var(--bg-elev) 88%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); margin-bottom: 16px; flex-wrap: wrap;
 }
-.topbar:hover { transform: translateY(-2px); box-shadow: var(--shadow-lg); }
 
-.brand { display: flex; align-items: center; gap: 10px; font-weight: 700; font-size: 17px; color: var(--ink); }
+.brand { display: flex; align-items: center; gap: 10px; }
 .brand-logo {
-  width: 32px; height: 32px; background: var(--accent); border: var(--border);
+  width: 30px; height: 30px; background: var(--accent);
   border-radius: var(--radius-sm); display: flex; align-items: center; justify-content: center;
-  color: var(--accent-ink); font-weight: 800; font-size: 15px; box-shadow: var(--shadow-sm); transition: transform 0.4s var(--ease);
+  color: #0b0e11; font-family: var(--font-num); font-weight: 600; font-size: 15px;
 }
-.brand-logo:hover { transform: rotate(-15deg) scale(1.12); }
-.brand-tag { color: var(--muted); font-weight: 500; font-size: 13px; }
+html[data-theme="light"] .brand-logo { color: #ffffff; }
+.brand-name { font-weight: 700; font-size: 15px; letter-spacing: .01em; }
+.brand-tag { color: var(--muted); font-weight: 500; font-size: 12px; }
 
-.topbar .meta { font-size: 11px; color: var(--muted); font-weight: 500; display: flex; align-items: center; gap: 6px; }
-.topbar .meta .dot {
-  width: 8px; height: 8px; background: var(--good); border-radius: 50%;
+.clock { font-size: 13px; color: var(--ink-soft); font-weight: 500; }
+.clock .tz { color: var(--muted); font-size: 11px; }
+
+.meta { font-size: 11px; color: var(--muted); font-weight: 500; display: flex; align-items: center; gap: 7px; }
+.meta .dot {
+  width: 7px; height: 7px; background: var(--good); border-radius: 50%;
   box-shadow: 0 0 0 3px var(--good-soft); animation: pulseDot 1.8s ease-in-out infinite;
 }
-.topbar .meta.offline .dot { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
-@keyframes pulseDot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.4); opacity: 0.7; } }
+.meta.offline .dot { background: var(--bad); box-shadow: 0 0 0 3px var(--bad-soft); }
+@keyframes pulseDot { 0%, 100% { transform: scale(1); opacity: 1; } 50% { transform: scale(1.35); opacity: .65; } }
 
-.controls { display: flex; gap: 10px; align-items: center; flex-wrap: wrap; }
-.seg { display: inline-flex; background: var(--bg-soft); border: var(--border); border-radius: var(--radius-sm); padding: 3px; gap: 2px; box-shadow: var(--shadow-sm); }
+.controls { display: flex; gap: 8px; align-items: center; flex-wrap: wrap; }
+.seg { display: inline-flex; background: var(--bg-inset); border: 1px solid var(--line); border-radius: var(--radius-sm); padding: 2px; gap: 2px; }
 .seg button {
-  background: transparent; color: var(--ink-soft); border: 0; padding: 6px 12px;
+  background: transparent; color: var(--ink-soft); border: 0; padding: 5px 11px;
   font-weight: 600; font-size: 11px; cursor: pointer; border-radius: calc(var(--radius-sm) - 2px);
-  transition: all var(--t-fast) var(--ease); font-family: inherit;
+  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); font-family: inherit;
 }
-.seg button:hover { color: var(--ink); transform: scale(1.03); }
-.seg button.active { background: var(--accent); color: var(--accent-ink); box-shadow: var(--shadow-sm); transform: scale(1.05); }
+.seg button:hover { color: var(--ink); }
+.seg button.active { background: var(--bg-elev); color: var(--ink); box-shadow: var(--shadow); }
 
 .picker { position: relative; }
 .picker-btn {
-  height: 32px; padding: 0 10px; background: var(--bg-soft); border: var(--border);
+  height: 30px; padding: 0 10px; background: var(--bg-inset); border: 1px solid var(--line);
   border-radius: var(--radius-sm); cursor: pointer; display: flex; align-items: center;
-  justify-content: center; gap: 6px; box-shadow: var(--shadow-sm); transition: all var(--t-fast) var(--ease);
-  font-family: inherit; font-size: 11px; font-weight: 600; color: var(--ink-soft);
+  gap: 7px; font-family: inherit; font-size: 11px; font-weight: 600; color: var(--ink-soft);
+  transition: border-color var(--t-fast) var(--ease), color var(--t-fast) var(--ease);
 }
-.picker-btn:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-.picker-btn:active { transform: translateY(1px); box-shadow: var(--shadow-press); }
+.picker-btn:hover { color: var(--ink); border-color: var(--accent); }
+.picker-btn .swatch-dot { width: 11px; height: 11px; border-radius: 50%; background: var(--accent); }
 
 .picker-pop {
   position: absolute; right: 0; top: calc(100% + 8px); z-index: 60;
-  background: var(--bg-elev); border: var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow-lg); padding: 14px; display: none; flex-direction: column;
-  gap: 12px; width: 280px; animation: popIn 0.25s var(--ease);
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow-lg); padding: 12px; display: none; flex-direction: column;
+  gap: 8px; width: 240px; animation: popIn .18s var(--ease);
 }
 .picker.open .picker-pop { display: flex; }
-@keyframes popIn { from { opacity: 0; transform: translateY(-10px) scale(0.92); } to { opacity: 1; transform: translateY(0) scale(1); } }
+@keyframes popIn { from { opacity: 0; transform: translateY(-6px); } to { opacity: 1; transform: translateY(0); } }
 
-.swatches { display: flex; gap: 6px; flex-wrap: wrap; }
-.swatch { width: 26px; height: 26px; border: var(--border); border-radius: 50%; cursor: pointer; padding: 0; transition: transform var(--t-fast) var(--ease); }
-.swatch:hover { transform: scale(1.25) rotate(-8deg); }
+.picker-label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.swatches { display: flex; gap: 7px; flex-wrap: wrap; }
+.swatch {
+  width: 24px; height: 24px; border: 1px solid var(--line); border-radius: 50%;
+  cursor: pointer; padding: 0; transition: transform var(--t-fast) var(--ease);
+}
+.swatch:hover { transform: scale(1.15); }
+.swatch.active { box-shadow: 0 0 0 2px var(--bg-elev), 0 0 0 4px var(--accent); }
 
-/* Tabs */
-.tabs { display: flex; gap: 4px; flex-wrap: wrap; margin-bottom: 18px; background: var(--bg-elev); border: var(--border); border-radius: var(--radius); padding: 5px; box-shadow: var(--shadow-sm); }
+/* ---------- Tabs ---------- */
+.tabs {
+  display: flex; gap: 2px; flex-wrap: wrap; margin-bottom: 16px;
+  background: var(--bg-elev); border: 1px solid var(--line);
+  border-radius: var(--radius); padding: 4px; box-shadow: var(--shadow);
+}
 .tab {
   appearance: none; background: transparent; color: var(--ink-soft); border: 0; border-radius: var(--radius-sm);
-  padding: 9px 14px; font-weight: 600; font-size: 13px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px;
-  transition: all var(--t-fast) var(--ease); font-family: inherit; position: relative;
+  padding: 8px 13px; font-weight: 600; font-size: 12.5px; cursor: pointer; display: inline-flex; align-items: center; gap: 7px;
+  transition: color var(--t-fast) var(--ease), background var(--t-fast) var(--ease); font-family: inherit;
 }
-.tab:hover { background: var(--bg-soft); color: var(--ink); transform: translateY(-2px); }
-.tab.active { background: var(--accent); color: var(--accent-ink); transform: translateY(-3px) scale(1.02); box-shadow: var(--shadow); }
-.tab .badge-count { background: var(--bg-soft); color: var(--ink-soft); border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 700; }
-.tab.active .badge-count { background: rgba(255,255,255,0.3); color: #fff; }
+.tab:hover { background: var(--bg-soft); color: var(--ink); }
+.tab.active { background: var(--accent-soft); color: var(--accent); }
+.tab:focus-visible, .btn:focus-visible, .seg button:focus-visible, .picker-btn:focus-visible, .swatch:focus-visible {
+  outline: 2px solid var(--accent); outline-offset: 2px;
+}
+.badge-count {
+  font-family: var(--font-num); background: var(--bg-inset); color: var(--muted);
+  border-radius: 999px; padding: 1px 7px; font-size: 10px; font-weight: 600;
+}
+.tab.active .badge-count { background: var(--accent-soft); color: var(--accent); }
 
 .bottomnav {
-  position: fixed; left: 8px; right: 8px; bottom: 10px; z-index: 50; display: none; gap: 2px;
-  background: var(--bg-elev); border: var(--border); border-radius: 16px; padding: 5px 3px; box-shadow: var(--shadow-lg); backdrop-filter: blur(12px);
+  position: fixed; left: 8px; right: 8px; bottom: 8px; z-index: 50; display: none; gap: 2px;
+  background: color-mix(in srgb, var(--bg-elev) 92%, transparent);
+  backdrop-filter: blur(14px); -webkit-backdrop-filter: blur(14px);
+  border: 1px solid var(--line); border-radius: 14px; padding: 4px; box-shadow: var(--shadow-lg);
 }
-.bottomnav .tab { flex: 1 1 0px; min-width: 0; flex-direction: column; font-size: 9.5px; padding: 6px 2px; border-radius: 10px; gap: 2px; }
-.bottomnav .tab.active { transform: translateY(-4px); }
+.bottomnav .tab { flex: 1 1 0; min-width: 0; justify-content: center; font-size: 10px; padding: 9px 2px; min-height: 44px; }
 
 @media (max-width: 768px) {
   .tabs.desktop { display: none; }
   .bottomnav { display: flex; }
-  body { padding-bottom: 96px; }
+  body { padding-bottom: 84px; }
+  .clock { display: none; }
 }
 
-/* Cards & Layout */
-.grid { display: grid; gap: 16px; grid-template-columns: repeat(12, 1fr); }
+/* ---------- Cards & layout ---------- */
+.grid { display: grid; gap: 14px; grid-template-columns: repeat(12, 1fr); }
 .card {
-  background: var(--bg-elev); border: var(--border); border-radius: var(--radius);
-  box-shadow: var(--shadow); padding: 18px; transition: transform var(--t) var(--ease), box-shadow var(--t) var(--ease);
-  animation: cardEntry 0.4s var(--ease) backwards;
+  background: var(--bg-elev); border: 1px solid var(--line); border-radius: var(--radius);
+  box-shadow: var(--shadow); padding: 16px 18px;
 }
-@keyframes cardEntry { from { opacity: 0; transform: translateY(16px); } to { opacity: 1; transform: translateY(0); } }
-.card:hover { transform: translateY(-3px); box-shadow: var(--shadow-lg); }
-.card h3 { margin: 0 0 14px 0; font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase; color: var(--ink-soft); display: flex; align-items: center; gap: 8px; }
+.card h3 {
+  margin: 0 0 14px 0; font-size: 11px; font-weight: 700; letter-spacing: .09em;
+  text-transform: uppercase; color: var(--muted); display: flex; align-items: center; gap: 8px;
+}
+.card h3::before { content: ""; width: 8px; height: 8px; background: var(--accent); border-radius: 2px; flex: none; }
+.card h3 .spacer { margin-left: auto; }
 
 .col-12 { grid-column: span 12; } .col-8 { grid-column: span 8; } .col-6 { grid-column: span 6; } .col-4 { grid-column: span 4; }
 @media (max-width: 980px) { .col-8, .col-6, .col-4 { grid-column: span 12; } }
 
-/* KPIs */
-.kpi { display: flex; flex-direction: column; gap: 4px; padding: 14px; border: var(--border); border-radius: var(--radius-sm); background: var(--bg-soft); transition: all var(--t-fast) var(--ease); position: relative; overflow: hidden; }
-.kpi::before { content: ""; position: absolute; left: 0; top: 0; bottom: 0; width: 3px; background: var(--accent); transform: scaleY(0); transform-origin: bottom; transition: transform var(--t-fast) var(--ease); }
-.kpi:hover::before { transform: scaleY(1); }
-.kpi:hover { transform: translateY(-2px); box-shadow: var(--shadow-sm); }
-.kpi .label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
-.kpi .value { font-size: 22px; font-weight: 700; color: var(--ink); font-variant-numeric: tabular-nums; }
-.kpi .sub { font-size: 11px; color: var(--ink-soft); font-weight: 500; }
-.kpi .sub.good { color: var(--good); } .kpi .sub.bad { color: var(--bad); }
+.empty { text-align: center; padding: 36px 16px; color: var(--muted); font-size: 13px; font-weight: 500; }
+
+/* ---------- KPIs ---------- */
 .kpi-row { display: grid; grid-template-columns: repeat(4, 1fr); gap: 10px; }
 @media (max-width: 720px) { .kpi-row { grid-template-columns: repeat(2, 1fr); } }
+.kpi {
+  display: flex; flex-direction: column; gap: 3px; padding: 12px 14px;
+  border: 1px solid var(--line); border-radius: var(--radius-sm); background: var(--bg-inset);
+}
+.kpi .label { font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; }
+.kpi .value { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-size: 20px; font-weight: 600; color: var(--ink); }
+.kpi .sub { font-size: 11px; color: var(--ink-soft); font-weight: 500; }
+.kpi .sub .good, .good { color: var(--good); } .kpi .sub .bad, .bad { color: var(--bad); }
 
-/* Tables & Tags */
+.badge {
+  font-family: var(--font-num); background: var(--accent-soft); color: var(--accent);
+  padding: 1px 7px; border-radius: 5px; font-size: 10px; font-weight: 600;
+}
+
+/* ---------- Tables & tags ---------- */
 .scroll-x { overflow-x: auto; }
 table.brut { width: 100%; border-collapse: separate; border-spacing: 0; font-size: 13px; }
-table.brut th, table.brut td { text-align: left; padding: 11px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
-table.brut thead th { background: var(--bg-soft); color: var(--ink-soft); border-bottom: var(--border); text-transform: uppercase; font-size: 10px; letter-spacing: .08em; font-weight: 700; }
-table.brut tbody tr:hover { background: var(--accent-soft); }
-
-.tag { display: inline-flex; align-items: center; gap: 4px; padding: 3px 8px; border-radius: 999px; font-size: 10px; font-weight: 700; text-transform: uppercase; }
-.tag.long { background: var(--good-soft); color: var(--good); }
-.tag.short { background: var(--bad-soft); color: var(--bad); }
-.tag.info { background: var(--info-soft); color: var(--info); }
-.tag.warn { background: var(--warn-soft); color: var(--warn); }
-.tag.high { background: var(--bad-soft); color: var(--bad); }
-.tag.med { background: var(--warn-soft); color: var(--warn); }
-
-/* Buttons & Inputs */
-.btn {
-  appearance: none; background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
-  padding: 8px 14px; font-weight: 600; font-size: 12px; cursor: pointer; display: inline-flex; align-items: center; gap: 6px; transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
+table.brut th, table.brut td { text-align: left; padding: 10px 12px; border-bottom: 1px solid var(--line-soft); white-space: nowrap; }
+table.brut thead th {
+  background: var(--bg-inset); color: var(--muted); border-bottom: 1px solid var(--line);
+  text-transform: uppercase; font-size: 10px; letter-spacing: .08em; font-weight: 700;
 }
-.btn:hover { transform: translateY(-2px); box-shadow: var(--shadow); }
-.btn:active { transform: translateY(1px); box-shadow: var(--shadow-press); }
-.btn.primary { background: var(--accent); color: var(--accent-ink); border-color: var(--accent); }
-.btn.danger { background: var(--bad); color: #fff; border-color: var(--bad); }
-.btn.sm { padding: 5px 10px; font-size: 11px; }
+table.brut tbody tr:hover { background: var(--bg-soft); }
+table.brut td.num, table.brut td b { font-family: var(--font-num); font-variant-numeric: tabular-nums; font-weight: 500; }
+
+.tag {
+  display: inline-flex; align-items: center; padding: 2px 8px; border-radius: 5px;
+  font-size: 10px; font-weight: 700; text-transform: uppercase; letter-spacing: .05em;
+}
+.tag.long, .tag.win, .tag.closed { background: var(--good-soft); color: var(--good); }
+.tag.short, .tag.loss { background: var(--bad-soft); color: var(--bad); }
+.tag.info, .tag.open { background: var(--info-soft); color: var(--info); }
+.tag.warn, .tag.medium, .tag.med { background: var(--warn-soft); color: var(--warn); }
+.tag.high { background: var(--bad-soft); color: var(--bad); }
+.tag.low, .tag.muted { background: var(--bg-soft); color: var(--muted); }
+
+/* ---------- Buttons & inputs ---------- */
+.btn {
+  appearance: none; background: var(--bg-elev); color: var(--ink); border: 1px solid var(--line);
+  border-radius: var(--radius-sm); padding: 7px 13px; font-weight: 600; font-size: 12px;
+  cursor: pointer; display: inline-flex; align-items: center; gap: 6px; font-family: inherit;
+  transition: border-color var(--t-fast) var(--ease), background var(--t-fast) var(--ease);
+}
+.btn:hover { border-color: var(--accent); }
+.btn:active { background: var(--bg-soft); }
+.btn.primary { background: var(--accent); color: #0b0e11; border-color: var(--accent); }
+html[data-theme="light"] .btn.primary { color: #ffffff; }
+.btn.primary:hover { background: var(--accent-hover); }
+.btn.primary:disabled { opacity: .55; cursor: wait; }
+.btn.danger { background: transparent; color: var(--bad); border-color: color-mix(in srgb, var(--bad) 40%, transparent); }
+.btn.danger:hover { background: var(--bad-soft); border-color: var(--bad); }
+.btn.sm { padding: 4px 10px; font-size: 11px; }
 
 .input, select.input {
-  background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius-sm);
-  padding: 9px 30px 9px 12px; font: inherit; font-size: 13px; width: 100%; appearance: none; -webkit-appearance: none; transition: all var(--t-fast) var(--ease); box-shadow: var(--shadow-sm);
+  background: var(--bg-inset); color: var(--ink); border: 1px solid var(--line); border-radius: var(--radius-sm);
+  padding: 8px 28px 8px 11px; font: inherit; font-size: 13px; width: 100%; appearance: none; -webkit-appearance: none;
+  background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='10' height='6' fill='none'%3E%3Cpath d='M1 1l4 4 4-4' stroke='%239aa6b2' stroke-width='1.5'/%3E%3C/svg%3E");
+  background-repeat: no-repeat; background-position: right 10px center;
+  transition: border-color var(--t-fast) var(--ease);
 }
-.input:focus, select.input:focus { outline: 0; border-color: var(--accent); box-shadow: var(--shadow), 0 0 0 3px var(--accent-soft); transform: translateY(-1px); }
+.input:focus, select.input:focus { outline: 0; border-color: var(--accent); box-shadow: 0 0 0 3px var(--accent-soft); }
+.field-label { display: block; font-size: 10px; font-weight: 700; color: var(--muted); text-transform: uppercase; letter-spacing: .08em; margin-bottom: 5px; }
 
-/* Toast & Accordions */
+/* ---------- Toast ---------- */
 .toast {
-  position: fixed; right: 16px; top: 16px; background: var(--bg-elev); color: var(--ink); border: var(--border); border-radius: var(--radius);
-  padding: 12px 18px; box-shadow: var(--shadow-lg); font-weight: 500; font-size: 13px; z-index: 100; display: none; max-width: 340px;
+  position: fixed; right: 16px; top: 16px; background: var(--bg-elev); color: var(--ink);
+  border: 1px solid var(--line); border-radius: var(--radius); padding: 11px 16px;
+  box-shadow: var(--shadow-lg); font-weight: 500; font-size: 13px; z-index: 100;
+  display: none; max-width: 340px;
 }
 .toast.show { display: flex; align-items: center; gap: 8px; }
-.toast.good { border-left: 5px solid var(--good); } .toast.bad { border-left: 5px solid var(--bad); }
+.toast.good { border-left: 3px solid var(--good); }
+.toast.bad { border-left: 3px solid var(--bad); }
 
-.collapse { border: var(--border); border-radius: var(--radius-sm); margin-bottom: 10px; background: var(--bg-elev); overflow: hidden; box-shadow: var(--shadow-sm); }
-.collapse-head { display: flex; align-items: center; gap: 10px; padding: 12px 16px; cursor: pointer; background: var(--bg-soft); transition: background var(--t-fast) var(--ease); }
-.collapse-head:hover { background: var(--accent-soft); }
-.collapse-head .chev { transition: transform var(--t) var(--ease); }
-.collapse.open .collapse-head .chev { transform: rotate(180deg); color: var(--accent); }
-.collapse-body { display: none; padding: 4px 0; }
+/* ---------- Accordions / lists ---------- */
+.collapse { border: 1px solid var(--line); border-radius: var(--radius-sm); margin-bottom: 8px; background: var(--bg-elev); overflow: hidden; }
+.collapse-head { display: flex; align-items: center; gap: 10px; padding: 10px 14px; cursor: pointer; background: var(--bg-inset); transition: background var(--t-fast) var(--ease); user-select: none; }
+.collapse-head:hover { background: var(--bg-soft); }
+.collapse-head .chev { transition: transform var(--t) var(--ease); color: var(--muted); font-size: 10px; }
+.collapse.open .collapse-head .chev { transform: rotate(180deg); }
+.collapse-body { display: none; padding: 2px 0; }
 .collapse.open .collapse-body { display: block; }
-.day-pill { background: var(--accent); color: var(--accent-ink); border-radius: 6px; padding: 3px 10px; font-weight: 700; font-size: 11px; text-transform: uppercase; }
-
-.news-item {
-  display: grid; grid-template-columns: 80px 1fr auto; gap: 14px; align-items: center;
-  padding: 12px 16px; border-bottom: 1px solid var(--line-soft); transition: background var(--t-fast) var(--ease);
+.day-pill {
+  background: var(--accent-soft); color: var(--accent); border-radius: 5px;
+  padding: 2px 9px; font-weight: 700; font-size: 10.5px; text-transform: uppercase; letter-spacing: .05em;
 }
-.news-item:hover { background: var(--bg-soft); }
 
-.chart-wrap { position: relative; width: 100%; height: 280px; }
-canvas { max-width: 100%; height: auto; display: block; }
-.pnl-pos { color: var(--good); font-weight: 700; } .pnl-neg { color: var(--bad); font-weight: 700; }
-.panel { animation: panelFade 0.3s var(--ease-smooth); }
-@keyframes panelFade { from { opacity: 0; transform: translateY(4px); } to { opacity: 1; transform: translateY(0); } }
+.row-item {
+  display: grid; gap: 12px; align-items: center;
+  padding: 10px 14px; border-bottom: 1px solid var(--line-soft);
+  transition: background var(--t-fast) var(--ease);
+}
+.row-item:last-child { border-bottom: 0; }
+.row-item:hover { background: var(--bg-soft); }
+.row-item .muted { color: var(--muted); }
+.muted { color: var(--muted); }
+
+/* ---------- Charts ---------- */
+.chart-wrap { position: relative; width: 100%; height: 260px; }
+canvas { max-width: 100%; display: block; }
+.chart-empty {
+  position: absolute; inset: 0; display: flex; align-items: center; justify-content: center;
+  color: var(--muted); font-size: 13px; font-weight: 500; pointer-events: none;
+}
+.chart-empty[hidden] { display: none; }
+
+.pnl-pos { color: var(--good); font-weight: 600; }
+.pnl-neg { color: var(--bad); font-weight: 600; }
+.pnl-pos, .pnl-neg { font-family: var(--font-num); font-variant-numeric: tabular-nums; }
+
+.panel { animation: panelFade .25s var(--ease); }
+@keyframes panelFade { from { opacity: 0; } to { opacity: 1; } }
+
+.progress { height: 5px; background: var(--bg-inset); border-radius: 3px; overflow: hidden; min-width: 64px; }
+.progress > div { height: 100%; background: var(--accent); }
+
+h3, .brand-name, .collapse-head { text-wrap: pretty; }
 </style>
 </head>
 <body>
@@ -332,39 +360,33 @@ canvas { max-width: 100%; height: auto; display: block; }
       <div class="brand-logo">M</div>
       <div>
         <span class="brand-name">Mavis</span>
-        <span class="brand-tag"> · Trading Bot</span>
+        <span class="brand-tag">Trading Bot</span>
       </div>
     </div>
+    <div class="clock num" id="clock">--:--:-- <span class="tz">IST</span></div>
     <div style="flex:1"></div>
     <div class="meta" id="lastUpdate"><span class="dot"></span><span id="lastUpdateText">connecting…</span></div>
     <div class="controls">
-      <div class="seg" role="tablist">
-        <button data-theme-val="normal">Normal</button>
-        <button data-theme-val="light">Light</button>
+      <div class="seg" role="group" aria-label="Theme">
         <button data-theme-val="dark">Dark</button>
+        <button data-theme-val="light">Light</button>
       </div>
       <div class="picker" id="picker">
         <button class="picker-btn" id="pickerBtn">
-          <span class="swatch-dot" id="dotAccent" style="width:12px;height:12px;border-radius:50%;background:var(--accent)"></span>
-          <span class="label">Style</span>
+          <span class="swatch-dot"></span>
+          <span>Accent</span>
         </button>
         <div class="picker-pop" id="pickerPop">
-          <div class="picker-section">
-            <div class="picker-label" style="font-size:10px;font-weight:700;color:var(--muted);margin-bottom:6px">Accent</div>
-            <div class="swatches" id="accentSwatches">
-              <button class="swatch" data-accent-val="emerald" style="background:#10b981"></button>
-              <button class="swatch" data-accent-val="blue"    style="background:#3b82f6"></button>
-              <button class="swatch" data-accent-val="indigo"  style="background:#6366f1"></button>
-              <button class="swatch" data-accent-val="violet"  style="background:#8b5cf6"></button>
-              <button class="swatch" data-accent-val="rose"    style="background:#f43f5e"></button>
-              <button class="swatch" data-accent-val="amber"   style="background:#f59e0b"></button>
-              <button class="swatch" data-accent-val="cyan"    style="background:#06b6d4"></button>
-              <button class="swatch" data-accent-val="pink"    style="background:#ec4899"></button>
-            </div>
-          </div>
-          <div class="picker-section" id="bgSection">
-            <div class="picker-label" style="font-size:10px;font-weight:700;color:var(--muted);margin:8px 0 6px">Background</div>
-            <div class="swatches" id="bgSwatches"></div>
+          <div class="picker-label">Accent</div>
+          <div class="swatches" id="accentSwatches">
+            <button class="swatch" data-accent-val="emerald" style="background:#10b981" aria-label="emerald"></button>
+            <button class="swatch" data-accent-val="blue"    style="background:#3b82f6" aria-label="blue"></button>
+            <button class="swatch" data-accent-val="indigo"  style="background:#6366f1" aria-label="indigo"></button>
+            <button class="swatch" data-accent-val="violet"  style="background:#8b5cf6" aria-label="violet"></button>
+            <button class="swatch" data-accent-val="rose"    style="background:#f43f5e" aria-label="rose"></button>
+            <button class="swatch" data-accent-val="amber"   style="background:#f59e0b" aria-label="amber"></button>
+            <button class="swatch" data-accent-val="cyan"    style="background:#06b6d4" aria-label="cyan"></button>
+            <button class="swatch" data-accent-val="pink"    style="background:#ec4899" aria-label="pink"></button>
           </div>
         </div>
       </div>
@@ -373,36 +395,39 @@ canvas { max-width: 100%; height: auto; display: block; }
 
   <!-- DESKTOP TABS -->
   <div class="tabs desktop" id="tabsDesktop">
-    <button class="tab active" data-tab="overview">🏠 Overview</button>
-    <button class="tab" data-tab="trades">🔥 Trades <span class="badge-count" id="bc-trades" hidden>0</span></button>
-    <button class="tab" data-tab="signals">📡 Signals <span class="badge-count" id="bc-signals" hidden>0</span></button>
-    <button class="tab" data-tab="history">📜 History <span class="badge-count" id="bc-history" hidden>0</span></button>
-    <button class="tab" data-tab="nifty">📈 Nifty</button>
-    <button class="tab" data-tab="news">📰 News <span class="badge-count" id="bc-news" hidden>0</span></button>
-    <button class="tab" data-tab="backtest">🧪 Backtest</button>
+    <button class="tab active" data-tab="overview">Overview</button>
+    <button class="tab" data-tab="trades">Trades <span class="badge-count" id="bc-trades" hidden>0</span></button>
+    <button class="tab" data-tab="signals">Signals <span class="badge-count" id="bc-signals" hidden>0</span></button>
+    <button class="tab" data-tab="history">History <span class="badge-count" id="bc-history" hidden>0</span></button>
+    <button class="tab" data-tab="nifty">Nifty</button>
+    <button class="tab" data-tab="news">News <span class="badge-count" id="bc-news" hidden>0</span></button>
+    <button class="tab" data-tab="backtest">Backtest</button>
   </div>
 
   <!-- PANELS -->
   <div id="panel-overview" class="panel">
     <div class="grid">
       <div class="card col-12">
-        <h3>💼 Accounts <span class="badge" id="accCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span></h3>
+        <h3>Accounts <span class="badge" id="accCount">0</span></h3>
         <div class="kpi-row" id="kpiAccounts"></div>
       </div>
       <div class="card col-8">
-        <h3>📈 Equity Curve</h3>
-        <div class="chart-wrap"><canvas id="equityChart"></canvas></div>
+        <h3>Equity Curve</h3>
+        <div class="chart-wrap">
+          <canvas id="equityChart"></canvas>
+          <div class="chart-empty" id="equityEmpty" hidden>No closed trades yet</div>
+        </div>
       </div>
       <div class="card col-4">
-        <h3>🎯 Strategy Performance</h3>
+        <h3>Strategy Performance</h3>
         <div id="strategyPerf"></div>
       </div>
       <div class="card col-6">
-        <h3>🔥 Open Trade Risk</h3>
+        <h3>Open Trade Risk</h3>
         <div id="openRisk"></div>
       </div>
       <div class="card col-6">
-        <h3>⚠️ Exposure &amp; Drawdown</h3>
+        <h3>Exposure &amp; Drawdown</h3>
         <div id="exposure"></div>
       </div>
     </div>
@@ -410,8 +435,8 @@ canvas { max-width: 100%; height: auto; display: block; }
 
   <div id="panel-trades" class="panel" hidden>
     <div class="card">
-      <h3>🔥 Live Trades <span class="badge" id="tradeCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span>
-        <span style="margin-left:auto"><button class="btn sm" id="refreshTrades">↻ Refresh</button></span>
+      <h3>Live Trades <span class="badge" id="tradeCount">0</span>
+        <span class="spacer"><button class="btn sm" id="refreshTrades">Refresh</button></span>
       </h3>
       <div class="scroll-x">
         <table class="brut" id="tradesTable">
@@ -419,54 +444,60 @@ canvas { max-width: 100%; height: auto; display: block; }
           <tbody></tbody>
         </table>
       </div>
-      <div id="tradesEmpty" class="empty" style="text-align:center;padding:40px;color:var(--muted)" hidden>
-        <span style="font-size:36px">💤</span><div style="font-weight:600;margin-top:6px">No open trades right now</div>
-      </div>
+      <div id="tradesEmpty" class="empty" hidden>No open trades right now</div>
     </div>
   </div>
 
   <div id="panel-signals" class="panel" hidden>
     <div class="card">
-      <h3>📡 Recent Signals (24h)</h3>
+      <h3>Recent Signals (24h) <span class="badge" id="signalCount">0</span></h3>
       <div id="signalsList"></div>
     </div>
   </div>
 
   <div id="panel-history" class="panel" hidden>
     <div class="card">
-      <h3>📜 Trade History <span class="badge" id="historyCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span></h3>
+      <h3>Trade History <span class="badge" id="historyCount">0</span></h3>
       <div id="historyList"></div>
     </div>
   </div>
 
   <div id="panel-nifty" class="panel" hidden>
     <div class="card">
-      <h3>📈 Nifty 50 + Bank Nifty Live Board</h3>
-      <div id="niftyList" class="kpi-row" style="grid-template-columns:repeat(auto-fill,minmax(150px,1fr))"></div>
+      <h3>Nifty 50 + Bank Nifty Live Board
+        <span class="spacer"><button class="btn sm" id="refreshNifty">Refresh</button></span>
+      </h3>
+      <div id="niftyList" class="kpi-row" style="grid-template-columns:repeat(auto-fill,minmax(160px,1fr))"></div>
+      <div class="muted" id="niftyTs" style="font-size:11px;margin-top:10px"></div>
     </div>
   </div>
 
   <div id="panel-news" class="panel" hidden>
     <div class="card">
-      <h3>📰 Upcoming Economic Events <span style="margin-left:auto"><button class="btn sm primary" id="refreshNews">↻ Refresh</button></span></h3>
+      <h3>Upcoming Economic Events <span class="badge" id="newsCount">0</span>
+        <span class="spacer"><button class="btn sm primary" id="refreshNews">Refresh</button></span>
+      </h3>
       <div id="newsList"></div>
     </div>
   </div>
 
   <div id="panel-backtest" class="panel" hidden>
     <div class="card">
-      <h3>🧪 Strategy Backtester Suite</h3>
-      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
-        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">CLASS</label><select class="input" id="btClass"><option value="crypto">Crypto</option><option value="forex">Forex</option><option value="metal">Metals</option><option value="index">Index</option></select></div>
-        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">SYMBOL</label><select class="input" id="btSymbol"></select></div>
-        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">STRATEGY</label><select class="input" id="btStrategy"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep</option></select></div>
-        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">DAYS</label><select class="input" id="btDays"><option value="30">30</option><option value="60" selected>60</option><option value="90">90</option><option value="365">365</option></select></div>
-        <div style="align-self:end"><button class="btn primary" id="runBacktest">▶ Run Backtest</button></div>
+      <h3>Strategy Backtester</h3>
+      <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:16px">
+        <div style="flex:1;min-width:120px"><label class="field-label" for="btClass">Class</label><select class="input" id="btClass"><option value="crypto">Crypto</option><option value="forex">Forex</option><option value="metal">Metals</option><option value="index">Index</option></select></div>
+        <div style="flex:1;min-width:120px"><label class="field-label" for="btSymbol">Symbol</label><select class="input" id="btSymbol"></select></div>
+        <div style="flex:1;min-width:130px"><label class="field-label" for="btStrategy">Strategy</label><select class="input" id="btStrategy"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep</option></select></div>
+        <div style="flex:1;min-width:90px"><label class="field-label" for="btDays">Days</label><select class="input" id="btDays"><option value="30">30</option><option value="60" selected>60</option><option value="90">90</option><option value="365">365</option></select></div>
+        <div style="align-self:end"><button class="btn primary" id="runBacktest">Run Backtest</button></div>
       </div>
       <div id="btMetrics" class="kpi-row"></div>
-      <div style="height:1px;background:var(--line);margin:12px 0"></div>
-      <div class="chart-wrap"><canvas id="btChart"></canvas></div>
-      <div style="height:1px;background:var(--line);margin:12px 0"></div>
+      <div style="height:1px;background:var(--line);margin:14px 0"></div>
+      <div class="chart-wrap">
+        <canvas id="btChart"></canvas>
+        <div class="chart-empty" id="btEmpty">Run a backtest to see the equity curve</div>
+      </div>
+      <div style="height:1px;background:var(--line);margin:14px 0"></div>
       <div class="scroll-x">
         <table class="brut" id="btTable">
           <thead><tr><th>#</th><th>Type</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Result</th><th>Reason</th></tr></thead>
@@ -480,12 +511,12 @@ canvas { max-width: 100%; height: auto; display: block; }
 
 <!-- MOBILE BOTTOM NAVIGATION -->
 <nav class="bottomnav" id="bottomnav">
-  <button class="tab active" data-tab="overview"><span style="font-size:16px">🏠</span><span>Home</span></button>
-  <button class="tab" data-tab="trades"><span style="font-size:16px">🔥</span><span>Trades</span><span class="badge-count" id="bc-trades-m" hidden>0</span></button>
-  <button class="tab" data-tab="signals"><span style="font-size:16px">📡</span><span>Signals</span><span class="badge-count" id="bc-signals-m" hidden>0</span></button>
-  <button class="tab" data-tab="history"><span style="font-size:16px">📜</span><span>Hist</span><span class="badge-count" id="bc-history-m" hidden>0</span></button>
-  <button class="tab" data-tab="news"><span style="font-size:16px">📰</span><span>News</span><span class="badge-count" id="bc-news-m" hidden>0</span></button>
-  <button class="tab" data-tab="backtest"><span style="font-size:16px">🧪</span><span>Test</span></button>
+  <button class="tab active" data-tab="overview">Home</button>
+  <button class="tab" data-tab="trades">Trades <span class="badge-count" id="bc-trades-m" hidden>0</span></button>
+  <button class="tab" data-tab="signals">Signals <span class="badge-count" id="bc-signals-m" hidden>0</span></button>
+  <button class="tab" data-tab="history">Hist <span class="badge-count" id="bc-history-m" hidden>0</span></button>
+  <button class="tab" data-tab="news">News <span class="badge-count" id="bc-news-m" hidden>0</span></button>
+  <button class="tab" data-tab="backtest">Test</button>
 </nav>
 
 <div id="toast" class="toast"></div>
@@ -494,92 +525,90 @@ canvas { max-width: 100%; height: auto; display: block; }
 const $ = (s, r=document) => r.querySelector(s);
 const $$ = (s, r=document) => Array.from(r.querySelectorAll(s));
 
-const THEME_KEY = "mavis.theme", ACCENT_KEY = "mavis.accent", BG_KEY = "mavis.bg", TAB_KEY = "mavis.tab";
+const THEME_KEY = "mavis.theme", ACCENT_KEY = "mavis.accent", TAB_KEY = "mavis.tab";
+const TABS = ["overview", "trades", "signals", "history", "nifty", "news", "backtest"];
 
-const BG_SWATCHES = {
-  dark: [
-    { id:"navy", label:"Navy", color:"#0b1220" }, { id:"charcoal", label:"Charcoal", color:"#18181b" },
-    { id:"black", label:"Black", color:"#000000" }, { id:"purple", label:"Purple", color:"#1a0f2e" },
-    { id:"forest", label:"Forest", color:"#0a1f15" }, { id:"ocean", label:"Ocean", color:"#0a1e2e" }
-  ],
-  light: [
-    { id:"paper", label:"Paper", color:"#f4f0e6" }, { id:"cream", label:"Cream", color:"#faf6e8" },
-    { id:"white", label:"White", color:"#ffffff" }, { id:"blush", label:"Blush", color:"#fbe9e7" },
-    { id:"mint", label:"Mint", color:"#e8f5e9" }, { id:"sky", label:"Sky", color:"#e3f2fd" }
-  ]
-};
-
+/* ---------- Theme / accent ---------- */
 function applyTheme(t) {
+  if (t === "normal") t = "light"; // migrate old stored value
   document.documentElement.setAttribute("data-theme", t);
-  $$(".seg button").forEach(b => b.classList.toggle("active", b.dataset.themeVal === t));
-  refreshBgSwatches();
-  const valid = BG_SWATCHES[t]?.map(s => s.id) || [];
-  const cur = localStorage.getItem(BG_KEY) || "default";
-  if (t === "normal") document.documentElement.removeAttribute("data-bg");
-  else {
-    const fb = valid.includes(cur) ? cur : (BG_SWATCHES[t][0]?.id || "default");
-    document.documentElement.setAttribute("data-bg", fb);
-    try { localStorage.setItem(BG_KEY, fb); } catch {}
-  }
+  $$(".seg button[data-theme-val]").forEach(b => b.classList.toggle("active", b.dataset.themeVal === t));
+  try { localStorage.setItem(THEME_KEY, t); } catch {}
 }
 function applyAccent(a) {
   document.documentElement.setAttribute("data-accent", a);
   $$("#accentSwatches .swatch").forEach(s => s.classList.toggle("active", s.dataset.accentVal === a));
-}
-function applyBg(b) {
-  document.documentElement.setAttribute("data-bg", b);
-  $$("#bgSwatches .swatch").forEach(s => s.classList.toggle("active", s.dataset.bgVal === b));
-}
-function refreshBgSwatches() {
-  const theme = document.documentElement.getAttribute("data-theme") || "normal";
-  const sec = $("#bgSection");
-  if (theme === "normal") { sec.style.display = "none"; return; }
-  sec.style.display = "";
-  const wrap = $("#bgSwatches"), list = BG_SWATCHES[theme] || [];
-  wrap.innerHTML = list.map(s => `<button class="swatch" data-bg-val="${s.id}" style="background:${s.color}"></button>`).join("");
-  const cur = document.documentElement.getAttribute("data-bg") || list[0]?.id;
-  $$("#bgSwatches .swatch").forEach(s => s.classList.toggle("active", s.dataset.bgVal === cur));
-  $$("#bgSwatches .swatch").forEach(s => s.addEventListener("click", () => { applyBg(s.dataset.bgVal); localStorage.setItem(BG_KEY, s.dataset.bgVal); }));
+  try { localStorage.setItem(ACCENT_KEY, a); } catch {}
 }
 
-applyTheme(localStorage.getItem(THEME_KEY) || "normal");
+applyTheme(localStorage.getItem(THEME_KEY) || "dark");
 applyAccent(localStorage.getItem(ACCENT_KEY) || "emerald");
-refreshBgSwatches();
 
-$$(".seg button").forEach(b => b.addEventListener("click", () => { applyTheme(b.dataset.themeVal); localStorage.setItem(THEME_KEY, b.dataset.themeVal); }));
-$$("#accentSwatches .swatch").forEach(s => s.addEventListener("click", () => { applyAccent(s.dataset.accentVal); localStorage.setItem(ACCENT_KEY, s.dataset.accentVal); }));
+$$(".seg button[data-theme-val]").forEach(b => b.addEventListener("click", () => applyTheme(b.dataset.themeVal)));
+$$("#accentSwatches .swatch").forEach(s => s.addEventListener("click", () => applyAccent(s.dataset.accentVal)));
 
 $("#pickerBtn")?.addEventListener("click", e => { e.stopPropagation(); $("#picker").classList.toggle("open"); });
 document.addEventListener("click", e => { if (!$("#picker").contains(e.target)) $("#picker").classList.remove("open"); });
 
-function switchTab(name) {
+/* ---------- IST clock ---------- */
+const istFmt = new Intl.DateTimeFormat("en-IN", { timeZone: "Asia/Kolkata", hour12: false, hour: "2-digit", minute: "2-digit", second: "2-digit" });
+function tickClock() { const el = $("#clock"); if (el) el.innerHTML = istFmt.format(new Date()) + ' <span class="tz">IST</span>'; }
+tickClock(); setInterval(tickClock, 1000);
+
+/* ---------- Tabs (hash deep-linkable) ---------- */
+let currentTab = "overview";
+function switchTab(name, fromHash) {
+  if (!TABS.includes(name)) name = "overview";
+  currentTab = name;
   $$(".panel").forEach(p => p.hidden = true);
   const panel = $("#panel-" + name);
   if (panel) panel.hidden = false;
   $$(".tab[data-tab]").forEach(t => t.classList.toggle("active", t.dataset.tab === name));
   try { localStorage.setItem(TAB_KEY, name); } catch {}
+  if (!fromHash) history.replaceState(null, "", "#" + name);
   if (name === "nifty") loadNifty();
-  window.scrollTo({ top: 0, behavior: "smooth" });
 }
 $$(".tab[data-tab]").forEach(t => t.addEventListener("click", () => switchTab(t.dataset.tab)));
-switchTab(localStorage.getItem(TAB_KEY) || "overview");
+window.addEventListener("hashchange", () => switchTab(location.hash.slice(1), true));
+switchTab(location.hash.slice(1) || localStorage.getItem(TAB_KEY) || "overview", true);
 
+/* ---------- Toast ---------- */
 let toastTimer;
 function toast(msg, kind="") {
   const el = $("#toast");
   el.className = "toast show " + kind;
-  el.innerHTML = `<span>${msg}</span>`;
+  el.textContent = msg;
   clearTimeout(toastTimer);
   toastTimer = setTimeout(() => el.classList.remove("show"), 2800);
 }
 
+/* ---------- Formatting ---------- */
 const fmtINR = n => "₹" + Math.round(Number(n || 0)).toLocaleString("en-IN");
+const fmtSignedINR = n => (Number(n || 0) >= 0 ? "+" : "−") + fmtINR(Math.abs(Number(n || 0)));
 const fmtNum = n => Number(n || 0).toLocaleString("en-IN", { maximumFractionDigits: 4 });
+const fmtAxis = v => {
+  const a = Math.abs(v);
+  if (a >= 1e7) return (v / 1e7).toFixed(2) + "Cr";
+  if (a >= 1e5) return (v / 1e5).toFixed(2) + "L";
+  if (a >= 1e3) return (v / 1e3).toFixed(1) + "k";
+  return String(Math.round(v));
+};
+const fmtClock = ts => {
+  const d = new Date(ts);
+  return isNaN(d) ? "" : d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+};
+const fmtEventTime = iso => {
+  const d = new Date(iso);
+  if (isNaN(d)) return { day: "", time: "" };
+  const day = d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
+  const time = d.toLocaleTimeString("en-IN", { hour: "2-digit", minute: "2-digit", hour12: false });
+  return { day, time };
+};
 const fmtDateHeader = iso => {
   const today = new Date(), yest = new Date(Date.now() - 864e5), d = new Date(iso);
   if (today.toDateString() === d.toDateString()) return "Today";
   if (yest.toDateString() === d.toDateString()) return "Yesterday";
-  return d.toLocaleDateString("en-IN", { weekday:"short", day:"2-digit", month:"short" });
+  return d.toLocaleDateString("en-IN", { weekday: "short", day: "2-digit", month: "short" });
 };
 
 async function api(path, opts={}) {
@@ -590,15 +619,35 @@ async function api(path, opts={}) {
   } catch (e) { return null; }
 }
 
+/* ---------- Badge counts (wired for real now) ---------- */
+function setBadge(id, n) {
+  const el = document.getElementById(id);
+  if (!el) return;
+  el.textContent = n;
+  el.hidden = !n;
+}
+function updateBadges(snap) {
+  const trades = (snap?.live_trades || []).length;
+  const signals = (snap?.today_signals || []).length;
+  const hist = snap?.history_total || (snap?.history || []).length;
+  const news = (snap?.news_raw || []).length;
+  setBadge("bc-trades", trades); setBadge("bc-trades-m", trades);
+  setBadge("bc-signals", signals); setBadge("bc-signals-m", signals);
+  setBadge("bc-history", hist); setBadge("bc-history-m", hist);
+  setBadge("bc-news", news); setBadge("bc-news-m", news);
+}
+
+/* ---------- Renderers ---------- */
 function renderAccounts(snap) {
   const acc = snap?.accounts || {}, keys = Object.keys(acc);
   $("#accCount").textContent = keys.length;
   const wrap = $("#kpiAccounts");
   if (!keys.length) { wrap.innerHTML = '<div class="empty">No accounts yet.</div>'; return; }
   wrap.innerHTML = keys.map(k => {
-    const a = acc[k], pnl = Number(a.today_pnl || 0);
+    const a = acc[k], pnl = Number(a.today_pnl || 0), wk = Number(a.week_pnl || 0);
     const name = a.name || k.replace(/_/g, " ").replace(/\b\w/g, c => c.toUpperCase());
-    return `<div class="kpi"><div class="label">${name}</div><div class="value">${fmtINR(a.balance)}</div><div class="sub"><span class="${pnl>=0?'good':'bad'}">today ${pnl>=0?"+":""}${fmtINR(pnl)}</span></div></div>`;
+    const active = a.is_active ? ' <span class="tag long">live</span>' : "";
+    return `<div class="kpi"><div class="label">${name}${active}</div><div class="value">${fmtINR(a.balance)}</div><div class="sub">today <span class="${pnl>=0?'good':'bad'} num">${fmtSignedINR(pnl)}</span> · week <span class="${wk>=0?'good':'bad'} num">${fmtSignedINR(wk)}</span></div></div>`;
   }).join("");
 }
 
@@ -606,68 +655,166 @@ function renderStrategyPerf(snap) {
   const stats = snap?.strategy_stats || {}, names = Object.keys(stats), wrap = $("#strategyPerf");
   if (!names.length) { wrap.innerHTML = '<div class="empty">No strategy data yet.</div>'; return; }
   wrap.innerHTML = names.map(n => {
-    const s = stats[n], total = (s.wins||0)+(s.losses||0), wr = s.win_rate != null ? s.win_rate : (total ? (s.wins/total*100) : 0);
-    return `<div class="kpi" style="margin-bottom:8px"><div class="label">${n}</div><div class="value" style="font-size:18px">${Number(wr).toFixed(1)}% <span class="muted" style="font-size:11px">WR</span></div><div class="sub">${s.wins||0}W / ${s.losses||0}L</div></div>`;
+    const s = stats[n], total = (s.wins||0)+(s.losses||0);
+    const wr = s.win_rate != null ? s.win_rate : (total ? (s.wins/total*100) : 0);
+    const pnl = Number(s.pnl || 0);
+    return `<div class="kpi" style="margin-bottom:8px">
+      <div class="label">${n}</div>
+      <div class="value" style="font-size:17px">${Number(wr).toFixed(1)}% <span class="muted" style="font-size:11px">win rate</span></div>
+      <div class="progress" style="margin:4px 0"><div style="width:${Math.max(0, Math.min(100, wr))}%"></div></div>
+      <div class="sub"><span class="num">${s.wins||0}W / ${s.losses||0}L</span> · <span class="${pnl>=0?'good':'bad'} num">${fmtSignedINR(pnl)}</span></div>
+    </div>`;
   }).join("");
 }
 
 function renderOpenRisk(snap) {
   const list = snap?.risk?.open_trades_risk || [], wrap = $("#openRisk");
   if (!list.length) { wrap.innerHTML = '<div class="empty">No open positions.</div>'; return; }
-  wrap.innerHTML = list.slice(0, 8).map(t => `<div class="kpi" style="margin-bottom:6px"><div class="label">${t.symbol||"?"} · ${t.direction||"?"}</div><div class="value" style="font-size:16px">${Number(t.r_multiple||0).toFixed(2)}R</div><div class="sub">risk ${fmtINR(t.risk_inr||0)}</div></div>`).join("");
+  wrap.innerHTML = list.slice(0, 8).map(t => {
+    const r = Number(t.r_multiple || 0);
+    return `<div class="kpi" style="margin-bottom:6px"><div class="label">${t.symbol||"?"} · ${t.direction||"?"}</div><div class="value" style="font-size:16px"><span class="${r>=0?'pnl-pos':'pnl-neg'}">${r>=0?"+":""}${r.toFixed(2)}R</span></div><div class="sub">risk <span class="num">${fmtINR(t.risk_inr||0)}</span></div></div>`;
+  }).join("");
 }
 
 function renderExposure(snap) {
   const r = snap?.risk || {};
-  $("#exposure").innerHTML = `<div class="kpi"><div class="label">Total Exposure</div><div class="value" style="font-size:18px">${fmtINR(r.total_exposure_inr||0)}</div></div><div class="kpi" style="margin-top:8px"><div class="label">Max Drawdown</div><div class="value" style="font-size:18px">${(r.max_drawdown_pct||0).toFixed(2)}%</div></div>`;
+  $("#exposure").innerHTML = `
+    <div class="kpi-row" style="grid-template-columns:repeat(3,1fr)">
+      <div class="kpi"><div class="label">Total Exposure</div><div class="value" style="font-size:16px">${fmtINR(r.total_exposure_inr||0)}</div></div>
+      <div class="kpi"><div class="label">Risk Open</div><div class="value" style="font-size:16px">${fmtINR(r.total_risk_inr||0)}</div></div>
+      <div class="kpi"><div class="label">Max Drawdown</div><div class="value" style="font-size:16px"><span class="${Number(r.max_drawdown_pct||0)>5?'bad':''}">${(r.max_drawdown_pct||0).toFixed(2)}%</span></div><div class="sub num">${fmtINR(r.max_drawdown_inr||0)}</div></div>
+    </div>`;
 }
 
-function drawEquity(canvas, points) {
-  const wrap = canvas.parentElement, cssW = (wrap?.clientWidth || 800) - 36, cssH = 240, dpr = window.devicePixelRatio || 1;
+/* ---------- Equity chart (gridlines, axis labels, gradient fill, last-point marker) ---------- */
+function cssVar(name) { return getComputedStyle(document.documentElement).getPropertyValue(name).trim(); }
+
+function drawEquity(canvas, points, emptyEl) {
+  if (!canvas) return;
+  const wrap = canvas.parentElement, cssW = (wrap?.clientWidth || 800), cssH = 260, dpr = window.devicePixelRatio || 1;
   canvas.width = Math.max(cssW, 200) * dpr; canvas.height = cssH * dpr;
   canvas.style.width = Math.max(cssW, 200) + "px"; canvas.style.height = cssH + "px";
-  const ctx = canvas.getContext("2d"); ctx.setTransform(1,0,0,1,0,0); ctx.scale(dpr, dpr); ctx.clearRect(0, 0, cssW, cssH);
-  if (!points || !points.length) return;
-  const vals = points.map(p => Number(p.equity || p.v || 0)), min = Math.min(...vals), max = Math.max(...vals), range = (max - min) || 1;
-  const padL = 64, padR = 16, padT = 20, padB = 28, w = cssW - padL - padR, h = cssH - padT - padB;
-  const x = i => padL + (i / (Math.max(1, vals.length - 1))) * w, y = v => padT + h - ((v - min) / range) * h;
-  ctx.beginPath(); vals.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
-  ctx.strokeStyle = vals[vals.length - 1] >= vals[0] ? "#10b981" : "#ef4444"; ctx.lineWidth = 2.5; ctx.stroke();
+  const ctx = canvas.getContext("2d");
+  ctx.setTransform(dpr, 0, 0, dpr, 0, 0); ctx.clearRect(0, 0, cssW, cssH);
+
+  const has = points && points.length;
+  if (emptyEl) emptyEl.hidden = !!has;
+  if (!has) return;
+
+  const vals = points.map(p => Number(p.equity || p.v || 0));
+  const labels = points.map(p => String(p.date || ""));
+  let min = Math.min(...vals), max = Math.max(...vals);
+  if (min === max) { min -= 1; max += 1; }
+  const pad = (max - min) * 0.08; min -= pad; max += pad;
+  const range = max - min;
+
+  const padL = 52, padR = 14, padT = 14, padB = 24, w = cssW - padL - padR, h = cssH - padT - padB;
+  const x = i => padL + (i / Math.max(1, vals.length - 1)) * w;
+  const y = v => padT + h - ((v - min) / range) * h;
+
+  const cGrid = cssVar("--grid-line") || "rgba(148,163,184,.1)";
+  const cMuted = cssVar("--muted") || "#5e6b7a";
+  const up = vals[vals.length - 1] >= vals[0];
+  const cLine = up ? (cssVar("--good") || "#34d399") : (cssVar("--bad") || "#f87171");
+
+  // horizontal gridlines + y labels
+  ctx.font = '10px "IBM Plex Mono", monospace';
+  ctx.textAlign = "right"; ctx.textBaseline = "middle";
+  for (let g = 0; g <= 4; g++) {
+    const v = min + (range * g / 4), yy = y(v);
+    ctx.strokeStyle = cGrid; ctx.lineWidth = 1;
+    ctx.beginPath(); ctx.moveTo(padL, yy); ctx.lineTo(cssW - padR, yy); ctx.stroke();
+    ctx.fillStyle = cMuted; ctx.fillText(fmtAxis(v), padL - 8, yy);
+  }
+  // x labels: first / mid / last
+  ctx.textAlign = "center"; ctx.textBaseline = "top";
+  const idxs = [...new Set([0, Math.floor((labels.length - 1) / 2), labels.length - 1])];
+  idxs.forEach(i => {
+    const d = new Date(labels[i]);
+    const txt = isNaN(d) ? labels[i].slice(5) : d.toLocaleDateString("en-IN", { day: "2-digit", month: "short" });
+    ctx.fillStyle = cMuted; ctx.fillText(txt, x(i), cssH - padB + 7);
+  });
+
+  // area fill
+  const grad = ctx.createLinearGradient(0, padT, 0, cssH - padB);
+  grad.addColorStop(0, cLine + "33"); grad.addColorStop(1, cLine + "00");
+  ctx.beginPath();
+  vals.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+  ctx.lineTo(x(vals.length - 1), cssH - padB); ctx.lineTo(x(0), cssH - padB); ctx.closePath();
+  ctx.fillStyle = grad; ctx.fill();
+
+  // line
+  ctx.beginPath();
+  vals.forEach((v, i) => i ? ctx.lineTo(x(i), y(v)) : ctx.moveTo(x(i), y(v)));
+  ctx.strokeStyle = cLine; ctx.lineWidth = 2; ctx.lineJoin = "round"; ctx.stroke();
+
+  // last point marker
+  const lx = x(vals.length - 1), ly = y(vals[vals.length - 1]);
+  ctx.beginPath(); ctx.arc(lx, ly, 6, 0, Math.PI * 2); ctx.fillStyle = cLine + "2e"; ctx.fill();
+  ctx.beginPath(); ctx.arc(lx, ly, 3, 0, Math.PI * 2); ctx.fillStyle = cLine; ctx.fill();
 }
 
+/* ---------- Trades ---------- */
 function renderTrades(snap) {
   const trades = snap?.live_trades || [];
   $("#tradeCount").textContent = trades.length;
   const tbody = $("#tradesTable tbody"), empty = $("#tradesEmpty");
-  if (!trades.length) { tbody.innerHTML = ""; empty.hidden = false; }
-  else {
-    empty.hidden = true;
-    tbody.innerHTML = trades.map(t => `<tr><td><b>${t.symbol||"?"}</b></td><td><span class="tag ${t.direction?.toLowerCase()||""}">${t.direction}</span></td><td>${fmtNum(t.entry)}</td><td>${fmtNum(t.current)}</td><td>${fmtNum(t.sl)}</td><td>${fmtNum(t.tp)}</td><td class="${Number(t.pnl_inr||0)>=0?'pnl-pos':'pnl-neg'}">${fmtINR(t.pnl_inr)}</td><td><b>${Number(t.r_multiple||0).toFixed(2)}R</b></td><td><div class="progress" style="height:6px;background:var(--bg-soft);border-radius:3px;overflow:hidden"><div style="height:100%;background:var(--accent);width:${Math.max(0,Math.min(100,Number(t.progress||0)))}%"></div></div></td><td><button class="btn sm danger" data-close="${t.id}">Close</button></td></tr>`).join("");
-    $$("button[data-close]").forEach(b => b.addEventListener("click", async () => {
-      if (!confirm("Force-close trade?")) return;
-      const r = await fetch("/api/close-trade", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({trade_id: b.dataset.close}) }).then(r => r.json()).catch(() => null);
-      if (r?.success) { toast("Trade closed", "good"); loadDashboard(); } else toast("Close failed", "bad");
-    }));
-  }
+  if (!trades.length) { tbody.innerHTML = ""; empty.hidden = false; return; }
+  empty.hidden = true;
+  tbody.innerHTML = trades.map(t => `<tr>
+    <td><b>${t.symbol||"?"}</b><div class="muted" style="font-size:10px">${t.market||""} · ${t.account||""}</div></td>
+    <td><span class="tag ${String(t.direction||"").toLowerCase()}">${t.direction}</span></td>
+    <td class="num">${fmtNum(t.entry)}</td><td class="num">${fmtNum(t.current)}</td>
+    <td class="num">${fmtNum(t.sl)}</td><td class="num">${fmtNum(t.tp)}</td>
+    <td class="${Number(t.pnl_inr||0)>=0?'pnl-pos':'pnl-neg'}">${fmtSignedINR(t.pnl_inr)}</td>
+    <td class="num">${Number(t.r_multiple||0).toFixed(2)}R</td>
+    <td><div class="progress"><div style="width:${Math.max(0,Math.min(100,Number(t.progress||0)))}%"></div></div></td>
+    <td><button class="btn sm danger" data-close="${t.id}">Close</button></td>
+  </tr>`).join("");
+  $$("button[data-close]").forEach(b => b.addEventListener("click", async () => {
+    if (!confirm("Force-close trade?")) return;
+    const r = await fetch("/api/close-trade", { method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({trade_id: b.dataset.close}) }).then(r => r.json()).catch(() => null);
+    if (r?.success) { toast("Trade closed", "good"); loadDashboard(); } else toast("Close failed: " + (r?.message || r?.error || "unknown"), "bad");
+  }));
+}
+
+/* ---------- Signals (time + status + pnl now shown) ---------- */
+function statusTag(status, pnl) {
+  const s = String(status || "open").toLowerCase();
+  if (s === "open") return '<span class="tag open">open</span>';
+  if (s === "closed" || s === "win") return '<span class="tag win">' + s + '</span>';
+  if (s === "loss" || s === "sl") return '<span class="tag loss">' + s + '</span>';
+  return '<span class="tag muted">' + s + '</span>';
 }
 
 function renderSignals(snap) {
   const list = snap?.today_signals || [], wrap = $("#signalsList");
-  if (!list.length) { wrap.innerHTML = '<div class="empty" style="text-align:center;padding:40px;color:var(--muted)">No signals in 24h</div>'; return; }
+  $("#signalCount").textContent = list.length;
+  if (!list.length) { wrap.innerHTML = '<div class="empty">No signals in the last 24h</div>'; return; }
   const groups = {};
   list.forEach(s => { const k = fmtDateHeader(s.ts_ms ? new Date(s.ts_ms).toISOString() : new Date().toISOString()); (groups[k] = groups[k] || []).push(s); });
   wrap.innerHTML = Object.entries(groups).map(([day, arr]) => `
     <div class="collapse open">
-      <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} signal(s)</span><span class="chev" style="margin-left:auto">▼</span></div>
-      <div class="collapse-body">${arr.map(s => `<div class="news-item"><div><b>${s.sym}</b></div><div>${s.dir} · ${s.strategy}</div><div>${s.tag||''}</div></div>`).join("")}</div>
+      <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} signal${arr.length>1?"s":""}</span><span class="chev" style="margin-left:auto">▼</span></div>
+      <div class="collapse-body">${arr.map(s => {
+        const pnl = Number(s.pnl || 0);
+        return `<div class="row-item" style="grid-template-columns:64px 1fr auto auto auto">
+          <div class="num muted" style="font-size:12px">${s.time || fmtClock(s.ts_ms) || "—"}</div>
+          <div><b class="num">${s.sym||"?"}</b> <span class="tag ${String(s.dir||"").toLowerCase()}">${s.dir}</span> <span class="muted" style="font-size:12px">${s.strategy||""}</span>${s.hint ? `<div class="muted" style="font-size:11px">${s.hint}</div>` : ""}</div>
+          <div>${s.tag ? `<span class="tag ${String(s.tag).includes("STALE") ? "warn" : "high"}">${s.tag}</span>` : ""}</div>
+          <div>${statusTag(s.status, pnl)}</div>
+          <div class="num ${pnl>0?'pnl-pos':(pnl<0?'pnl-neg':'muted')}" style="font-size:12px">${pnl ? fmtSignedINR(pnl) : "—"}</div>
+        </div>`;
+      }).join("")}</div>
     </div>`).join("");
   wireCollapse();
 }
 
+/* ---------- History ---------- */
 function renderHistory(snap) {
   const list = snap?.history || [], wrap = $("#historyList");
   $("#historyCount").textContent = snap?.history_total || list.length;
-  if (!list.length) { wrap.innerHTML = '<div class="empty" style="text-align:center;padding:40px;color:var(--muted)">No history</div>'; return; }
+  if (!list.length) { wrap.innerHTML = '<div class="empty">No history</div>'; return; }
   const groups = {};
   list.forEach(t => { const k = fmtDateHeader(t.closed_at || t.close_time || new Date().toISOString()); (groups[k] = groups[k] || []).push(t); });
   wrap.innerHTML = Object.entries(groups).map(([day, arr], idx) => {
@@ -675,8 +822,8 @@ function renderHistory(snap) {
     const wins = arr.filter(t => Number(t.pnl || 0) > 0).length, losses = arr.length - wins;
     return `
       <div class="collapse ${idx===0?'open':''}">
-        <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} trades (${wins}W/${losses}L)</span><span class="${dayPnl>=0?'pnl-pos':'pnl-neg'}" style="margin-left:auto;margin-right:12px">${dayPnl>=0?"+":""}${fmtINR(dayPnl)}</span><span class="chev">▼</span></div>
-        <div class="collapse-body"><table class="brut"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Result</th></tr></thead><tbody>${arr.map(t=>`<tr><td><b>${t.symbol}</b></td><td>${t.type||t.direction}</td><td>${fmtNum(t.entry)}</td><td>${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtINR(t.pnl)}</td><td>${t.result}</td></tr>`).join("")}</tbody></table></div>
+        <div class="collapse-head" data-collapse><span class="day-pill">${day}</span><span style="font-size:12px;color:var(--ink-soft)">${arr.length} trades (${wins}W/${losses}L)</span><span class="${dayPnl>=0?'pnl-pos':'pnl-neg'}" style="margin-left:auto;margin-right:12px">${fmtSignedINR(dayPnl)}</span><span class="chev">▼</span></div>
+        <div class="collapse-body"><table class="brut"><thead><tr><th>Symbol</th><th>Side</th><th>Entry</th><th>Exit</th><th>P/L</th><th>Result</th></tr></thead><tbody>${arr.map(t=>`<tr><td><b>${t.symbol}</b></td><td>${t.type||t.direction||""}</td><td class="num">${fmtNum(t.entry)}</td><td class="num">${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtSignedINR(t.pnl)}</td><td>${t.result||""}</td></tr>`).join("")}</tbody></table></div>
       </div>`;
   }).join("");
   wireCollapse();
@@ -689,22 +836,44 @@ function wireCollapse() {
   });
 }
 
-async function loadNifty() {
+/* ---------- Nifty board (refreshes on every visit) ---------- */
+const NIFTY_SYMS = ["^NSEI","^NSEBANK","RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS"];
+const NIFTY_NAMES = { "^NSEI": "NIFTY 50", "^NSEBANK": "BANK NIFTY" };
+async function loadNifty(force) {
   const wrap = $("#niftyList");
-  if (!wrap || wrap.dataset.loaded === "1") return;
-  wrap.dataset.loaded = "1";
-  const syms = ["^NSEI","^NSEBANK","RELIANCE.NS","TCS.NS","HDFCBANK.NS","INFY.NS"];
-  const r = await fetch(`/api/prices?symbols=${encodeURIComponent(syms.join(","))}`).then(r => r.json()).catch(() => null);
+  if (!wrap || (wrap.dataset.loading === "1" && !force)) return;
+  wrap.dataset.loading = "1";
+  wrap.innerHTML = NIFTY_SYMS.map(s => `<div class="kpi"><div class="label">${NIFTY_NAMES[s] || s.replace(".NS","")}</div><div class="value muted" style="font-size:15px">…</div></div>`).join("");
+  const r = await fetch(`/api/prices?symbols=${encodeURIComponent(NIFTY_SYMS.join(","))}`).then(r => r.json()).catch(() => null);
   const prices = r?.prices || {};
-  wrap.innerHTML = syms.map(s => `<div class="kpi"><div class="label">${s.replace(".NS","")}</div><div class="value" style="font-size:15px">${prices[s]?fmtNum(prices[s]):"—"}</div></div>`).join("");
+  wrap.innerHTML = NIFTY_SYMS.map(s => `<div class="kpi"><div class="label">${NIFTY_NAMES[s] || s.replace(".NS","")}</div><div class="value" style="font-size:15px">${prices[s] ? fmtNum(prices[s]) : "—"}</div></div>`).join("");
+  $("#niftyTs").textContent = "updated " + new Date().toLocaleTimeString("en-IN", { hour12: false });
+  wrap.dataset.loading = "0";
 }
+$("#refreshNifty")?.addEventListener("click", () => loadNifty(true));
 
+/* ---------- News (time column — the whole point of a calendar) ---------- */
+function impactTag(impact) {
+  const i = String(impact || "low").toLowerCase();
+  const cls = i.startsWith("h") ? "high" : (i.startsWith("m") ? "medium" : "low");
+  return `<span class="tag ${cls}">${impact || "LOW"}</span>`;
+}
 function renderNews(news) {
   const wrap = $("#newsList");
-  if (!news || !news.length) { wrap.innerHTML = '<div class="empty" style="text-align:center;padding:40px;color:var(--muted)">No upcoming news events</div>'; return; }
-  wrap.innerHTML = news.slice(0, 30).map(ev => `<div class="news-item"><div><b>${ev.country||"USD"}</b></div><div>${ev.title}</div><div><span class="tag info">${ev.impact}</span></div></div>`).join("");
+  $("#newsCount").textContent = (news || []).length;
+  if (!news || !news.length) { wrap.innerHTML = '<div class="empty">No upcoming news events</div>'; return; }
+  wrap.innerHTML = news.slice(0, 40).map(ev => {
+    const t = fmtEventTime(ev.date);
+    return `<div class="row-item" style="grid-template-columns:118px 52px 1fr auto">
+      <div><div class="num" style="font-size:12.5px">${t.time || "—"}</div><div class="muted" style="font-size:10.5px">${t.day}</div></div>
+      <div><span class="tag muted">${ev.country || ev.currency || "USD"}</span></div>
+      <div style="font-size:13px">${ev.title}</div>
+      <div>${impactTag(ev.impact)}</div>
+    </div>`;
+  }).join("");
 }
 
+/* ---------- Backtest ---------- */
 const BT_SYMBOLS = { crypto: ["BTC-USD", "ETH-USD", "SOL-USD"], forex: ["EURUSD=X", "GBPUSD=X", "USDJPY=X"], metal: ["GC=F", "SI=F"], index: ["^NSEI", "^NSEBANK"] };
 function refreshSymbolDropdown() {
   const cls = $("#btClass").value, list = BT_SYMBOLS[cls] || [], sel = $("#btSymbol");
@@ -714,30 +883,57 @@ $("#btClass")?.addEventListener("change", refreshSymbolDropdown);
 refreshSymbolDropdown();
 
 $("#runBacktest")?.addEventListener("click", async () => {
+  const btn = $("#runBacktest");
   const sym = $("#btSymbol").value, strat = $("#btStrategy").value, days = $("#btDays").value;
-  toast("Running backtest on " + sym + "...");
+  btn.disabled = true; btn.textContent = "Running…";
   const r = await api(`/api/backtest?symbol=${encodeURIComponent(sym)}&strategy=${strat}&days=${days}`);
+  btn.disabled = false; btn.textContent = "Run Backtest";
   if (!r || r.error) { toast("Backtest failed: " + (r?.error || "unknown"), "bad"); return; }
-  toast("Backtest completed successfully", "good");
+  toast("Backtest complete", "good");
   const m = r.metrics || r;
-  $("#btMetrics").innerHTML = `<div class="kpi"><div class="label">Trades</div><div class="value" style="font-size:16px">${m.total_trades}</div></div><div class="kpi"><div class="label">Win Rate</div><div class="value" style="font-size:16px">${(m.win_rate||0).toFixed(1)}%</div></div><div class="kpi"><div class="label">Net P/L</div><div class="value" style="font-size:16px">${fmtINR(m.total_pnl)}</div></div><div class="kpi"><div class="label">Max DD</div><div class="value" style="font-size:16px">${(m.max_drawdown_pct||0).toFixed(2)}%</div></div>`;
-  drawEquity($("#btChart"), m.equity_points || []);
+  $("#btMetrics").innerHTML = `
+    <div class="kpi"><div class="label">Trades</div><div class="value" style="font-size:16px">${m.total_trades ?? "—"}</div></div>
+    <div class="kpi"><div class="label">Win Rate</div><div class="value" style="font-size:16px">${(m.win_rate||0).toFixed(1)}%</div></div>
+    <div class="kpi"><div class="label">Net P/L</div><div class="value" style="font-size:16px"><span class="${Number(m.total_pnl||0)>=0?'pnl-pos':'pnl-neg'}">${fmtSignedINR(m.total_pnl)}</span></div></div>
+    <div class="kpi"><div class="label">Max DD</div><div class="value" style="font-size:16px">${(m.max_drawdown_pct||0).toFixed(2)}%</div></div>`;
+  drawEquity($("#btChart"), m.equity_points || [], $("#btEmpty"));
   const tbody = $("#btTable tbody");
-  tbody.innerHTML = (m.trades || []).map((t, i) => `<tr><td>${i+1}</td><td>${t.type}</td><td>${fmtNum(t.entry)}</td><td>${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtINR(t.pnl)}</td><td>${t.result}</td><td>${t.exit_reason||""}</td></tr>`).join("");
+  tbody.innerHTML = (m.trades || []).map((t, i) => `<tr><td class="num">${i+1}</td><td>${t.type}</td><td class="num">${fmtNum(t.entry)}</td><td class="num">${fmtNum(t.exit)}</td><td class="${Number(t.pnl)>=0?'pnl-pos':'pnl-neg'}">${fmtSignedINR(t.pnl)}</td><td>${t.result}</td><td class="muted">${t.exit_reason||""}</td></tr>`).join("");
 });
 
+/* ---------- Main loader ---------- */
+let lastSnap = null;
 async function loadDashboard() {
   const snap = await api("/api/dashboard");
-  if (!snap || snap.error) { $("#lastUpdate").classList.add("offline"); $("#lastUpdateText").textContent = "offline"; return; }
+  if (!snap || snap.error) {
+    $("#lastUpdate").classList.add("offline");
+    $("#lastUpdateText").textContent = "offline";
+    return;
+  }
+  lastSnap = snap;
   $("#lastUpdate").classList.remove("offline");
-  $("#lastUpdateText").textContent = "updated " + new Date().toLocaleTimeString("en-IN", {hour12:false});
+  $("#lastUpdateText").textContent = "updated " + new Date().toLocaleTimeString("en-IN", { hour12: false });
+  updateBadges(snap);
   renderAccounts(snap); renderStrategyPerf(snap); renderOpenRisk(snap); renderExposure(snap);
-  drawEquity($("#equityChart"), snap.equity_curve?.points || []);
+  drawEquity($("#equityChart"), snap.equity_curve?.points || [], $("#equityEmpty"));
   renderTrades(snap); renderSignals(snap); renderHistory(snap); renderNews(snap.news_raw || []);
 }
 
-$("#refreshNews")?.addEventListener("click", async () => { toast("Refreshing news..."); await fetch("/api/refresh-news", {method:"POST"}).catch(()=>{}); loadDashboard(); });
+$("#refreshNews")?.addEventListener("click", async () => {
+  toast("Refreshing news…");
+  await fetch("/api/refresh-news", { method: "POST" }).catch(() => {});
+  loadDashboard();
+});
 $("#refreshTrades")?.addEventListener("click", loadDashboard);
+
+/* Redraw charts on resize (debounced) */
+let resizeTimer;
+new ResizeObserver(() => {
+  clearTimeout(resizeTimer);
+  resizeTimer = setTimeout(() => { if (lastSnap) {
+    drawEquity($("#equityChart"), lastSnap.equity_curve?.points || [], $("#equityEmpty"));
+  }}, 180);
+}).observe(document.body);
 
 loadDashboard();
 setInterval(loadDashboard, 30000);
