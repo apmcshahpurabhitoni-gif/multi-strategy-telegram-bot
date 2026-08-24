@@ -109,7 +109,14 @@ _ut_15m_cache = {}
 NEWS_CACHE = {"data": [], "last_fetch": 0, "initialized": False}
 
 _yf_symbol_cache = {} 
-_YF_SYMBOL_TTL = 30.0
+# Per-interval TTL: hourly data barely changes within 5 min; 1m data needs to be fresher.
+_YF_TTL_BY_INTERVAL = {"1m": 45.0, "1h": 300.0, "4h": 300.0, "1d": 600.0}
+_YF_SYMBOL_TTL = 45.0  # fallback for unknown intervals
+SCAN_LOOP_SLEEP_S = 300  # pause between full scanner cycles (rate-limit protection)
+
+# When Yahoo returns 429, stop hitting it for this long and let fallbacks serve.
+_yahoo_backoff_until = 0.0
+YAHOO_BACKOFF_S = 600
 
 _yf_session = requests.Session()
 _yf_session.headers.update({
@@ -428,8 +435,15 @@ def yf_download(symbol, period, interval):
     cache_key = f"{symbol}_{period}_{interval}"
     if cache_key in _yf_symbol_cache:
         cached_df, cached_ts = _yf_symbol_cache[cache_key]
-        if now - cached_ts < _YF_SYMBOL_TTL:
+        ttl = _YF_TTL_BY_INTERVAL.get(interval, _YF_SYMBOL_TTL)
+        if now - cached_ts < ttl:
             return cached_df.copy()
+    global _yahoo_backoff_until
+    if now < _yahoo_backoff_until:
+        # Yahoo throttled us recently — serve stale cache if we have it, else bail fast.
+        if cache_key in _yf_symbol_cache:
+            return _yf_symbol_cache[cache_key][0].copy()
+        return None
     try:
         df = yf.download(symbol, period=period, interval=interval, progress=False, auto_adjust=True, threads=False, session=_yf_session)
         if df is None or df.empty:
@@ -439,7 +453,14 @@ def yf_download(symbol, period, interval):
         _yf_symbol_cache[cache_key] = (df, now)
         return df
     except Exception as e:
-        print(f"[ERR] yf_download {symbol} {interval}: {e}")
+        msg = str(e).lower()
+        if "too many" in msg or "rate limit" in msg or "429" in msg:
+            _yahoo_backoff_until = now + YAHOO_BACKOFF_S
+            print(f"[YF BACKOFF] Rate limited on {symbol} {interval} — pausing Yahoo for {YAHOO_BACKOFF_S}s")
+        else:
+            print(f"[ERR] yf_download {symbol} {interval}: {e}")
+        if cache_key in _yf_symbol_cache:
+            return _yf_symbol_cache[cache_key][0].copy()  # stale beats nothing
         return None
 
 def get_price(symbol):
@@ -525,19 +546,52 @@ def notify_neutral_sweep(symbol: str, mtype: str, sweep_high: float, sweep_low: 
     )
     send_sweep_to_all(msg, parse_mode="Markdown")
 
-def check_sweep(ticker):
-    """Differentiates directional vs neutral sweeps."""
+def resample_4h(df, symbol):
+    """Build 4H candles anchored to match TradingView.
+
+    Pandas anchors resample bins at midnight *in the index timezone*, and Yahoo
+    returns different tz per asset (UTC for crypto, America/New_York for GC=F,
+    Asia/Kolkata for NSE). Without normalization the bot's 4H candles are shifted
+    hours vs TradingView, so sweeps appear/disappear between the two.
+    - NSE: anchor at 09:15 IST session open (matches TV session-anchored candles)
+    - everything else: anchor at 00:00 UTC (matches TV crypto/forex/metals)
+    """
+    if df is None or df.empty:
+        return df
+    agg = {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
+    is_nse = "^NSE" in symbol or symbol.endswith(".NS")
     try:
-        df = yf_download(ticker, "15d", "1h")
+        if is_nse:
+            if getattr(df.index, "tz", None) is not None:
+                df = df.tz_convert("Asia/Kolkata")
+            return df.resample("4h", origin="start_day", offset="9h15min").agg(agg).dropna()
+        if getattr(df.index, "tz", None) is not None:
+            df = df.tz_convert("UTC")
+        return df.resample("4h").agg(agg).dropna()
+    except Exception as e:
+        print(f"[ERR] resample_4h {symbol}: {e}")
+        return None
+
+def check_sweep(ticker, df=None):
+    """Differentiates directional vs neutral sweeps. Pass shared df to avoid re-download."""
+    try:
+        if df is None:
+            df = yf_download(ticker, "15d", "1h")
+            if df is None and ticker == "BTC-USD":
+                df = fetch_binance_klines("BTCUSDT", "1h", 400)
         if df is None or len(df) < 20:
             return None
-        df = df.resample("4h").agg({
-            "Open": "first", "High": "max", "Low": "min", "Close": "last"
-        }).dropna().iloc[:-1]
+        df = resample_4h(df, ticker)
+        if df is None or len(df) < 4:
+            return None
+        df = df.iloc[:-1]  # drop incomplete current 4H candle
         if len(df) < 4:
             return None
-        c, m = df.iloc[-2], df.iloc[-3]
-        ts = int(df.index[-2].timestamp() * 1000)
+        # After dropping the partial bin, iloc[-1] IS the most recent closed candle.
+        # (Old code used iloc[-2]/[-3] here — an off-by-one that delayed every
+        # sweep signal by a full extra 4H candle, 4-8h stale.)
+        c, m = df.iloc[-1], df.iloc[-2]
+        ts = int(df.index[-1].timestamp() * 1000)
 
         if c["Low"] < m["Low"] and c["High"] <= m["High"] and c["Close"] > m["Low"]:
             return ("BULLISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
@@ -545,8 +599,8 @@ def check_sweep(ticker):
             return ("BEARISH", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
         if c["Low"] < m["Low"] and c["High"] > m["High"]:
             return ("NEUTRAL", float(c["High"]), float(c["Low"]), ts, ts + 4 * 3600 * 1000)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ERR] check_sweep {ticker}: {e}")
     return None
 
 def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) -> Optional[Tuple[float, float]]:
@@ -572,15 +626,19 @@ def find_timeframe_fvg(df: pd.DataFrame, direction: str, sweep_open_ts_ms: int) 
                 zl, zh = float(c_curr["High"]), float(c_prev2["Low"])
                 if zh > zl and not ((df_post.iloc[i + 1:]["High"].astype(float) > zh).any()):
                     return (zl, zh)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ERR] find_timeframe_fvg {direction}: {e}")
     return None
 
 def resolve_hierarchical_fvg(symbol: str, direction: str, sweep_open_ts: int) -> Tuple[Optional[Tuple[float, float]], Optional[str]]:
     df_1h = yf_download(symbol, "15d", "1h")
+    if df_1h is None and symbol == "BTC-USD":
+        df_1h = fetch_binance_klines("BTCUSDT", "1h", 400)
     if df_1h is None or len(df_1h) < 10:
         return None, None
-    df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+    df_4h = resample_4h(df_1h, symbol)
+    if df_4h is None:
+        return None, None
     fvg_4h = find_timeframe_fvg(df_4h, direction, sweep_open_ts)
     if fvg_4h:
         return fvg_4h, "4H"
@@ -658,10 +716,9 @@ def manage_pending_sweeps():
             to_remove = []
             for p in copy:
                 sym = p["symbol"]
-                live_df = yf_download(sym, "1d", "1m")
-                if live_df is None or live_df.empty:
+                live = get_price(sym)  # 60s cached, BTC/Gold fallbacks included
+                if live is None:
                     continue
-                live = float(live_df["Close"].iloc[-1])
                 age_hours = (time.time() * 1000 - p["sweep_close_ts"]) / (3600 * 1000)
                 
                 if age_hours > FVG_EXPIRY_HOURS and p["status"] != "entered":
@@ -705,6 +762,8 @@ def manage_pending_sweeps():
                     continue
                 zl, zh = p["fvg_zone"]
                 if zl <= live <= zh:
+                    if not is_market_open(sym):
+                        continue  # never enter on stale/off-hours prices
                     fvg_entry = {"entry_price": live, "sl": p["sweep_low"] if p["direction"] == "BULLISH" else p["sweep_high"], "sweep_ts": p["sweep_close_ts"], "zone": p["fvg_zone"], "tf": p.get("fvg_tf", "1H")}
                     with _lock:
                         p["status"] = "entered"
@@ -723,14 +782,17 @@ def calc_macd(series, fast=12, slow=26, signal=9):
     macd_line = ema_f - ema_s
     return macd_line, macd_line.ewm(span=signal, adjust=False).mean()
 
-def check_trendpulse(ticker, mtype):
+def check_trendpulse(ticker, mtype, df_1h=None):
     try:
-        df_1h = yf_download(ticker, "10d", "1h")
-        if df_1h is None and ticker == "BTC-USD":
-            df_1h = fetch_binance_klines("BTCUSDT", "1h", 200)
+        if df_1h is None:
+            df_1h = yf_download(ticker, "15d", "1h")
+            if df_1h is None and ticker == "BTC-USD":
+                df_1h = fetch_binance_klines("BTCUSDT", "1h", 400)
         if df_1h is None or len(df_1h) < 50:
             return None
-        df_4h = df_1h.resample("4h").agg({"Open": "first", "High": "max", "Low": "min", "Close": "last"}).dropna()
+        df_4h = resample_4h(df_1h, ticker)
+        if df_4h is None:
+            return None
         if len(df_4h) < 15:
             return None
         df_4h["EMA50"], df_4h["ATR"] = df_4h["Close"].ewm(span=50, adjust=False).mean(), calc_atr(df_4h, 14)
@@ -749,8 +811,8 @@ def check_trendpulse(ticker, mtype):
         elif htf_close < htf_ema50:
             if (macd_p >= sig_p) and (macd_c < sig_c) and m1_rsi < 50 and m1_rsi > 20 and m1_close < m1_ema20:
                 return ("BEARISH", m1_close, m1_atr, ts)
-    except Exception:
-        pass
+    except Exception as e:
+        print(f"[ERR] check_trendpulse {ticker}: {e}")
     return None
 
 def get_trendpulse_exit(ticker, trade_type):
@@ -957,7 +1019,9 @@ def execute(symbol, mtype, account, strat, sig_type, price, a1, a2, a3=None, fvg
     if fvg_entry is not None:
         sl, ts = float(fvg_entry["sl"]), fvg_entry["sweep_ts"]
         risk = abs(price - sl)
-        if risk <= 0:
+        if risk <= 0 or risk < price * 0.001:
+            # SL glued to entry -> qty would explode. Skip degenerate setups.
+            print(f"[RISK SKIP] {symbol}: risk {risk:.6f} too small vs price {price}")
             return
         tp = price + risk * 2.0 if "BULLISH" in sig_type else price - risk * 2.0
     elif strat and "Sweep" in strat:
@@ -1119,13 +1183,18 @@ def scanner():
                     if symbol in muted_assets or not is_market_open(symbol):
                         continue
                 is_nse = "^NSE" in symbol or symbol.endswith(".NS")
-                
+
+                # One download per symbol per cycle; both strategies share it.
+                df_1h = yf_download(symbol, "15d", "1h")
+                if df_1h is None and symbol == "BTC-USD":
+                    df_1h = fetch_binance_klines("BTCUSDT", "1h", 400)
+
                 if not is_nse:
-                    tp = check_trendpulse(symbol, mtype)
+                    tp = check_trendpulse(symbol, mtype, df_1h)
                     if tp:
                         execute(symbol, mtype, "ny_session" if is_ny_session() else "macro", "TrendPulse 1H", tp[0], tp[1], tp[2], tp[3])
-                    
-                    sweep = check_sweep(symbol)
+
+                    sweep = check_sweep(symbol, df_1h)
                     if sweep:
                         direction = sweep[0]
                         if direction == "NEUTRAL":
@@ -1134,7 +1203,7 @@ def scanner():
                             register_pending_sweep(symbol, mtype, sweep)
 
                 elif is_nifty_open():
-                    sweep = check_sweep(symbol)
+                    sweep = check_sweep(symbol, df_1h)
                     if sweep:
                         direction = sweep[0]
                         if direction == "NEUTRAL":
@@ -1144,6 +1213,7 @@ def scanner():
 
                 time.sleep(2)
                 gc.collect()
+            time.sleep(SCAN_LOOP_SLEEP_S)  # full cycle done — rest before next pass
         except Exception as e:
             alert_error("Scanner", e)
             time.sleep(300)
@@ -1231,12 +1301,15 @@ def cmd_check(m):
                 if symbol in muted_assets or not is_market_open(symbol):
                     continue
             is_nse = "^NSE" in symbol or symbol.endswith(".NS")
+            df_1h = yf_download(symbol, "15d", "1h")  # cache-warm; shared by both checks
+            if df_1h is None and symbol == "BTC-USD":
+                df_1h = fetch_binance_klines("BTCUSDT", "1h", 400)
             if not is_nse:
-                tp = check_trendpulse(symbol, mtype)
+                tp = check_trendpulse(symbol, mtype, df_1h)
                 if tp:
                     found += 1
                     execute(symbol, mtype, "ny_session" if is_ny_session() else "macro", "TrendPulse 1H", tp[0], tp[1], tp[2], tp[3])
-                sweep = check_sweep(symbol)
+                sweep = check_sweep(symbol, df_1h)
                 if sweep:
                     direction = sweep[0]
                     if direction == "NEUTRAL":
@@ -1245,7 +1318,7 @@ def cmd_check(m):
                         found += 1
                         register_pending_sweep(symbol, mtype, sweep)
             elif is_nifty_open():
-                sweep = check_sweep(symbol)
+                sweep = check_sweep(symbol, df_1h)
                 if sweep:
                     direction = sweep[0]
                     if direction == "NEUTRAL":
