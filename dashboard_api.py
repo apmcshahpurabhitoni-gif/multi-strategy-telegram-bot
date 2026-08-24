@@ -344,13 +344,17 @@ def _route_refresh_news(start_response, environ):
         try:
             now_ms = int(time.time() * 1000)
             IST_tz = getattr(main, "IST", None)
+            iso_to_ist = getattr(main, "_iso_to_ist_dt", None)
             norm = []
             for ev in (items or []):
                 d = ev.get("date", "")
                 if not d: continue
                 ts_ms = 0
                 try:
-                    if IST_tz is not None:
+                    if iso_to_ist is not None:
+                        dt = iso_to_ist(d)
+                        if dt is not None: ts_ms = int(dt.timestamp() * 1000)
+                    elif IST_tz is not None:
                         from datetime import datetime
                         dt = datetime.fromisoformat(str(d).split(".")[0])
                         if dt.tzinfo is None and IST_tz is not None: dt = IST_tz.localize(dt)
