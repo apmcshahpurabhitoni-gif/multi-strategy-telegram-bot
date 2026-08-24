@@ -423,10 +423,6 @@ canvas { max-width: 100%; height: auto; display: block; }
         <span style="font-size:36px">💤</span><div style="font-weight:600;margin-top:6px">No open trades right now</div>
       </div>
     </div>
-    <div class="card" style="margin-top: 16px">
-      <h3>⏳ Pending Sweeps <span class="badge" id="pendingCount" style="background:var(--accent-soft);color:var(--accent);padding:2px 7px;border-radius:6px;font-size:10px">0</span></h3>
-      <div id="pendingList"></div>
-    </div>
   </div>
 
   <div id="panel-signals" class="panel" hidden>
@@ -463,7 +459,7 @@ canvas { max-width: 100%; height: auto; display: block; }
       <div style="display:flex;gap:10px;flex-wrap:wrap;margin-bottom:18px">
         <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">CLASS</label><select class="input" id="btClass"><option value="crypto">Crypto</option><option value="forex">Forex</option><option value="metal">Metals</option><option value="index">Index</option></select></div>
         <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">SYMBOL</label><select class="input" id="btSymbol"></select></div>
-        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">STRATEGY</label><select class="input" id="btStrategy"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep + FVG</option></select></div>
+        <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">STRATEGY</label><select class="input" id="btStrategy"><option value="trendpulse">TrendPulse 1H</option><option value="sweep">4H Sweep</option></select></div>
         <div style="flex:1"><label style="font-size:10px;font-weight:700;color:var(--ink-soft)">DAYS</label><select class="input" id="btDays"><option value="30">30</option><option value="60" selected>60</option><option value="90">90</option><option value="365">365</option></select></div>
         <div style="align-self:end"><button class="btn primary" id="runBacktest">▶ Run Backtest</button></div>
       </div>
@@ -653,15 +649,6 @@ function renderTrades(snap) {
       if (r?.success) { toast("Trade closed", "good"); loadDashboard(); } else toast("Close failed", "bad");
     }));
   }
-  renderPending(snap);
-}
-
-function renderPending(snap) {
-  const list = snap?.pending || [];
-  $("#pendingCount").textContent = list.length;
-  const wrap = $("#pendingList");
-  if (!list.length) { wrap.innerHTML = '<div class="empty" style="padding:16px;color:var(--muted)">No pending sweeps.</div>'; return; }
-  wrap.innerHTML = list.map(p => `<div class="news-item"><div><b>${p.sym}</b></div><div>${p.dir} · ${p.status}</div><div><span class="tag warn">Pending</span></div></div>`).join("");
 }
 
 function renderSignals(snap) {
