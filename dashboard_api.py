@@ -128,11 +128,8 @@ def _build_snapshot():
     accounts, active_trades, _lock = getattr(main, "accounts", {}), getattr(main, "active_trades", []), getattr(main, "_lock", None)
     load_json = getattr(main, "load_json", None)
     ACCOUNT_LIMITS, is_ny_session = getattr(main, "ACCOUNT_LIMITS", {}), getattr(main, "is_ny_session", None)
-    FVG_EXPIRY_HOURS = getattr(main, "FVG_EXPIRY_HOURS", 24)
     HISTORY_FILE = getattr(main, "HISTORY_FILE", "trade_history.json")
     SENT_SIGNALS_FILE = getattr(main, "SENT_SIGNALS_FILE", "sent_signals.json")
-    PENDING_SWEEPS_FILE = getattr(main, "PENDING_SWEEPS_FILE", "pending_sweeps.json")
-    pending_sweeps = getattr(main, "pending_sweeps", [])
     get_cached_news = getattr(main, "get_cached_news", None)
     IST_tz = getattr(main, "IST", pytz.timezone("Asia/Kolkata"))
     if not all([_lock, load_json, IST_tz]): return {"error": "missing bot globals"}
@@ -143,7 +140,6 @@ def _build_snapshot():
     sent = load_json(SENT_SIGNALS_FILE, {}) if load_json else {}
     sent_memory = getattr(main, "sent_signals", {})
     if isinstance(sent_memory, dict) and len(sent_memory) > len(sent): sent = sent_memory
-    pending = list(pending_sweeps) if pending_sweeps else (load_json(PENDING_SWEEPS_FILE, []) if load_json else [])
     per_acc_today, per_acc_week = {k: 0.0 for k in accounts}, {k: 0.0 for k in accounts}
     for t in history:
         acc = t.get("account")
@@ -240,13 +236,7 @@ def _build_snapshot():
     today_signals.sort(key=lambda x: x.get("ts_ms", 0), reverse=True)
 
     last_history = sorted(history, key=lambda x: str(x.get("closed_at", "")), reverse=True)[:15]
-    pending_view = []
-    for p in pending or []:
-        if p.get("status") in ("entered", "expired", "invalidated"): continue
-        zone = p.get("fvg_zone")
-        try: expires_h = max(0.0, (p["sweep_close_ts"] + FVG_EXPIRY_HOURS * 3600 * 1000 - time.time() * 1000) / 3600000.0)
-        except Exception: expires_h = 0.0
-        pending_view.append({"sym": p.get("symbol", ""), "dir": p.get("direction", "BULLISH"), "status": "waiting-fill" if zone else "waiting-fvg", "zone": zone, "expires_h": round(expires_h, 1)})
+    pending_view = []  # FVG wait removed — sweeps execute immediately, nothing stays pending
 
     news = []
     if get_cached_news:
