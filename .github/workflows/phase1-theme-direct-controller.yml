@@ -1,0 +1,87 @@
+name: Phase 1 Theme Direct Controller
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  install-theme-controller:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Install isolated theme controller
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('dashboard/index.html')
+          s = p.read_text(encoding='utf-8')
+          marker = 'mavis-phase1-direct-theme-controller'
+          if marker in s:
+              print('controller already installed')
+              raise SystemExit(0)
+
+          controller = r'''<style id="mavis-phase1-direct-theme-controller">
+          /* Phase 1: theme popup must be reachable on every viewport. */
+          .theme-box{position:relative;z-index:1000}
+          .theme-pop{z-index:1001;pointer-events:auto;touch-action:manipulation}
+          @media(max-width:820px){.theme-pop{position:fixed!important;right:12px!important;top:64px!important;width:min(285px,calc(100vw - 24px))!important;z-index:99999!important}}
+          </style>
+          <script id="mavis-phase1-direct-theme-controller">
+          (function(){
+            function bootTheme(){
+              var btn=document.getElementById('themeBtn'), pop=document.getElementById('themePop');
+              if(!btn || !pop) return false;
+
+              function setTheme(theme){
+                var t=(theme==='neo-dark')?'neo-dark':'neo-light';
+                document.documentElement.setAttribute('data-theme',t);
+                try{localStorage.setItem('mavis-theme',t)}catch(e){}
+                btn.setAttribute('aria-expanded','true');
+                pop.classList.add('open');
+                document.querySelectorAll('.theme-choice').forEach(function(x){x.classList.toggle('active',x.dataset.theme===t)});
+                var meta=document.querySelector('meta[name="theme-color"]');
+                if(meta) meta.setAttribute('content',t==='neo-dark'?'#0d0f14':'#f3eddc');
+              }
+
+              function toggle(e){
+                if(e){e.preventDefault();e.stopPropagation();if(e.stopImmediatePropagation)e.stopImmediatePropagation();}
+                var open=!pop.classList.contains('open');
+                pop.classList.toggle('open',open);
+                btn.setAttribute('aria-expanded',String(open));
+              }
+
+              /* Capture phase deliberately blocks the older handlers. */
+              btn.addEventListener('click',toggle,true);
+              btn.addEventListener('pointerup',function(e){e.preventDefault();e.stopPropagation();},true);
+              btn.addEventListener('touchend',function(e){e.preventDefault();e.stopPropagation();},true);
+
+              pop.addEventListener('click',function(e){
+                var choice=e.target.closest('.theme-choice');
+                if(!choice)return;
+                e.preventDefault();e.stopPropagation();
+                setTheme(choice.dataset.theme);
+              },true);
+
+              document.addEventListener('click',function(e){
+                if(!e.target.closest('.theme-box')){pop.classList.remove('open');btn.setAttribute('aria-expanded','false');}
+              },true);
+
+              return true;
+            }
+            if(!bootTheme()) document.addEventListener('DOMContentLoaded',bootTheme,{once:true});
+          })();
+          </script>'''
+          s = s.replace('</body>', controller + '\n</body>', 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add dashboard/index.html
+          git commit -m "fix: install isolated theme controller"
+          git push
+          rm -f .github/workflows/phase1-theme-direct-controller.yml
+          git add -u .github/workflows/phase1-theme-direct-controller.yml
+          git commit -m "chore: remove one-time theme workflow"
+          git push
