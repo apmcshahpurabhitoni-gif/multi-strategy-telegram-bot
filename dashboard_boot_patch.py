@@ -1,15 +1,9 @@
-"""Small deployment-time compatibility patch for the dashboard.
+"""Deployment-time compatibility patch for the dashboard.
 
-The dashboard is intentionally kept as a single static HTML file. This boot patch
-makes the two mobile regressions defensive at runtime without changing the bot's
-trading logic:
-  1. keep Backtest's NIFTY 50 label mapped to Yahoo's ^NSEI symbol;
-  2. make the mobile theme control reliable on touch browsers;
-  3. keep the Backtest controls on one compact row on phones.
-
-The patch is idempotent and safe to run on every Render restart.
+Render runs this file before the bot starts. It is intentionally idempotent.
 """
 from pathlib import Path
+import re
 
 ROOT = Path(__file__).resolve().parent
 HTML = ROOT / "dashboard" / "index.html"
@@ -17,13 +11,15 @@ BACKTEST = ROOT / "backtest.py"
 
 
 def patch_html() -> None:
+    if not HTML.exists():
+        return
     text = HTML.read_text(encoding="utf-8")
 
-    marker = "<!-- mavis-mobile-runtime-fix-v2 -->"
+    marker = "<!-- mavis-mobile-runtime-fix-v3 -->"
     if marker not in text:
-        css = r'''<style id="mavis-mobile-runtime-fix-v2">
-/* Mobile Backtest: Symbol / Strategy / Period / Run stay on one compact row. */
-@media (max-width:820px){
+        css = r'''<style id="mavis-mobile-runtime-fix-v3">
+@media(max-width:820px){
+  /* Keep all Backtest controls on one compact mobile row. */
   .form-grid{grid-template-columns:minmax(0,1.18fr) minmax(0,1fr) minmax(54px,.62fr) auto;gap:5px;align-items:end}
   .form-grid .field label{font-size:8px;margin-bottom:3px}
   .form-grid .field select{min-width:0;padding:8px 6px;font-size:11px;height:38px}
@@ -32,18 +28,18 @@ def patch_html() -> None:
 }
 </style>'''
         text = text.replace("</head>", css + "\n</head>", 1)
+        text = text.replace("</body>", marker + "\n</body>", 1)
 
-    # Use the canonical Yahoo symbol while retaining the user-facing label.
+    # Friendly dashboard label -> Yahoo ticker at the browser layer as well.
     text = text.replace(
-        '<option>NIFTY 50</option><option>^NSEI</option>',
-        '<option value="^NSEI">NIFTY 50</option><option value="^NSEI">^NSEI</option>',
+        '<option>NIFTY 50</option>',
+        '<option value="^NSEI">NIFTY 50</option>',
         1,
     )
 
-    touch_marker = "<!-- mavis-theme-touch-fix-v2 -->"
+    touch_marker = "<!-- mavis-theme-touch-fix-v3 -->"
     if touch_marker not in text:
         touch_js = r'''<script>
-/* Reliable Android touch fallback for the existing theme popover. */
 (()=>{
   const b=document.getElementById('themeBtn'),p=document.getElementById('themePop');
   if(!b||!p)return;
@@ -53,22 +49,47 @@ def patch_html() -> None:
 </script>'''
         text = text.replace("</body>", touch_marker + "\n" + touch_js + "\n</body>", 1)
 
-    if marker not in text:
-        text = text.replace("</body>", marker + "\n</body>", 1)
-
     HTML.write_text(text, encoding="utf-8")
 
 
 def patch_backtest() -> None:
+    if not BACKTEST.exists():
+        return
     text = BACKTEST.read_text(encoding="utf-8")
-    old = '"XAUUSD": "GC=F",\n            "EURUSD": "EURUSD=X",'
-    new = '"XAUUSD": "GC=F",\n            "NIFTY 50": "^NSEI",\n            "NIFTY": "^NSEI",\n            "BANK NIFTY": "^NSEBANK",\n            "BANKNIFTY": "^NSEBANK",\n            "EURUSD": "EURUSD=X",'
-    if "\"NIFTY 50\": \"^NSEI\"" not in text and old in text:
-        text = text.replace(old, new, 1)
+
+    # Previous versions tried to replace one exact line pair. That silently failed
+    # when formatting changed. Insert aliases directly after the mapping opening.
+    if '"NIFTY 50": "^NSEI"' not in text:
+        pattern = r'(mapping\s*=\s*\{\s*\n)'
+        replacement = (
+            r'\1'
+            '            "NIFTY 50": "^NSEI",\n'
+            '            "NIFTY50": "^NSEI",\n'
+            '            "NIFTY": "^NSEI",\n'
+            '            "BANK NIFTY": "^NSEBANK",\n'
+            '            "BANKNIFTY": "^NSEBANK",\n'
+        )
+        text, count = re.subn(pattern, replacement, text, count=1)
+        if count != 1:
+            # Fallback for unusual formatting: replace the function's mapping
+            # declaration without depending on indentation of existing entries.
+            needle = '        mapping = {'
+            if needle in text:
+                text = text.replace(
+                    needle,
+                    needle + '\n'
+                    '            "NIFTY 50": "^NSEI",\n'
+                    '            "NIFTY50": "^NSEI",\n'
+                    '            "NIFTY": "^NSEI",\n'
+                    '            "BANK NIFTY": "^NSEBANK",\n'
+                    '            "BANKNIFTY": "^NSEBANK",',
+                    1,
+                )
+
     BACKTEST.write_text(text, encoding="utf-8")
 
 
 if __name__ == "__main__":
     patch_html()
     patch_backtest()
-    print("dashboard/backtest mobile compatibility patch applied")
+    print("dashboard/backtest compatibility patch applied")
