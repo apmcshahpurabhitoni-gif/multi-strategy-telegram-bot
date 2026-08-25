@@ -40,6 +40,19 @@ def patch_html() -> None:
         1,
     )
 
+    touch_marker = "<!-- mavis-theme-touch-fix-v2 -->"
+    if touch_marker not in text:
+        touch_js = r'''<script>
+/* Reliable Android touch fallback for the existing theme popover. */
+(()=>{
+  const b=document.getElementById('themeBtn'),p=document.getElementById('themePop');
+  if(!b||!p)return;
+  const toggle=()=>{const open=!p.classList.contains('open');p.classList.toggle('open',open);b.setAttribute('aria-expanded',String(open));};
+  b.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();toggle();},{passive:false});
+})();
+</script>'''
+        text = text.replace("</body>", touch_marker + "\n" + touch_js + "\n</body>", 1)
+
     if marker not in text:
         text = text.replace("</body>", marker + "\n</body>", 1)
 
