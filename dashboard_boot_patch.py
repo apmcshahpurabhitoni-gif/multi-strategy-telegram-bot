@@ -40,12 +40,6 @@ def patch_html() -> None:
         1,
     )
 
-    # Replace the existing theme listener block with a touch-safe implementation.
-    old = "themeBtn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const open=!themePop.classList.contains('open');themePop.classList.toggle('open',open);themeBtn.setAttribute('aria-expanded',String(open))})"
-    new = "themeBtn.addEventListener('click',e=>{e.preventDefault();e.stopPropagation();const open=!themePop.classList.contains('open');themePop.classList.toggle('open',open);themeBtn.setAttribute('aria-expanded',String(open))});themeBtn.addEventListener('pointerup',e=>{e.preventDefault();e.stopPropagation()})"
-    if old in text:
-        text = text.replace(old, new, 1)
-
     if marker not in text:
         text = text.replace("</body>", marker + "\n</body>", 1)
 
