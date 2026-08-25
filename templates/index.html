@@ -47,5 +47,33 @@ document.getElementById('run').onclick=function(){var btn=this,res=document.getE
 showBacktest();
 })();
 </script>
+<style id="phase3-readable-ui">
+.p3-signal,.p3-history,.p3-news{border:2px solid var(--line);border-radius:9px;background:var(--soft);padding:9px;margin:6px 0}.p3-main{display:flex;justify-content:space-between;align-items:center;gap:8px}.p3-symbol{font-size:13px;font-weight:950}.p3-side{display:flex;align-items:center;gap:5px;flex-wrap:wrap;justify-content:flex-end}.p3-dir{font-size:9px;font-weight:950;padding:3px 7px;border:2px solid var(--line);border-radius:999px}.p3-buy{background:#b8f2d8;color:#064e3b}.p3-sell{background:#ffc5c5;color:#7f1d1d}.p3-neutral{background:#ffe7a3;color:#713f12}.p3-pnl{font-weight:950;font-size:12px}.p3-sub{font-size:9px;color:var(--muted);margin-top:4px}.p3-summary{display:grid;grid-template-columns:repeat(4,1fr);gap:6px;margin-bottom:7px}.p3-stat{padding:7px;border:2px solid var(--line);border-radius:8px;background:var(--soft)}.p3-stat b{display:block;font-size:8px;color:var(--muted);text-transform:uppercase}.p3-stat strong{font-size:13px}.p3-date{margin:10px 0 5px;font-size:10px;font-weight:950;letter-spacing:.04em}.p3-impact{font-size:8px;font-weight:950;padding:3px 6px;border:2px solid var(--line);border-radius:999px}.p3-high{background:#ffc5c5;color:#7f1d1d}.p3-medium{background:#ffe7a3;color:#713f12}.p3-low{background:#dbeafe;color:#1e3a8a}.p3-time{font-size:9px;font-weight:900}.p3-title{font-size:11px;font-weight:900;margin-top:3px}.p3-meta{font-size:8px;color:var(--muted);margin-top:3px}@media(max-width:700px){.p3-summary{grid-template-columns:repeat(2,1fr)}.p3-main{align-items:flex-start}.p3-side{max-width:48%}.p3-title{font-size:10px}}
+</style>
+<script id="phase3-readable-ui">
+(function(){
+  function E(x){return String(x==null?'':x).replace(/[&<>"']/g,function(c){return {'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]})}
+  function P(x){x=Number(x||0);return (x>=0?'+':'-')+'₹'+Math.abs(x).toLocaleString('en-IN',{maximumFractionDigits:0})}
+  function dirClass(d){d=String(d||'').toUpperCase();return d.indexOf('BUY')>=0||d.indexOf('LONG')>=0?'p3-buy':d.indexOf('SELL')>=0||d.indexOf('SHORT')>=0?'p3-sell':'p3-neutral'}
+  function dirLabel(d){d=String(d||'').toUpperCase();if(d.indexOf('BUY')>=0||d.indexOf('LONG')>=0)return 'BUY';if(d.indexOf('SELL')>=0||d.indexOf('SHORT')>=0)return 'SELL';return 'NEUTRAL'}
+  function signalHtml(x){var d=dirLabel(x.dir||x.direction||x.sig_type), p=x.pnl_inr!=null?x.pnl_inr:x.pnl, status=x.status||'OPEN';return '<div class="p3-signal"><div class="p3-main"><div><div class="p3-symbol">'+E(x.sym||x.symbol||'—')+'</div><div class="p3-sub">'+E(x.strategy||x.strat||'Sweep')+' · '+E(x.time||'')+'</div></div><div class="p3-side"><span class="p3-dir '+dirClass(d)+'">'+d+'</span><span class="p3-pnl">'+(p!=null&&p!==''?P(p):E(status))+'</span></div></div><div class="p3-sub">'+E(x.tag||status||'')+'</div></div>'}
+  function historyHtml(x){var d=dirLabel(x.direction||x.dir||x.type), p=x.pnl_inr!=null?x.pnl_inr:x.pnl, result=String(x.result||x.status||'').toUpperCase();return '<div class="p3-history"><div class="p3-main"><div><div class="p3-symbol">'+E(x.symbol||x.sym||'—')+'</div><div class="p3-sub">'+d+' · '+E(x.strat||x.strategy||'Sweep')+' · '+E(x.closed_at||x.close_time||x.time||'')+'</div></div><div class="p3-side"><span class="p3-pnl">'+P(p)+'</span><span class="p3-dir '+(result==='WIN'?'p3-buy':result==='LOSS'?'p3-sell':'p3-neutral')+'">'+E(result||'CLOSED')+'</span></div></div></div>'}
+  function newsHtml(x){var impact=String(x.impact||'LOW').toUpperCase(), cls=impact==='HIGH'?'p3-high':impact==='MEDIUM'?'p3-medium':'p3-low';return '<div class="p3-news"><div class="p3-main"><div><span class="p3-time">'+E(x.time||x.datetime||'')+'</span><div class="p3-title">'+E(x.title||x.headline||x.name||'Market news')+'</div><div class="p3-meta">'+E(x.currency||x.country||x.source||'')+'</div></div><span class="p3-impact '+cls+'">'+E(impact)+'</span></div></div>'}
+  function renderP3(data){
+    var signals=data.signals||data.today_signals||data.todaySignals||[];
+    var history=data.history||data.last_history||data.trade_history||[];
+    var news=data.news||[];
+    var sl=document.getElementById('signalsList'), ll=document.getElementById('latest'), hl=document.getElementById('historyList'), nl=document.getElementById('newsList');
+    if(sl) sl.innerHTML=signals.length?signals.slice(0,30).map(signalHtml).join(''):'<div class="empty">No signals in the last 24 hours.</div>';
+    if(ll) ll.innerHTML=signals.length?signals.slice(0,3).map(signalHtml).join(''):'<div class="empty">No recent signals.</div>';
+    var total=history.reduce(function(a,x){return a+Number(x.pnl||x.pnl_inr||0)},0), wins=history.filter(function(x){return String(x.result||'').toUpperCase()==='WIN'}).length;
+    var hs=document.getElementById('hpnl'),hc=document.getElementById('hcount'),hw=document.getElementById('hwin');if(hs)hs.textContent=P(total);if(hc)hc.textContent=history.length;if(hw)hw.textContent=(history.length?(wins/history.length*100).toFixed(0):0)+'%';
+    if(hl) hl.innerHTML='<div class="p3-summary"><div class="p3-stat"><b>Net P&L</b><strong>'+P(total)+'</strong></div><div class="p3-stat"><b>Closed</b><strong>'+history.length+'</strong></div><div class="p3-stat"><b>Wins</b><strong>'+wins+'</strong></div><div class="p3-stat"><b>Losses</b><strong>'+history.filter(function(x){return String(x.result||'').toUpperCase()==='LOSS'}).length+'</strong></div></div>'+(history.length?history.slice(0,30).map(historyHtml).join(''):'<div class="empty">No closed trades.</div>');
+    if(nl){var groups={};news.forEach(function(x){var dt=String(x.date||x.datetime||x.time||'').slice(0,10)||'Other';(groups[dt]||(groups[dt]=[])).push(x)});var keys=Object.keys(groups).sort().reverse();nl.innerHTML=keys.length?keys.map(function(k){return '<div class="p3-date">'+E(k==='Other'?'OTHER':k)+'</div>'+groups[k].sort(function(a,b){return String(a.time||'').localeCompare(String(b.time||''))}).map(newsHtml).join('')}).join(''):'<div class="empty">No news available.</div>'}
+  }
+  function loadP3(){fetch('/api/dashboard',{cache:'no-store'}).then(function(r){return r.json()}).then(renderP3).catch(function(){})}
+  loadP3();setInterval(loadP3,30000);
+})();
+</script>
 </body>
 </html>
