@@ -7,6 +7,8 @@ state in one shared module namespace.
 
 Phase 1 runtime hardening is applied here so the deployed entry point has one
 freshness rule even before the larger source refactor: <=60m FRESH, >60m STALE.
+Phase 2 upgrades the dashboard History view into a complete filtered trade
+ledger before main.py starts.
 """
 from __future__ import annotations
 
@@ -122,9 +124,16 @@ def send_startup_notice_once(message: str, **kwargs):
             html_path.write_text(html, encoding="utf-8")
 
 
+def _apply_phase2_fixes(base: str) -> None:
+    """Apply the Phase 2 History ledger migration before the bot starts."""
+    from phase2_history import apply as apply_phase2_history
+    apply_phase2_history(base)
+
+
 if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__))
     _apply_phase1_fixes(base)
+    _apply_phase2_fixes(base)
     main_file = os.path.join(base, "main.py")
     sys.argv = [main_file, *sys.argv[1:]]
     with open(main_file, "rb") as f:
