@@ -1,145 +1,208 @@
-# Deployment Guide — Mavis Trading Bot
+# Mavis Trading Bot — Deployment Guide
 
-Three ways to deploy, pick one. All three serve the same dashboard at `/dashboard`.
+This guide reflects the current startup architecture and the mobile-first dashboard.
 
----
+> **Production startup command: `python run_bot.py`.** Do not use `python main.py` as the deployment command. `main.py` is the existing application module; `run_bot.py` is the production entry point that installs the current runtime and starts the normal services.
 
-## Option 1 — Render (recommended, free tier works)
+## 1. Render (recommended)
 
-### One-time: Telegram
-1. `@BotFather` → `/newbot` → copy the **token**.
-2. Send `/start` to your new bot.
-3. Open `https://api.telegram.org/bot<TOKEN>/getUpdates` → copy your **chat id** from the JSON.
+### Required secrets
 
-### One-time: Supabase (strongly recommended)
-Render's free tier wipes `/tmp` on restart. Supabase keeps your state alive (account balances, trade history, news cache, etc).
+Set the variables listed in `.env.example`, including:
 
-1. [supabase.com](https://supabase.com) → free project.
-2. SQL editor → run:
-   ```sql
-   create table if not exists bot_data (
-     key text primary key,
-     value jsonb,
-     updated_at timestamptz default now()
-   );
-   alter table bot_data enable row level security;
-   create policy "service role full access" on bot_data
-     for all using (true) with check (true);
-   ```
-3. **Settings → API** → copy **Project URL** + **service_role** key.
+- `TELEGRAM_BOT_TOKEN`
+- `TELEGRAM_CHAT_ID`
+- `SUPABASE_URL` and `SUPABASE_KEY` if persistent external state is required
+- `WEBHOOK_URL` when using the configured webhook flow
 
-### Deploy
-**Via Blueprint (easiest):**
-1. Push this repo to GitHub.
-2. Render → **New +** → **Blueprint** → pick the repo.
-3. Render reads `render.yaml` and pre-fills everything. You just enter the secret env vars in the dashboard.
-4. Click **Apply**.
+### Blueprint deployment
 
-**Via Web Service (manual):**
-1. Render → **New +** → **Web Service** → connect repo.
-2. Settings:
-   - Environment: **Python 3**
-   - Build: `pip install --upgrade pip && pip install -r requirements.txt`
-   - Start: `python main.py`
-   - Health check path: `/ping`
-3. Add env vars (see `.env.example`).
-4. **Deploy**.
+1. Push the repository to GitHub.
+2. Render → **New +** → **Blueprint**.
+3. Select the repository.
+4. Render reads `render.yaml`.
+5. Enter the secret environment variables.
+6. Deploy.
 
-### Keep alive
-Free tier sleeps after 15 min idle.
-1. [cron-job.org](https://cron-job.org) → free account.
-2. New cron: `GET https://<your-app>.onrender.com/ping`, every 10 min, 24/7.
+The current `render.yaml` uses:
 
-### Verify
-In Telegram within ~60 s:
+```text
+Build: pip install --upgrade pip && pip install -r requirements.txt
+Start: python run_bot.py
+Health: /ping
+Port: 8080
 ```
-✅ BOT STARTED
-Started At: 18-Aug-2026 10:48 IST
-⚠️ Any signal/sweep message older than this is STALE — do not act on it.
+
+### Manual Render service
+
+If creating a Web Service manually:
+
+```text
+Environment: Python 3
+Build: pip install --upgrade pip && pip install -r requirements.txt
+Start: python run_bot.py
+Health check: /ping
 ```
-Then `/test` to confirm data feeds. Open `https://<your-app>.onrender.com/dashboard` to see the UI.
 
----
+Do **not** replace the start command with `python main.py`.
 
-## Option 2 — Docker (any VPS: DigitalOcean, Hetzner, AWS Lightsail, Fly.io, etc.)
+## 2. Docker
 
 ```bash
 git clone https://github.com/<you>/multi-strategy-telegram-bot.git
 cd multi-strategy-telegram-bot
-cp .env.example .env   # fill in values
+cp .env.example .env
+# fill .env
 docker build -t mavis-trading-bot .
 docker run -d --name mavis --restart unless-stopped --env-file .env -p 8080:8080 mavis-trading-bot
 ```
 
-Reverse proxy with Caddy or nginx + Let's Encrypt for HTTPS (Telegram needs HTTPS webhook).
+The Docker image already starts:
 
----
+```text
+python run_bot.py
+```
 
-## Option 3 — Local (dev only)
+## 3. Local development
 
 ```bash
 python -m venv .venv
 source .venv/bin/activate
 pip install -r requirements.txt
-cp .env.example .env   # fill in values
-python main.py
+cp .env.example .env
+# fill .env
+python run_bot.py
 ```
 
-Use a tunnel like `ngrok http 8080` and set `WEBHOOK_URL` to the HTTPS ngrok URL.
+Dashboard:
 
-Open `http://localhost:8080/dashboard` for the UI.
+```text
+http://localhost:8080/dashboard
+```
 
----
+Health check:
 
-## Dashboard tour
+```text
+http://localhost:8080/ping
+```
 
-Once your bot is up, hit `/dashboard`. You should see:
+## 4. Telegram setup
 
-- **🏠 Overview** — 4 account cards (Macro / Nifty / NY Session / Sweep 4H), Total Equity, Today/Week P/L (color-coded green/red), equity curve, risk strip
-- **💼 Trades** — Live open trades with progress bars + close button; pending sweep setups
-- **📡 Signals** — last 24h of signals with FRESH/STALE age tags
-- **📜 History** — closed trades grouped by day with daily totals
-- **📰 News** — economic calendar (HIGH events in red, MEDIUM in amber, etc.) with ET → IST times
-- **🇮🇳 Nifty** — Nifty 50, Bank Nifty, and 15 NSE stocks with live prices
-- **🧪 Backtest** — pick a symbol/strategy/duration, hit Run, get an equity curve + 12 metrics + trade list
+1. Create the bot through BotFather.
+2. Put the token in `TELEGRAM_BOT_TOKEN`.
+3. Put the target chat ID in `TELEGRAM_CHAT_ID`.
+4. Deploy.
+5. Confirm the bot startup message.
+6. Use the dashboard to verify live state.
 
-### Theme cycle (top-right 🌑/☀️/🌙)
+## 5. Persistence
 
-| Icon | Theme | Look |
-|---|---|---|
-| 🌑 | Normal | warm grey on off-white, black borders — calm terminal look |
-| ☀️ | Light | white card on off-white bg, black borders, accent from 🎨 |
-| 🌙 | Dark | dark grey on near-black, off-white borders — high contrast |
+Render's filesystem is not a durable database. If state must survive restarts, configure the repository's supported Supabase persistence variables.
 
-Click 🎨 to open the accent picker and pick any color (16 presets + custom hex). The accent drives the active tab color, the highlight bar on Nifty cards, the news-day pills, the success indicators — everything.
+The persistent state is used for information such as balances, trade history and cached bot data according to the current application implementation.
 
-Choices are saved in `localStorage` (`mavis_theme`, `mavis_accent`) — they survive page refresh and redeploys.
+## 6. Dashboard
 
----
+Open `/dashboard` after the service is healthy.
 
-## Troubleshooting
+### Mobile layout
 
-| Symptom | Likely cause | Fix |
-|---|---|---|
-| Telegram bot doesn't respond | Wrong token / chat id | Re-check `.env` |
-| Prices show ₹0 | yfinance blocked your IP | Wait — fallback should kick in. Check logs. |
-| State resets on every restart | No Supabase configured | Add `SUPABASE_URL` + `SUPABASE_KEY` |
-| Render app is "sleeping" | Free tier idle | Add cron-job.org ping every 10 min |
-| News tab is empty | API down / cache empty | Run `/refreshnews` in Telegram, then reload the dashboard. The dashboard will re-render the news section. |
-| Backtest returns "cannot access local variable 'sl'" | (Fixed in current `backtest.py`) | Pull the latest code — the SHORT branch of TrendPulse was assigning `sl` and `qty` in a single tuple line. |
-| Bottom nav buttons are squashed on mobile | (Fixed in current `dashboard/index.html`) | Pull the latest code — the tab bar is now a CSS Grid with proper safe-area-inset. |
-| Dashboard colors look "off" / too blue / too purple | (Fixed in current `dashboard/index.html`) | The three themes are now grey / white+custom / dark-grey+off-white. Use the 🎨 button to pick the exact accent. |
-| Tab text unreadable on custom accent | Auto-contrast | The active tab's text color is computed from accent luminance — should always be readable. If you find a bad case, open a ticket. |
+Mobile uses one fixed bottom navigation:
 
----
+```text
+🏠 Overview · 📊 Trades · ⚡ Signals · 🕘 History · 📰 News · ⚙️ Tools
+```
 
-## Updating
+The desktop top navigation is hidden on mobile, so the dashboard does not show two navigation systems at once.
+
+### Overview
+
+The first screen prioritizes:
+
+- Balance
+- Equity
+- Today's P&L
+- State
+- Account
+- Open trades
+- Signals
+- Last update
+
+### History
+
+Closed trades are compact and grouped by date. Raw ISO timestamps and microseconds are intentionally not shown. The page includes total P&L, today's P&L, and wins/losses.
+
+### News
+
+News is grouped by date first, with today's events first and upcoming dates after it. Events are sorted by time inside each date. HIGH/MEDIUM/LOW impact is shown as a color accent rather than being the primary grouping.
+
+### Themes
+
+The dashboard has four selectable themes:
+
+1. Modern Light
+2. Modern Dark
+3. Neo-Brutalist Light
+4. Neo-Brutalist Dark
+
+Modern Light/Dark share the modern design system. Neo-Brutalist Light/Dark share the neo-brutalist system. Accent colors are independent and persisted in browser storage.
+
+### Motion
+
+The dashboard uses purposeful animations for panel changes, cards, live status, numeric updates, refresh feedback and theme transitions. Reduced-motion preferences are respected.
+
+## 7. Data-source warning
+
+The dashboard and bot use the configured market-data provider. Yahoo Finance can cache, delay or rate-limit requests. A failed backtest or stale price is not automatically a strategy failure.
+
+For instruments where another feed is authoritative, compare the candle and price against that source before acting.
+
+## 8. Troubleshooting
+
+| Symptom | Check |
+|---|---|
+| Service fails to start | Confirm the start command is `python run_bot.py`. |
+| `/dashboard` is unavailable | Check `/ping`, Render logs and the dashboard API response. |
+| Telegram is silent | Verify token/chat ID and inspect service logs. |
+| State resets after restart | Configure the supported Supabase persistence variables. |
+| Prices are stale/zero | Check provider availability, cache and rate limits. |
+| News is empty | Refresh the news source, then refresh the dashboard. |
+| Backtest is incomplete | Treat it as a possible market-data/provider issue and retry later. |
+| Mobile page moves sideways | The current dashboard is designed to prevent horizontal overflow; inspect browser zoom and any custom changes before changing the trading code. |
+| Theme resets | Check browser storage and use one of the four supported theme names. |
+
+## 9. Updating
+
+### Render
+
+Push to the configured branch. Render will rebuild from `render.yaml` when auto-deploy is enabled.
+
+### Docker
 
 ```bash
 git pull
-# if you use Render Blueprint: just push, Render auto-rebuilds
-# if you use Docker:    docker build -t mavis-trading-bot . && docker restart mavis
-# if you use Local:     Ctrl-C, then python main.py again
+docker build -t mavis-trading-bot .
+docker restart mavis
 ```
 
-Your theme + accent choices live in the browser's `localStorage` — they don't need to be re-picked after an update.
+### Local
+
+Stop the current process and restart:
+
+```bash
+python run_bot.py
+```
+
+## 10. Safety boundary
+
+The dashboard redesign is presentation-only. Keep these responsibilities in the Python application:
+
+- strategy decisions
+- candle construction
+- signal validation
+- risk calculation
+- paper-trade execution
+- Telegram messaging
+- persistence
+
+Do not implement trading decisions in dashboard JavaScript.
