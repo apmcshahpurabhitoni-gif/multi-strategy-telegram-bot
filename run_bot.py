@@ -8,9 +8,6 @@ rules deterministic and testable.
 import os
 import time
 
-# dashboard_api intentionally reads sys.modules['__main__'] for the live bot
-# globals, so execute main.py directly into this process namespace without
-# running its old startup block.
 _original_name = globals().get("__name__", "__main__")
 _original_file = globals().get("__file__", os.path.abspath(__file__))
 _source_file = os.path.join(os.path.dirname(os.path.abspath(__file__)), "main.py")
@@ -21,8 +18,6 @@ with open(_source_file, "r", encoding="utf-8") as _f:
     _source = _f.read()
 exec(compile(_source, _source_file, "exec"), globals(), globals())
 globals()["__name__"] = _original_name
-# Keep the launcher path as __file__ for tooling, while main's functions have
-# already been defined against their original source file.
 globals()["__file__"] = _original_file
 
 from sweep_runtime import install as install_sweep_runtime
@@ -51,6 +46,8 @@ if __name__ == "__main__":
     threading.Thread(target=daily_reset, daemon=True).start()
     threading.Thread(target=weekly_digest_loop, daemon=True).start()
     threading.Thread(target=warm_news_cache, daemon=True).start()
+    from sweep_reminder import start as start_sweep_reminders
+    start_sweep_reminders(__import__("__main__"))
     print("[INIT] Bot running with canonical Sweep Engine V2")
     while True:
         time.sleep(3600)
