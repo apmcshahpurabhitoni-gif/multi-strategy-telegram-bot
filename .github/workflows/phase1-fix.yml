@@ -1,5 +1,6 @@
 name: Apply Phase 1 fixes
 
+# Temporary one-shot migration for Phase 1.
 on:
   push:
     branches: [main]
@@ -19,7 +20,6 @@ jobs:
         shell: python
         run: |
           from pathlib import Path
-          import re
 
           main = Path('main.py')
           s = main.read_text(encoding='utf-8')
@@ -45,20 +45,16 @@ jobs:
               return age_str, tag
           '''
           new_age = '''def get_signal_age_str(ts_ms):
-              """Return one authoritative freshness classification: <=1h is fresh, >1h is stale."""
+              """Authoritative rule: <=60 minutes is FRESH; >60 minutes is STALE."""
               if not ts_ms:
                   return "Unknown", "⚠️ STALE"
               now_ms = int(time.time() * 1000)
               diff_ms = max(0, now_ms - int(ts_ms))
               diff_min = int(diff_ms / 60000)
               if diff_min <= 60:
-                  age_str = f"{diff_min} min ago"
-                  tag = "✅ FRESH"
-              else:
-                  diff_hr = diff_min // 60
-                  age_str = f"{diff_hr} hr {diff_min % 60} min ago"
-                  tag = "⚠️ STALE"
-              return age_str, tag
+                  return f"{diff_min} min ago", "✅ FRESH"
+              diff_hr = diff_min // 60
+              return f"{diff_hr} hr {diff_min % 60} min ago", "⚠️ STALE"
           '''
           if old_age not in s:
               raise SystemExit('Expected get_signal_age_str implementation not found')
@@ -71,7 +67,7 @@ STARTUP_NOTICE_DEDUPE_S = 15 * 60
 
 
 def send_startup_notice_once(message: str, **kwargs):
-    """Avoid duplicate startup notices during rapid restarts/redeploys."""
+    """Suppress duplicate startup notices during rapid restarts/redeploys."""
     now = time.time()
     try:
         state = load_json(STARTUP_NOTICE_FILE, {"last_sent_ts": 0})
@@ -88,16 +84,12 @@ def send_startup_notice_once(message: str, **kwargs):
 '''
           if marker not in s:
               raise SystemExit('Personal-send function marker not found')
-          # Insert helper immediately before the existing personal-send function.
           s = s.replace(marker, helper + marker, 1)
 
-          # Replace only the startup notification call. There should be one exact startup call.
           old_send = '    send_to_personal_only(start_msg, parse_mode="Markdown")'
-          new_send = '    send_startup_notice_once(start_msg, parse_mode="Markdown")'
           if old_send not in s:
               raise SystemExit('Startup notification call not found')
-          s = s.replace(old_send, new_send, 1)
-
+          s = s.replace(old_send, '    send_startup_notice_once(start_msg, parse_mode="Markdown")', 1)
           main.write_text(s, encoding='utf-8')
 
           dash = Path('dashboard/index.html')
@@ -105,11 +97,8 @@ def send_startup_notice_once(message: str, **kwargs):
           mobile = '@media(max-width:820px){body{padding-bottom:'
           if mobile not in d:
               raise SystemExit('Dashboard mobile media query not found')
-          # On mobile the fixed bottom navigation is the only navigation bar.
           d = d.replace(mobile, '@media(max-width:820px){.nav{display:none}body{padding-bottom:', 1)
           dash.write_text(d, encoding='utf-8')
-
-          print('Phase 1 patches applied')
 
       - name: Verify Phase 1 invariants
         shell: python
@@ -117,8 +106,6 @@ def send_startup_notice_once(message: str, **kwargs):
           from pathlib import Path
           s = Path('main.py').read_text(encoding='utf-8')
           assert 'MAX_SIGNAL_AGE_HOURS = 1' in s
-          assert 'tag = "✅ FRESH"' in s
-          assert 'tag = "⚠️ STALE"' in s
           assert 'send_startup_notice_once(start_msg' in s
           d = Path('dashboard/index.html').read_text(encoding='utf-8')
           assert '@media(max-width:820px){.nav{display:none}' in d
@@ -131,9 +118,6 @@ def send_startup_notice_once(message: str, **kwargs):
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           rm -f .github/workflows/phase1-fix.yml
           git add main.py dashboard/index.html .github/workflows/phase1-fix.yml
-          if git diff --cached --quiet; then
-            echo "No changes to commit"
-            exit 0
-          fi
+          if git diff --cached --quiet; then exit 0; fi
           git commit -m "chore: apply phase 1 fixes"
           git push
