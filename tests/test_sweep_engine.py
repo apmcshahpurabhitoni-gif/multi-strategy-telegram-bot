@@ -23,7 +23,8 @@ class SweepEngineTests(unittest.TestCase):
         self.assertEqual(r.direction, "NEUTRAL")
 
     def test_touch_does_not_sweep(self):
-        df = self._fx([100, 101, 102, 103, 104, 105, 100], [95, 96, 97, 96, 95, 94, 90], [98, 99, 100, 99, 98, 97, 98])
+        # Previous high is 105; current high touches 105 exactly but never exceeds it.
+        df = self._fx([100, 101, 102, 103, 104, 105, 105, 104, 103, 103], [95, 96, 97, 96, 95, 94, 90, 90, 96, 98], [98, 99, 100, 99, 98, 97, 98, 98, 98, 98])
         r = detect_sweep(df, "EURUSD=X", self._now(11, 0))
         self.assertIsNone(r)
 
