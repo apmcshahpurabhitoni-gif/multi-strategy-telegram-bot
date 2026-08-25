@@ -15,16 +15,20 @@ def patch_html() -> None:
         return
     text = HTML.read_text(encoding="utf-8")
 
-    marker = "<!-- mavis-mobile-runtime-fix-v3 -->"
+    marker = "<!-- mavis-mobile-runtime-fix-v4 -->"
     if marker not in text:
-        css = r'''<style id="mavis-mobile-runtime-fix-v3">
+        css = r'''<style id="mavis-mobile-runtime-fix-v4">
 @media(max-width:820px){
   /* Keep all Backtest controls on one compact mobile row. */
   .form-grid{grid-template-columns:minmax(0,1.18fr) minmax(0,1fr) minmax(54px,.62fr) auto;gap:5px;align-items:end}
   .form-grid .field label{font-size:8px;margin-bottom:3px}
   .form-grid .field select{min-width:0;padding:8px 6px;font-size:11px;height:38px}
   .form-grid .run{grid-column:auto;min-width:50px;height:38px;padding:7px 9px;font-size:11px}
-  .theme-pop{position:fixed !important;right:8px !important;top:64px !important;width:min(285px,calc(100vw - 16px)) !important;z-index:9999 !important}
+  /* Theme popover must sit above the mobile UI and remain touchable. */
+  .theme-box{position:relative;z-index:10001}
+  #themeBtn{position:relative;z-index:10003;touch-action:manipulation;-webkit-tap-highlight-color:transparent}
+  .theme-pop{position:fixed !important;right:8px !important;top:64px !important;width:min(285px,calc(100vw - 16px)) !important;max-height:calc(100vh - 80px) !important;overflow:auto !important;z-index:10002 !important;pointer-events:auto !important;touch-action:manipulation}
+  .theme-choice,.swatch{touch-action:manipulation;-webkit-tap-highlight-color:transparent}
 }
 </style>'''
         text = text.replace("</head>", css + "\n</head>", 1)
@@ -37,14 +41,59 @@ def patch_html() -> None:
         1,
     )
 
-    touch_marker = "<!-- mavis-theme-touch-fix-v3 -->"
+    touch_marker = "<!-- mavis-theme-pointer-fix-v4 -->"
     if touch_marker not in text:
         touch_js = r'''<script>
 (()=>{
   const b=document.getElementById('themeBtn'),p=document.getElementById('themePop');
   if(!b||!p)return;
-  const toggle=()=>{const open=!p.classList.contains('open');p.classList.toggle('open',open);b.setAttribute('aria-expanded',String(open));};
-  b.addEventListener('touchend',e=>{e.preventDefault();e.stopPropagation();toggle();},{passive:false});
+  let suppressClick=false;
+  const setOpen=(open)=>{
+    p.classList.toggle('open',open);
+    b.setAttribute('aria-expanded',String(open));
+  };
+  const toggle=()=>setOpen(!p.classList.contains('open'));
+
+  /* Android Chrome reliably delivers Pointer Events even when click handling is
+     affected by an overlay or touch compatibility event. Handle touch/pen here,
+     then suppress the synthetic click so the menu does not toggle twice. */
+  b.addEventListener('pointerup',e=>{
+    if(e.pointerType!=='mouse'){
+      e.preventDefault();
+      e.stopPropagation();
+      suppressClick=true;
+      toggle();
+      setTimeout(()=>{suppressClick=false;},700);
+    }
+  },{capture:true,passive:false});
+
+  document.addEventListener('click',e=>{
+    if(suppressClick && (e.target===b || b.contains(e.target))){
+      e.preventDefault();
+      e.stopImmediatePropagation();
+      suppressClick=false;
+    }
+  },true);
+
+  /* Also make the theme choices themselves deterministic on touch devices. */
+  p.querySelectorAll('.theme-choice').forEach(choice=>{
+    choice.addEventListener('pointerup',e=>{
+      if(e.pointerType!=='mouse'){
+        e.preventDefault();
+        e.stopPropagation();
+        choice.click();
+      }
+    },{capture:true,passive:false});
+  });
+  p.querySelectorAll('.swatch').forEach(choice=>{
+    choice.addEventListener('pointerup',e=>{
+      if(e.pointerType!=='mouse'){
+        e.preventDefault();
+        e.stopPropagation();
+        choice.click();
+      }
+    },{capture:true,passive:false});
+  });
 })();
 </script>'''
         text = text.replace("</body>", touch_marker + "\n" + touch_js + "\n</body>", 1)
@@ -71,8 +120,6 @@ def patch_backtest() -> None:
         )
         text, count = re.subn(pattern, replacement, text, count=1)
         if count != 1:
-            # Fallback for unusual formatting: replace the function's mapping
-            # declaration without depending on indentation of existing entries.
             needle = '        mapping = {'
             if needle in text:
                 text = text.replace(
