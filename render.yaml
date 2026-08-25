@@ -6,7 +6,7 @@ services:
     region: oregon
     branch: main
     buildCommand: pip install --upgrade pip && pip install -r requirements.txt
-    startCommand: python run_bot.py
+    startCommand: python dashboard_boot_patch.py && python run_bot.py
     healthCheckPath: /ping
     autoDeploy: true
     envVars:
