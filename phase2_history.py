@@ -11,7 +11,6 @@ from pathlib import Path
 
 MARKER = "data-phase2-history=1"
 
-
 HISTORY_CSS = r'''
 .history-toolbar{display:grid;grid-template-columns:1.5fr .8fr .8fr auto;gap:7px;margin:0 0 10px}
 .history-toolbar input,.history-toolbar select{width:100%;min-width:0;border:2px solid var(--line);background:var(--surface2);color:var(--text);border-radius:8px;padding:8px 9px;font-size:11px;font-weight:800}
@@ -60,17 +59,20 @@ def apply(base: str) -> None:
     html_path = root / "dashboard" / "index.html"
 
     d = dashboard_api.read_text(encoding="utf-8")
-    d = _replace_once(
-        d,
-        'last_history = sorted(history, key=lambda x: str(x.get("closed_at", "")), reverse=True)[:15]',
-        'last_history = sorted(history, key=lambda x: str(x.get("closed_at", x.get("close_time", ""))), reverse=True)[:500]',
-        "history API depth",
-    )
-    d = d.replace(
-        '"history": last_history, "history_total": len(history),',
-        '"history": last_history, "history_total": len(history), "history_limit": 500,',
-        1,
-    )
+    if '[:500]' not in d:
+        d = _replace_once(
+            d,
+            'last_history = sorted(history, key=lambda x: str(x.get("closed_at", "")), reverse=True)[:15]',
+            'last_history = sorted(history, key=lambda x: str(x.get("closed_at", x.get("close_time", ""))), reverse=True)[:500]',
+            "history API depth",
+        )
+    if '"history_limit": 500' not in d:
+        d = _replace_once(
+            d,
+            '"history": last_history, "history_total": len(history),',
+            '"history": last_history, "history_total": len(history), "history_limit": 500,',
+            "history limit metadata",
+        )
     dashboard_api.write_text(d, encoding="utf-8")
 
     html = html_path.read_text(encoding="utf-8")
