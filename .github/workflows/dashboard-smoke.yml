@@ -1,0 +1,48 @@
+name: Dashboard Smoke Test
+
+on:
+  push:
+    branches: ["dashboard-repair-test"]
+
+jobs:
+  smoke:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.11"
+
+      - name: Python syntax
+        run: python -m compileall -q .
+
+      - name: Dashboard HTML and JavaScript smoke test
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("dashboard/index.html").read_text(encoding="utf-8")
+          assert '<nav id="desktopNav"' in html, "desktop navigation missing"
+          assert '<nav id="mobileNav"' in html, "mobile navigation missing"
+          assert 'data-theme="modern-dark"' in html, "theme system missing"
+          for theme in ("modern-light", "modern-dark", "neo-light", "neo-dark"):
+              assert f'data-theme="{theme}"' in html, f"missing {theme}"
+          scripts = re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>', html, re.S)
+          assert scripts, "dashboard script missing"
+          Path("/tmp/dashboard.js").write_text(scripts[-1], encoding="utf-8")
+          print("dashboard smoke source checks passed")
+          PY
+          node --check /tmp/dashboard.js
+          echo "dashboard JavaScript syntax passed"
+
+      - name: Dashboard endpoint wiring checks
+        run: |
+          grep -q '"/api/dashboard' dashboard/index.html
+          grep -q '"/api/close-trade' dashboard/index.html
+          grep -q '"/api/refresh-news' dashboard/index.html
+          grep -q '"/api/backtest' dashboard/index.html
+          echo "dashboard endpoint wiring passed"
