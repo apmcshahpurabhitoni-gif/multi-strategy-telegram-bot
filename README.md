@@ -1,12 +1,25 @@
 # Mavis Trading Bot
 
-A multi-strategy Telegram paper-trading bot with a deterministic, session-aware sweep engine, TrendPulse strategy, dashboard, backtester, and persistent virtual trading state.
+Mavis is a multi-strategy **paper-trading** Telegram bot with Sweep Engine V2, TrendPulse, persistent state, a dashboard, news calendar and backtesting tools.
 
-> **Paper trading only.** The sweep engine is designed to be audited against TradingView before any real-money use.
+> **Paper trading only.** Market data and backtests are not guaranteed execution feeds. Verify important signals against the authoritative market source.
 
-## Current sweep engine (V2)
+## Features
 
-The canonical sweep rule is:
+- Telegram signal and paper-trade notifications
+- Deterministic Sweep Engine V2
+- TrendPulse strategy
+- Persistent balances, trades and history
+- Dashboard at `/dashboard`
+- Mobile-first responsive UI
+- Four dashboard themes: **Modern Light, Modern Dark, Neo-Brutalist Light, Neo-Brutalist Dark**
+- Accent colors saved in browser storage
+- Live trades, signals, history, news and backtests
+- Render, Docker and local deployment
+
+## Sweep Engine V2
+
+A sweep exists only when the completed current candle breaks both sides of the previous candle:
 
 ```text
 Current High > Previous High
@@ -14,87 +27,149 @@ AND
 Current Low  < Previous Low
 ```
 
-Both conditions must be true on the **completed current candle**. A touch/equality does not count. Intracandle price path and Open are irrelevant.
-
-Then classify using only the completed candle Close:
+The completed candle Close then classifies the signal:
 
 ```text
-Close > Previous High                 -> BUY
-Previous Low <= Close <= Previous High -> NEUTRAL SWEEP
-Close < Previous Low                  -> SELL
+Close > Previous High                    -> BUY
+Previous Low <= Close <= Previous High  -> NEUTRAL SWEEP
+Close < Previous Low                     -> SELL
 ```
 
-If both sides are not broken: **NO SIGNAL**.
+If both sides are not broken: **NO SIGNAL**. Touch/equality does not count. Signals are evaluated only after the candle is closed.
 
-Signals are evaluated only after the candle is closed. Every new completed candle is independently compared with the immediately previous completed candle.
-
-### Paper trading
+Paper-trade rules:
 
 - BUY/SELL open a paper trade.
-- Entry = current market price when the closed-candle signal is detected.
+- Entry = market price when the closed-candle signal is detected.
 - BUY SL = sweeping candle Low.
 - SELL SL = sweeping candle High.
 - TP = 1:2 risk/reward.
 - NEUTRAL never opens a trade.
 
-### Telegram messages
+A qualifying sweep can generate an initial Telegram message and one one-hour reminder.
 
-Every sweep message contains the previous and current candle OHLC, exact candle times, swept levels, close classification, and data/source warning information.
+## Dashboard
 
-For a qualifying candle there are at most **two messages**:
+The dashboard is a **mobile-first application**, not a desktop layout squeezed onto a phone.
 
-1. Initial signal.
-2. `🔔 REMINDER` one hour later.
+### Navigation
 
-### Candle schedules
+Desktop shows one top navigation. Mobile shows one bottom navigation. There is no duplicated navigation on mobile.
 
-All times below are the user's TradingView display timezone (IST, UTC+5:30).
+- 🏠 Overview
+- 📊 Trades
+- ⚡ Signals
+- 🕘 History
+- 📰 News
+- ⚙️ Tools
 
-**Gold / OANDA FX reference:** 02:30, 06:30, 10:30, 14:30, 18:30, 22:30.
+### Overview order
 
-**BTC:** 01:30, 05:30, 09:30, 13:30, 17:30, 21:30.
+The first screen prioritizes:
 
-**NIFTY / BANK NIFTY:** 1-hour NSE session candles anchored at 09:15: 09:15→10:15, 10:15→11:15, 11:15→12:15, 12:15→13:15, 13:15→14:15, 14:15→15:15. No synthetic 15:15→16:15 candle is created.
+1. Balance
+2. Equity
+3. Today's P&L
+4. Bot state
+5. Account
+6. Open trades
+7. Signals
 
-**15 NSE stocks:** session-based sweep bars starting at 09:15 and 13:15. The 13:15 bar ends at the actual session tail (15:15); nonexistent overnight prices are never fabricated.
+Last-update time remains visible.
 
-## Data-source warnings
+### Trades
 
-The free implementation currently uses the repository's existing Yahoo Finance data layer. For instruments where the user's TradingView reference is OANDA (for example OANDA:XAUUSD, OANDA:EURUSD, OANDA:GBPUSD), Telegram explicitly warns that the provider differs and the candle should be verified against TradingView if values do not match.
+Open trades use compact cards on mobile: symbol, direction, entry, current, P&L, SL, TP, progress and close action. No wide horizontal trade table is used on mobile.
 
-A confirmed example that drove V2: the bot previously reported an XAUUSD sweep at **25 Aug 2026 05:30 IST**, while TradingView's OANDA 4H candle was still running from **02:30→06:30**. V2 refuses to classify an unfinished candle.
+### History
+
+History uses short readable records rather than raw ISO timestamps/microseconds. Each date group shows the day's trades, and the page also shows total P&L, today's P&L, and wins/losses.
+
+### News
+
+News is **date-first**, then chronological by time. Impact is a visual accent rather than the primary grouping:
+
+- 🔴 HIGH
+- 🟠 MEDIUM
+- 🟢 LOW / other
+
+Today's events are shown first, followed by upcoming dates.
+
+### Four themes
+
+| Design system | Light | Dark |
+|---|---|---|
+| Modern | Modern Light | Modern Dark |
+| Neo-Brutalist | Neo-Brutalist Light | Neo-Brutalist Dark |
+
+Each light/dark pair keeps the same layout and design language. Theme and accent selections persist in `localStorage`.
+
+### Motion
+
+Motion is purposeful and consistent with each style: smooth panel/card transitions, subtle live pulse, animated number changes, refresh feedback, news/trade entrance motion and neo-brutalist press behavior. `prefers-reduced-motion` is respected.
 
 ## Architecture
 
-- `main.py` — existing monolithic bot and dashboard integration.
-- `sweep_engine.py` — canonical candle construction and two-sided sweep decision logic.
-- `sweep_runtime.py` — integrates the new engine with the existing scanner, Telegram alerts, and paper-trading execution.
-- `run_bot.py` — production entry point; loads the existing bot, installs Sweep Engine V2, then starts the normal services.
-- `backtest.py` — existing backtest engine.
-- `dashboard_api.py` / `dashboard/index.html` — dashboard.
-- `render.yaml` / `Dockerfile` — both now start `run_bot.py`.
+```text
+main.py             existing bot, Telegram integration, accounts and state
+sweep_engine.py     canonical Sweep Engine V2
+sweep_runtime.py    sweep integration with scanning/Telegram/paper trades
+run_bot.py          production startup entry point
+backtest.py         backtesting engine
+dashboard_api.py    dashboard HTTP/API and snapshot builder
+dashboard/index.html self-contained dashboard UI
+db.py               persistence helpers
+render.yaml         Render deployment
+Dockerfile          Docker deployment
+Procfile            process startup declaration
+```
 
-## Running
+The dashboard is a presentation layer. It consumes the existing API/state and does **not** move trading decisions or execution logic into JavaScript.
+
+## Running locally
 
 ```bash
+python -m venv .venv
+source .venv/bin/activate
 pip install -r requirements.txt
+cp .env.example .env
 python run_bot.py
 ```
 
-Render and Docker are already configured to use `run_bot.py`.
+Open `http://localhost:8080/dashboard`.
+
+**Use `python run_bot.py` as the normal startup command.** `main.py` remains part of the application but is not the recommended deployment entry point.
+
+## Deployment
+
+- Render: `render.yaml` + `DEPLOYMENT_GUIDE.md`
+- Docker: `Dockerfile` + `DEPLOYMENT_GUIDE.md`
+- Local: `python run_bot.py`
 
 ## Verification checklist
 
-Before trusting a signal, verify:
+Strategy:
 
-- [ ] Current candle is completely closed.
+- [ ] Current candle is closed.
 - [ ] Current High > previous High.
 - [ ] Current Low < previous Low.
 - [ ] Close determines BUY / NEUTRAL / SELL.
-- [ ] Candle start/end match the configured TradingView schedule.
-- [ ] Previous and current OHLC in Telegram match the reference chart.
-- [ ] Any data-source mismatch warning has been reviewed.
+- [ ] Candle times match the configured schedule.
+- [ ] OHLC and prices match the authoritative reference when required.
+- [ ] Data-source warnings are reviewed.
+
+Dashboard:
+
+- [ ] No horizontal overflow on mobile.
+- [ ] Only one mobile navigation is visible.
+- [ ] All six sections have icons.
+- [ ] Overview shows balance/equity/today P&L/state/account/last update first.
+- [ ] History uses short times and P&L totals.
+- [ ] News is date-first and chronological.
+- [ ] All four themes persist after reload.
+- [ ] Animations remain smooth and respect reduced motion.
+- [ ] Trading endpoints and strategy logic are unchanged.
 
 ## Legacy note
 
-Older commits contained a `4H Sweep + FVG` strategy. FVG confirmation is **not part of the current sweep strategy**. Sweep V2 is immediate after candle close: both-side break first, then Close classification, with BUY/SELL paper execution and NEUTRAL informational alerts.
+Older versions contained `4H Sweep + FVG`. FVG confirmation is **not part of Sweep Engine V2**. Sweep V2 acts immediately after a qualifying closed candle: both-side break, Close classification, then BUY/SELL paper execution or NEUTRAL information only.
