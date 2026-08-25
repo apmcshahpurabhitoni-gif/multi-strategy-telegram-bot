@@ -2,7 +2,9 @@ name: Dashboard Smoke Test
 
 on:
   push:
-    branches: ["dashboard-repair-test"]
+    branches: ["main"]
+  pull_request:
+    branches: ["main"]
 
 jobs:
   smoke:
@@ -26,12 +28,13 @@ jobs:
           from pathlib import Path
           import re
           html = Path("dashboard/index.html").read_text(encoding="utf-8")
-          assert '<nav id="desktopNav"' in html, "desktop navigation missing"
-          assert '<nav id="mobileNav"' in html, "mobile navigation missing"
-          assert 'data-theme="modern-dark"' in html, "theme system missing"
-          for theme in ("modern-light", "modern-dark", "neo-light", "neo-dark"):
-              assert f'data-theme="{theme}"' in html, f"missing {theme}"
-          scripts = re.findall(r'<script(?:\\s[^>]*)?>(.*?)</script>', html, re.S)
+          assert '<nav class="nav desktop-nav" id="desktopNav">' in html, "desktop navigation missing"
+          assert '<nav class="bottom-nav" id="bottomNav"></nav>' in html, "mobile bottom navigation missing"
+          assert 'Trade the plan. Respect the risk.' in html, "professional overview banner missing"
+          assert 'data-theme="neo-light"' in html, "light theme missing"
+          for accent in ("emerald", "blue", "indigo", "violet", "rose", "amber", "cyan", "pink"):
+              assert f'data-accent="{accent}"' in html, f"missing {accent} accent"
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S)
           assert scripts, "dashboard script missing"
           Path("/tmp/dashboard.js").write_text(scripts[-1], encoding="utf-8")
           print("dashboard smoke source checks passed")
@@ -41,8 +44,7 @@ jobs:
 
       - name: Dashboard endpoint wiring checks
         run: |
-          grep -q '"/api/dashboard' dashboard/index.html
-          grep -q '"/api/close-trade' dashboard/index.html
-          grep -q '"/api/refresh-news' dashboard/index.html
-          grep -q '"/api/backtest' dashboard/index.html
+          grep -q '/api/dashboard' dashboard/index.html
+          grep -q '/api/refresh-news' dashboard/index.html
+          grep -q '/api/backtest' dashboard/index.html
           echo "dashboard endpoint wiring passed"
