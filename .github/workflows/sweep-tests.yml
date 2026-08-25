@@ -1,0 +1,23 @@
+name: Sweep Engine Tests
+
+on:
+  push:
+    branches: [main, fix/sweep-engine-v2]
+  pull_request:
+    branches: [main]
+
+permissions:
+  contents: read
+
+jobs:
+  sweep-tests:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-python@v6
+        with:
+          python-version: "3.12"
+      - name: Install dependencies
+        run: python -m pip install -r requirements.txt
+      - name: Run sweep tests
+        run: python -m unittest discover -s tests -p 'test_*.py' -v
