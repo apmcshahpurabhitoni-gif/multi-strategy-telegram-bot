@@ -1,0 +1,87 @@
+name: Fix Phase 3 data mapping
+on:
+  push:
+    branches: [main]
+permissions:
+  contents: write
+jobs:
+  fix:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Fix dashboard API data mapping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('dashboard_api.py')
+          s = p.read_text(encoding='utf-8')
+          old = '        if ts_ms < cutoff: continue\n        \n        age_ms = time.time() * 1000 - ts_ms\n        age_hr = age_ms / 3600000\n        if age_hr < 1:\n            tag = "🔥 FRESH"\n        elif age_hr > 4:\n            tag = "⚠️ STALE"\n        else:\n            tag = ""'
+          new = '        # Dashboard must never surface a signal older than 1 hour.\n        if ts_ms <= 0 or ts_ms < cutoff: continue\n        \n        age_ms = time.time() * 1000 - ts_ms\n        age_hr = age_ms / 3600000\n        tag = "🔥 FRESH" if age_hr <= 1 else ""'
+          if old not in s:
+              raise SystemExit('signal freshness block not found')
+          s = s.replace(old, new, 1)
+          old = '            "dir": "LONG" if "BULL" in str(sig_type).upper() else "SHORT", '
+          new = '            "dir": ("BUY" if "BULL" in str(sig_type).upper() else ("SELL" if "BEAR" in str(sig_type).upper() else "NEUTRAL")), '
+          if old not in s:
+              raise SystemExit('signal direction mapping not found')
+          s = s.replace(old, new, 1)
+          old = '''    news = []
+    if get_cached_news:
+        try:
+            raw_news = get_cached_news()
+            if raw_news:
+                news = [dict(ev, impact=str(ev.get("impact", "")).upper()) for ev in raw_news[:120]]
+                print(f"[DASHBOARD] Loaded {len(news)} news items")
+            else:
+                print("[DASHBOARD] No news available from cache")
+        except Exception as e:
+            print(f"[DASHBOARD] Failed to load news: {e}")'''
+          new = '''    news = []
+    try:
+        raw_news = get_cached_news() if get_cached_news else []
+        # If the cache is empty, fetch the same news source used by the bot.
+        if not raw_news and hasattr(main, "fetch_news"):
+            raw_news = main.fetch_news() or []
+        if raw_news:
+            news = [dict(ev, impact=str(ev.get("impact") or "LOW").upper()) for ev in raw_news[:120]]
+            print(f"[DASHBOARD] Loaded {len(news)} news items")
+        else:
+            print("[DASHBOARD] No news available")
+    except Exception as e:
+        print(f"[DASHBOARD] Failed to load news: {e}")'''
+          if old not in s:
+              raise SystemExit('news block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Fix dashboard presentation mapping
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          p = Path('templates/index.html')
+          s = p.read_text(encoding='utf-8')
+          s = s.replace('var news=data.news||[];', 'var news=data.news_raw||data.news||[];', 1)
+          # Make history cards explicit and easier to scan.
+          old = "<div class=\"p3-sub\">'+d+' · '+E(x.strat||x.strategy||'Sweep')+' · '+E(x.closed_at||x.close_time||x.time||'')+'</div>"
+          new = "<div class=\"p3-sub\">'+d+' · '+E(x.strat||x.strategy||'Sweep')+'</div><div class=\"p3-meta\">Closed: '+E(x.closed_at||x.close_time||x.time||'')+'</div>"
+          if old in s:
+              s = s.replace(old, new, 1)
+          # Use actual date/datetime fields for news grouping and readable dates.
+          old = "var dt=String(x.date||x.datetime||x.time||'').slice(0,10)||'Other';"
+          new = "var rawDate=String(x.date||x.datetime||x.time||'');var dt=rawDate.slice(0,10)||'Other';"
+          if old in s:
+              s = s.replace(old, new, 1)
+          old = "return '<div class=\"p3-date\">'+E(k==='Other'?'OTHER':k)+'</div>'+groups[k].sort(function(a,b){return String(a.time||'').localeCompare(String(b.time||''))}).map(newsHtml).join('')"
+          new = "return '<div class=\"p3-date\">'+E(k==='Other'?'OTHER':k)+'</div>'+groups[k].sort(function(a,b){return String(a.date||a.datetime||a.time||'').localeCompare(String(b.date||b.datetime||b.time||''))}).map(newsHtml).join('')"
+          if old in s:
+              s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+          PY
+      - name: Commit and remove this workflow
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add dashboard_api.py templates/index.html
+          git rm .github/workflows/fix_phase3_data_mapping.yml
+          git commit -m "fix: correct signal freshness and news mapping"
+          git push
