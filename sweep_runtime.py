@@ -3,7 +3,7 @@ from __future__ import annotations
 import json
 import os
 import time
-from datetime import datetime
+from datetime import datetime, timedelta
 from sweep_engine import detect_sweep, build_closed_candles
 
 STATE_FILE = "/tmp/workspace/sweep_runtime_state.json"
@@ -83,15 +83,21 @@ def install(main):
     def check_sweep_v2(symbol, df=None):
         try:
             now = datetime.now(main.IST)
-            # Establish a per-process baseline from the newest completed candle.
-            # A restart must NEVER backfill and trade an old historical sweep.
-            bars, _, _ = build_closed_candles(df, symbol, now)
+            bars, tf, _ = build_closed_candles(df, symbol, now)
             if len(bars) < 2:
                 return None
-            latest_close = pd.Timestamp(bars.index[-1]) + (pd.Timedelta(hours=1) if symbol in ("^NSEI", "^NSEBANK") else
-                                                          pd.Timedelta(hours=2) if (symbol.endswith(".NS") and pd.Timestamp(bars.index[-1]).hour == 13) else
-                                                          pd.Timedelta(hours=4))
+
+            latest_start = bars.index[-1]
+            if symbol in ("^NSEI", "^NSEBANK"):
+                latest_close = latest_start + timedelta(hours=1)
+            elif symbol.endswith(".NS") and getattr(latest_start, "hour", None) == 13:
+                latest_close = latest_start + timedelta(hours=2)
+            else:
+                latest_close = latest_start + timedelta(hours=4)
             latest_close_ms = int(latest_close.timestamp() * 1000)
+
+            # On process startup, establish the newest already-closed candle as a
+            # baseline. It can never be backfilled into a new trade after restart.
             if symbol not in STARTUP_BASELINE:
                 STARTUP_BASELINE[symbol] = latest_close_ms
                 return None
@@ -102,11 +108,10 @@ def install(main):
             close_ts = int(result.candle_end.timestamp() * 1000)
             open_ts = int(result.candle_start.timestamp() * 1000)
             age_ms = int(now.timestamp() * 1000) - close_ts
-            # Signals older than one hour are never actionable. The one-hour
-            # reminder is handled separately after a signal was already accepted.
+            # A fresh signal must be no more than one hour old. This prevents
+            # historical/stale candles from opening paper trades.
             if age_ms > 3600 * 1000:
                 return None
-            # Only a candle that closed after this process started can create a new signal.
             if close_ts <= STARTUP_BASELINE[symbol]:
                 return None
             CONTEXT[_key(symbol, close_ts)] = result
