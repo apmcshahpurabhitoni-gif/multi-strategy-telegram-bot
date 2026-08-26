@@ -2,7 +2,7 @@ name: Sweep Engine Tests
 
 on:
   push:
-    branches: [main, fix/sweep-engine-v2]
+    branches: [main, fix/sweep-engine-v2, phase-6]
   pull_request:
     branches: [main]
 
