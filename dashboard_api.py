@@ -89,10 +89,6 @@ def _build_equity_curve(history,starting=400000.0,days=60):
     points=points[-days:]
     return {"points":points,"current_equity":points[-1]["equity"] if points else starting,"max_drawdown_inr":round(max_dd,2),"max_drawdown_pct":round(max_dd_pct,2)}
 def _history_signal_fallback(history,ist):
-    """Use executed trade history as a recovery view if the dedicated archive is empty.
-    This never replaces the permanent archive; it only prevents an empty Signals tab
-    when older deployments have trade history but lost their /tmp signal archive.
-    """
     out=[]
     for trade in history:
         if not isinstance(trade,dict):continue
@@ -126,8 +122,7 @@ def _build_actual_signals(main,ist,history=None):
             try:dt=datetime.fromtimestamp(timestamp/1000,tz=ist)
             except Exception:continue
             signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
-    if not signals and history:
-        signals=_history_signal_fallback(history,ist)
+    if not signals and history:signals=_history_signal_fallback(history,ist)
     signals.sort(key=lambda item:item["ts_ms"],reverse=True);return signals
 def _build_snapshot():
     main=_get_main_module()
@@ -177,7 +172,7 @@ def _json_response(start_response,payload,status="200 OK"):
     body=json.dumps(payload,default=str).encode("utf-8");start_response(status,[("Content-Type","application/json"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
 def _html_response(start_response,body,status="200 OK"):
     if isinstance(body,str):body=body.encode("utf-8")
-    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
+    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))), ("Cache-Control","no-store")]);return [body]
 def _route_backtest(start_response,environ):
     try:
         query=parse_qs(environ.get("QUERY_STRING",""));symbol=(query.get("symbol",[""])[0] or "").strip().upper();strategy=(query.get("strategy",["trendpulse"])[0] or "trendpulse").lower();days=max(7,min(int(query.get("days",["30"])[0] or 30),730))
