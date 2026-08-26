@@ -1,30 +1,21 @@
-import os, sys, json, time, threading
+import os,sys,json,time,threading
 from datetime import datetime
 from urllib.parse import parse_qs
 import pytz
-
 SNAPSHOT_TTL=10
-_snapshot_cache={"data":None,"ts":0}
-_snapshot_lock=threading.RLock()
-_HERE=os.path.dirname(os.path.abspath(__file__))
-_HTML_PATH_PRIMARY=os.path.join(_HERE,"templates","index.html")
-_HTML_PATH_FALLBACK=os.path.join(_HERE,"dashboard","index.html")
-
+_snapshot_cache={"data":None,"ts":0};_snapshot_lock=threading.RLock();_HERE=os.path.dirname(os.path.abspath(__file__))
+_HTML_PATH_PRIMARY=os.path.join(_HERE,"templates","index.html");_HTML_PATH_FALLBACK=os.path.join(_HERE,"dashboard","index.html")
 
 def _get_html_content():
     for p in (_HTML_PATH_PRIMARY,_HTML_PATH_FALLBACK):
         if os.path.exists(p):
             with open(p,"rb") as f: body=f.read()
-            override=b'''<script>(function(){function e(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]})}function d(v){v=String(v||'').toUpperCase();return v.indexOf('BUY')>=0||v.indexOf('BULL')>=0?'BUY':v.indexOf('SELL')>=0||v.indexOf('BEAR')>=0?'SELL':'NEUTRAL'}function r(a){var g={};(a||[]).forEach(function(x){var k=x.date||String(x.time||'').slice(0,10)||'Other';(g[k]||(g[k]=[])).push(x)});var ks=Object.keys(g).sort().reverse();return ks.map(function(k){var items=g[k].sort(function(a,b){return Number(b.ts_ms||0)-Number(a.ts_ms||0)}).map(function(x){var q=d(x.dir||x.direction);var cls=q==='BUY'?'p3-buy':q==='SELL'?'p3-sell':'p3-neutral';return '<div class="p3-signal"><div class="p3-main"><div><div class="p3-symbol">'+e(x.sym||x.symbol||'—')+'</div><div class="p3-sub">'+e(x.strategy||'Sweep')+' · '+e(x.time||'')+'</div></div><div class="p3-side"><span class="p3-dir '+cls+'">'+q+'</span><span class="p3-pnl">'+e(x.status||'SIGNAL')+'</span></div></div></div>'}).join('');return '<div class="p3-date">'+e(k==='Other'?'OTHER':k)+'</div>'+items}).join('')||'<div class="empty">No saved signals.</div>'}function load(){fetch('/api/dashboard',{cache:'no-store'}).then(function(x){return x.json()}).then(function(d){var el=document.getElementById('signalsList'),latest=document.getElementById('latest'),s=d.signals||d.today_signals||[];if(el)el.innerHTML=r(s);if(latest)latest.innerHTML=(s||[]).slice(0,3).map(function(x){var q=d(x.dir||x.direction),c=q==='BUY'?'p3-buy':q==='SELL'?'p3-sell':'p3-neutral';return '<div class="p3-signal"><div class="p3-main"><div><div class="p3-symbol">'+e(x.sym||x.symbol)+'</div><div class="p3-sub">'+e(x.strategy||'Sweep')+' · '+e(x.time||'')+'</div></div><span class="p3-dir '+c+'">'+q+'</span></div></div>'}).join('')||'<div class="empty">No signals yet.</div>';var h=document.querySelector('#signals .muted');if(h)h.textContent='All saved signals'})}).catch(function(){})}load();setInterval(load,30000)})();</script>'''
-            marker=b'</body>'
-            if marker in body: body=body.replace(marker,override+marker,1)
+            override=b'''<script>(function(){function E(s){return String(s==null?'':s).replace(/[&<>\"']/g,function(c){return{'&':'&amp;','<':'&lt;','>':'&gt;','\"':'&quot;',"'":'&#39;'}[c]})}function direction(v){v=String(v||'').toUpperCase();return v.indexOf('BUY')>=0||v.indexOf('BULL')>=0?'BUY':v.indexOf('SELL')>=0||v.indexOf('BEAR')>=0?'SELL':'NEUTRAL'}function renderSignals(a){var g={};(a||[]).forEach(function(x){var k=x.date||String(x.time||'').slice(0,10)||'OTHER';(g[k]||(g[k]=[])).push(x)});var ks=Object.keys(g).sort().reverse();return ks.map(function(k){var items=g[k].sort(function(a,b){return Number(b.ts_ms||0)-Number(a.ts_ms||0)}).map(function(x){var q=direction(x.dir||x.direction),cls=q==='BUY'?'p3-buy':q==='SELL'?'p3-sell':'p3-neutral';return '<div class="p3-signal"><div class="p3-main"><div><div class="p3-symbol">'+E(x.sym||x.symbol||'—')+'</div><div class="p3-sub">'+E(x.strategy||'Sweep')+' · '+E(x.time||'')+'</div></div><div class="p3-side"><span class="p3-dir '+cls+'">'+q+'</span><span class="p3-pnl">'+E(x.status||'SIGNAL')+'</span></div></div></div>'}).join('');return '<div class="p3-date">'+E(k==='OTHER'?'OTHER':k)+'</div>'+items}).join('')||'<div class="empty">No saved signals.</div>'}function loadSignals(){fetch('/api/dashboard',{cache:'no-store'}).then(function(r){return r.json()}).then(function(data){var el=document.getElementById('signalsList'),latest=document.getElementById('latest'),s=data.signals||data.today_signals||[];if(el)el.innerHTML=renderSignals(s);if(latest)latest.innerHTML=(s||[]).slice(0,3).map(function(x){var q=direction(x.dir||x.direction),c=q==='BUY'?'p3-buy':q==='SELL'?'p3-sell':'p3-neutral';return '<div class="p3-signal"><div class="p3-main"><div><div class="p3-symbol">'+E(x.sym||x.symbol||'—')+'</div><div class="p3-sub">'+E(x.strategy||'Sweep')+' · '+E(x.time||'')+'</div></div><span class="p3-dir '+c+'">'+q+'</span></div></div>'}).join('')||'<div class="empty">No signals yet.</div>';var h=document.querySelector('#signals .muted');if(h)h.textContent='All saved signals'}).catch(function(e){console.error('signal archive render',e)})}loadSignals();setInterval(loadSignals,30000)})();</script>'''
+            if b'</body>' in body: body=body.replace(b'</body>',override+b'</body>',1)
             return body
     return b"<h1>Dashboard template index.html not found.</h1>"
 
-
-def _get_main_module(): return sys.modules.get("__main__") or sys.modules.get("main")
-
-
+def _get_main_module():return sys.modules.get("__main__") or sys.modules.get("main")
 def _load_file(main,path,default):
     try:
         fn=getattr(main,"load_json",None)
@@ -36,25 +27,21 @@ def _load_file(main,path,default):
     except Exception as e:print("[DASHBOARD] file load:",e)
     return default
 
-
 def _parse_ts(value,default=0):
     if value is None or value=="":return default
     if isinstance(value,(int,float)):
         v=float(value);return int(v if v>10_000_000_000 else v*1000)
-    s=str(value).strip()
     try:
-        v=float(s);return int(v if v>10_000_000_000 else v*1000)
+        v=float(str(value).strip());return int(v if v>10_000_000_000 else v*1000)
     except Exception:pass
-    try:return int(datetime.fromisoformat(s.replace("Z","+00:00")).timestamp()*1000)
+    try:return int(datetime.fromisoformat(str(value).replace("Z","+00:00")).timestamp()*1000)
     except Exception:return default
-
 
 def _direction(value):
     s=str(value or "").upper()
     if "BULL" in s or s in ("BUY","LONG"):return "BUY"
     if "BEAR" in s or s in ("SELL","SHORT"):return "SELL"
     return "NEUTRAL"
-
 
 def _batch_live_prices(symbols):
     if not symbols:return {}
@@ -68,8 +55,7 @@ def _batch_live_prices(symbols):
     need=[s for s in symbols if s not in out]
     if need:
         try:
-            import yfinance as yf
-            df=yf.download(tickers=','.join(need),period="1d",interval="1d",progress=False,threads=True,timeout=15)
+            import yfinance as yf;df=yf.download(tickers=','.join(need),period="1d",interval="1d",progress=False,threads=True,timeout=15)
             if df is not None and not df.empty:
                 close=df["Close"]
                 if len(need)==1:
@@ -91,7 +77,6 @@ def _batch_live_prices(symbols):
                 except Exception:pass
     return out
 
-
 def _build_equity_curve(history,starting=400000.0,days=60):
     daily={}
     for t in history:
@@ -107,28 +92,24 @@ def _build_equity_curve(history,starting=400000.0,days=60):
     points=points[-days:]
     return {"points":points,"current_equity":points[-1]["equity"] if points else starting,"max_drawdown_inr":round(ddmax,2),"max_drawdown_pct":round(ddpct,2)}
 
-
 def _build_actual_signals(main,ist):
     rows=_load_file(main,"/tmp/workspace/signal_history.json",[])
     if not isinstance(rows,list):rows=[]
-    # Migration fallback: expose existing confirmed runtime sweeps so the new permanent store does not start blank.
     if not rows:
         state=_load_file(main,"/tmp/workspace/sweep_runtime_state.json",{})
         if isinstance(state,dict):
             for key,rec in state.items():
                 if isinstance(rec,dict) and rec.get("initial"):
-                    rows.append({"id":key,"symbol":str(key).split(":",1)[0],"direction":rec.get("direction"),"strategy":f"{rec.get('timeframe','4H')} Sweep","timeframe":rec.get("timeframe","4H"),"candle_start":rec.get("candle_start"),"candle_end":rec.get("candle_end"),"reminder_sent":bool(rec.get("reminder"))})
+                    rows.append({"id":key,"symbol":str(key).split(":",1)[0],"direction":rec.get("direction"),"strategy":f"{rec.get('timeframe','4H')} Sweep","timeframe":rec.get("timeframe","4H"),"candle_end":rec.get("candle_end"),"reminder_sent":bool(rec.get("reminder"))})
     signals=[]
-    for record in rows:
-        if not isinstance(record,dict):continue
-        ts=_parse_ts(record.get("candle_end"),0);symbol=str(record.get("symbol") or "").strip()
+    for r in rows:
+        if not isinstance(r,dict):continue
+        ts=_parse_ts(r.get("candle_end"),0);symbol=str(r.get("symbol") or "").strip()
         if not symbol or not ts:continue
         try:dt=datetime.fromtimestamp(ts/1000,tz=ist)
         except Exception:continue
-        signals.append({"id":record.get("id",f"{symbol}:{ts}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL","pnl":0,"hint":"Confirmed sweep signal","ts_ms":ts,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
-    signals.sort(key=lambda x:x["ts_ms"],reverse=True)
-    return signals
-
+        signals.append({"id":r.get("id",f"{symbol}:{ts}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(r.get("direction")),"strategy":r.get("strategy") or f"{r.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if r.get("reminder_sent") else "SIGNAL","pnl":0,"ts_ms":ts,"date":dt.strftime("%Y-%m-%d")})
+    signals.sort(key=lambda x:x["ts_ms"],reverse=True);return signals
 
 def _build_snapshot():
     main=_get_main_module()
@@ -164,7 +145,6 @@ def _build_snapshot():
     history_sorted=sorted(history,key=lambda x:str(x.get("closed_at",x.get("close_time",""))),reverse=True)[:30];curve=_build_equity_curve(history);total=sum(float(x.get("pnl",0) or 0) for x in history)
     return {"generated_at":now.strftime("%Y-%m-%d %H:%M:%S IST"),"accounts":accounts_view,"live_trades":live,"today_signals":signals,"signals":signals,"history":history_sorted,"history_total":len(history),"pending":[],"news_raw":normalized_news,"news":normalized_news,"equity_curve":curve,"risk":{"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"]},"total_pnl":round(total,2)}
 
-
 def _get_snapshot_cached():
     now=time.time()
     with _snapshot_lock:
@@ -173,15 +153,12 @@ def _get_snapshot_cached():
     with _snapshot_lock:_snapshot_cache["data"],_snapshot_cache["ts"]=snap,now
     return {"cached":False,**snap}
 
-
 def _json_response(start_response,payload,status="200 OK"):
     body=json.dumps(payload,default=str).encode();start_response(status,[("Content-Type","application/json"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
-
 
 def _html_response(start_response,body,status="200 OK"):
     if isinstance(body,str):body=body.encode()
     start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
-
 
 def _route_backtest(start_response,environ):
     try:
@@ -195,7 +172,6 @@ def _route_backtest(start_response,environ):
         return _json_response(start_response,res)
     except Exception as e:return _json_response(start_response,{"error":str(e)},"500 Internal Server Error")
 
-
 def _route_close_trade(start_response,environ):
     try:
         n=int(environ.get("CONTENT_LENGTH",0) or 0);data=json.loads(environ["wsgi.input"].read(n).decode()) if n else {};tid=data.get("trade_id","");main=_get_main_module()
@@ -204,14 +180,10 @@ def _route_close_trade(start_response,environ):
         return _json_response(start_response,{"success":ok,"message":msg})
     except Exception as e:return _json_response(start_response,{"success":False,"error":str(e)},"500 Internal Server Error")
 
-
 def _route_refresh_news(start_response,environ):
     main=_get_main_module()
-    try:
-        items=main.fetch_news() if main and hasattr(main,"fetch_news") else []
-        return _json_response(start_response,{"ok":True,"items":len(items or [])})
+    try:items=main.fetch_news() if main and hasattr(main,"fetch_news") else [];return _json_response(start_response,{"ok":True,"items":len(items or [])})
     except Exception as e:return _json_response(start_response,{"ok":False,"error":str(e)},"500 Internal Server Error")
-
 
 def register_routes(path,start_response,environ):
     method=environ.get("REQUEST_METHOD","GET")
@@ -221,8 +193,7 @@ def register_routes(path,start_response,environ):
         except Exception as e:return _json_response(start_response,{"error":str(e)},"500 Internal Server Error")
     if path.startswith("/api/backtest"):return _route_backtest(start_response,environ)
     if path.startswith("/api/prices"):
-        syms=parse_qs(environ.get("QUERY_STRING","")).get("symbols",[""])[0].split(",")
-        return _json_response(start_response,{"prices":_batch_live_prices([s for s in syms if s]),"ts":int(time.time())})
+        syms=parse_qs(environ.get("QUERY_STRING","")).get("symbols",[""])[0].split(",");return _json_response(start_response,{"prices":_batch_live_prices([s for s in syms if s]),"ts":int(time.time())})
     if path=="/api/health":return _json_response(start_response,{"ok":True,"ts":int(time.time())})
     if path=="/api/close-trade" and method=="POST":return _route_close_trade(start_response,environ)
     if path=="/api/refresh-news" and method=="POST":return _route_refresh_news(start_response,environ)
