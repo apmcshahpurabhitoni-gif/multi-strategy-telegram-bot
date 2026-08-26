@@ -1,0 +1,77 @@
+name: Fix signal history
+
+on:
+  push:
+    branches: [main]
+
+permissions:
+  contents: write
+
+jobs:
+  patch:
+    if: github.event.head_commit.message != 'chore: fix signal history source'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: Patch signal history
+        shell: python
+        run: |
+          from pathlib import Path
+
+          # 1) Add a canonical permanent signal-event store to sweep_runtime.py.
+          p = Path('sweep_runtime.py')
+          s = p.read_text(encoding='utf-8')
+          if 'SIGNAL_HISTORY_FILE' not in s:
+              s = s.replace(
+                  'STATE_FILE = "/tmp/workspace/sweep_runtime_state.json"\n',
+                  'STATE_FILE = "/tmp/workspace/sweep_runtime_state.json"\nSIGNAL_HISTORY_FILE = "/tmp/workspace/signal_history.json"\n'
+              )
+          if 'def _save_signal_event(' not in s:
+              marker = 'def _key(symbol, close_ts):\n'
+              fn = '''def _save_signal_event(symbol, mtype, result):\n    """Persist every confirmed sweep signal; never expire dashboard history."""\n    try:\n        os.makedirs(os.path.dirname(SIGNAL_HISTORY_FILE), exist_ok=True)\n        try:\n            with open(SIGNAL_HISTORY_FILE, "r", encoding="utf-8") as f:\n                rows = json.load(f)\n        except Exception:\n            rows = []\n        if not isinstance(rows, list):\n            rows = []\n        close_ts = int(result.candle_end.timestamp() * 1000)\n        event_id = _key(symbol, close_ts)\n        if any(isinstance(x, dict) and x.get("id") == event_id for x in rows):\n            return\n        rows.append({\n            "id": event_id,\n            "symbol": symbol,\n            "market": mtype,\n            "direction": result.direction,\n            "strategy": f"{result.timeframe} Sweep",\n            "timeframe": result.timeframe,\n            "candle_start": result.candle_start.isoformat(),\n            "candle_end": result.candle_end.isoformat(),\n            "created_at": datetime.now().astimezone().isoformat(),\n            "reminder_sent": False,\n        })\n        rows.sort(key=lambda x: int(x.get("candle_end_ms", 0) or 0), reverse=True)\n        for x in rows:\n            if not x.get("candle_end_ms"):\n                try:\n                    x["candle_end_ms"] = int(datetime.fromisoformat(x["candle_end"]).timestamp() * 1000)\n                except Exception:\n                    x["candle_end_ms"] = 0\n        with open(SIGNAL_HISTORY_FILE + ".tmp", "w", encoding="utf-8") as f:\n            json.dump(rows, f, indent=2)\n        os.replace(SIGNAL_HISTORY_FILE + ".tmp", SIGNAL_HISTORY_FILE)\n    except Exception as e:\n        print("[SWEEP] signal history save:", e)\n\n\n'''
+              s = s.replace(marker, fn + marker)
+          old = '        state.update({"initial": True, "direction": direction, "timeframe": result.timeframe,\n                      "candle_start": result.candle_start.isoformat(), "candle_end": result.candle_end.isoformat(),\n                      "high": result.current["High"], "low": result.current["Low"]})\n        _save(); CONTEXT[key] = result\n'
+          new = '        state.update({"initial": True, "direction": direction, "timeframe": result.timeframe,\n                      "candle_start": result.candle_start.isoformat(), "candle_end": result.candle_end.isoformat(),\n                      "high": result.current["High"], "low": result.current["Low"]})\n        _save(); CONTEXT[key] = result\n        _save_signal_event(symbol, mtype, result)\n'
+          if old not in s:
+              raise SystemExit('sweep_runtime.py: expected signal persistence block not found')
+          s = s.replace(old, new, 1)
+          p.write_text(s, encoding='utf-8')
+
+          # 2) Make dashboard read the permanent signal-event store, with no one-hour display cutoff.
+          p = Path('dashboard_api.py')
+          s = p.read_text(encoding='utf-8')
+          start = s.index('def _build_actual_signals(')
+          end = s.index('\n\ndef _build_snapshot()', start)
+          fn = '''def _build_actual_signals(main, ist, cutoff=None):\n    """Read permanent signal history. The 1-hour rule belongs only to Telegram duplicate control."""\n    path = "/tmp/workspace/signal_history.json"\n    rows = _load_file(main, path, [])\n    if not isinstance(rows, list):\n        return []\n    signals = []\n    for record in rows:\n        if not isinstance(record, dict):\n            continue\n        ts = _parse_ts(record.get("candle_end"), 0)\n        if not ts:\n            continue\n        direction = _direction(record.get("direction"))\n        symbol = str(record.get("symbol") or "").strip()\n        if not symbol:\n            continue\n        try:\n            dt = datetime.fromtimestamp(ts / 1000, tz=ist)\n            time_str = dt.strftime("%d-%b %H:%M")\n        except Exception:\n            time_str = ""\n        signals.append({\n            "id": record.get("id", f"{symbol}:{ts}"),\n            "time": time_str,\n            "sym": symbol,\n            "dir": direction,\n            "strategy": record.get("strategy") or f"{record.get('timeframe', '4H')} Sweep",\n            "status": "REMINDER SENT" if record.get("reminder_sent") else "SIGNAL",\n            "pnl": 0,\n            "hint": "Confirmed sweep signal",\n            "ts_ms": ts,\n            "reminder": bool(record.get("reminder_sent")),\n            "date": dt.strftime("%Y-%m-%d") if time_str else "",\n        })\n    signals.sort(key=lambda x: x["ts_ms"], reverse=True)\n    return signals\n'''
+          s = s[:start] + fn + s[end:]
+          s = s.replace('    # Your rule: a signal is valid on the dashboard for one hour after the closed candle.\n    cutoff = int(time.time() * 1000) - 60 * 60 * 1000\n    signals = _build_actual_signals(main, IST, cutoff)\n', '    # Dashboard signal history never expires; the 1-hour rule is Telegram-only.\n    signals = _build_actual_signals(main, IST)\n')
+          p.write_text(s, encoding='utf-8')
+
+          # 3) Remove this workflow after the patch is committed.
+          Path('.github/workflows/fix-signal-history.yml').unlink()
+
+      - name: Verify
+        shell: python
+        run: |
+          import ast
+          from pathlib import Path
+          for name in ('sweep_runtime.py', 'dashboard_api.py'):
+              ast.parse(Path(name).read_text(encoding='utf-8'))
+          s = Path('sweep_runtime.py').read_text(encoding='utf-8')
+          d = Path('dashboard_api.py').read_text(encoding='utf-8')
+          assert 'SIGNAL_HISTORY_FILE' in s
+          assert '_save_signal_event' in s
+          assert 'signal_history.json' in d
+          assert 'signal history never expires' in d
+          assert '60 * 60 * 1000' not in d
+          print('Signal history migration checks passed.')
+
+      - name: Commit
+        shell: bash
+        run: |
+          git config user.name 'github-actions[bot]'
+          git config user.email '41898282+github-actions[bot]@users.noreply.github.com'
+          git add sweep_runtime.py dashboard_api.py .github/workflows/fix-signal-history.yml
+          git diff --cached --quiet && exit 0
+          git commit -m 'chore: fix signal history source'
+          git push
