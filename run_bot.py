@@ -13,6 +13,16 @@ import sys
 
 if __name__ == "__main__":
     base = os.path.dirname(os.path.abspath(__file__))
+    # Explicitly load the Phase 6 backtest response compatibility layer before
+    # main.py imports BacktestEngine. This is deterministic on Render and does
+    # not depend on Python's optional sitecustomize discovery behavior.
+    try:
+        from backtest import BacktestEngine
+        from backtest_compat import apply_backtest_compat
+        apply_backtest_compat(BacktestEngine)
+    except Exception as exc:
+        print(f"[BACKTEST COMPAT] unavailable: {exc}")
+
     main_file = os.path.join(base, "main.py")
     sys.argv = [main_file, *sys.argv[1:]]
     with open(main_file, "rb") as f:
