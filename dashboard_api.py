@@ -88,18 +88,40 @@ def _build_equity_curve(history,starting=400000.0,days=60):
         points.append({"date":date,"equity":round(running,2)})
     points=points[-days:]
     return {"points":points,"current_equity":points[-1]["equity"] if points else starting,"max_drawdown_inr":round(max_dd,2),"max_drawdown_pct":round(max_dd_pct,2)}
-def _build_actual_signals(main,ist):
-    archive_path=os.environ.get("SIGNAL_HISTORY_FILE","/tmp/workspace/signal_history.json")
-    rows=_load_file(main,archive_path,[])
-    if not isinstance(rows,list):return []
-    signals=[]
-    for record in rows:
-        if not isinstance(record,dict):continue
-        timestamp=_parse_ts(record.get("candle_end"),0);symbol=str(record.get("symbol") or "").strip()
-        if not symbol or not timestamp:continue
-        try:dt=datetime.fromtimestamp(timestamp/1000,tz=ist)
+def _history_signal_fallback(history,ist):
+    out=[]
+    for trade in history:
+        if not isinstance(trade,dict):continue
+        strategy=str(trade.get("strat",trade.get("strategy","")) or "")
+        symbol=str(trade.get("symbol","") or "").strip()
+        if not symbol or not strategy:continue
+        direction=trade.get("direction",trade.get("type",trade.get("sig_type","")))
+        if not direction:continue
+        ts=_parse_ts(trade.get("signal_ts_ms",trade.get("opened_at",trade.get("opened",trade.get("time","")))),0)
+        if not ts:ts=_parse_ts(trade.get("closed_at",trade.get("close_time","")),0)
+        if not ts:continue
+        try:dt=datetime.fromtimestamp(ts/1000,tz=ist)
         except Exception:continue
-        signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
+        out.append({"id":f"trade-signal:{trade.get('id',symbol)}:{ts}","time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(direction),"strategy":strategy,"status":"EXECUTED TRADE","pnl":float(trade.get("pnl",0) or 0),"hint":"Recovered from trade history","ts_ms":ts,"reminder":False,"date":dt.strftime("%Y-%m-%d")})
+    out.sort(key=lambda x:x["ts_ms"],reverse=True)
+    seen=set();unique=[]
+    for item in out:
+        key=(item["sym"],item["ts_ms"],item["dir"])
+        if key in seen:continue
+        seen.add(key);unique.append(item)
+    return unique
+def _build_actual_signals(main,ist,history=None):
+    archive_path=os.environ.get("SIGNAL_HISTORY_FILE","/tmp/workspace/signal_history.json")
+    rows=_load_file(main,archive_path,[]);signals=[]
+    if isinstance(rows,list):
+        for record in rows:
+            if not isinstance(record,dict):continue
+            timestamp=_parse_ts(record.get("candle_end"),0);symbol=str(record.get("symbol") or "").strip()
+            if not symbol or not timestamp:continue
+            try:dt=datetime.fromtimestamp(timestamp/1000,tz=ist)
+            except Exception:continue
+            signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
+    if not signals and history:signals=_history_signal_fallback(history,ist)
     signals.sort(key=lambda item:item["ts_ms"],reverse=True);return signals
 def _build_snapshot():
     main=_get_main_module()
@@ -121,7 +143,7 @@ def _build_snapshot():
     for trade in active:
         symbol=trade.get("symbol");entry=float(trade.get("entry",0) or 0);qty=float(trade.get("qty",0) or 0);sl=float(trade.get("sl",trade.get("trail_sl",0)) or 0);tp=float(trade.get("tp",0) or 0);trade_type=str(trade.get("type",trade.get("direction","LONG"))).upper();is_long="LONG" in trade_type or "BULL" in trade_type or trade_type=="BUY";current=float(prices.get(symbol,entry) or entry);pnl=(current-entry)*qty*(1 if is_long else -1)
         live.append({"id":trade.get("id",""),"symbol":symbol,"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if is_long else "SHORT","entry":entry,"current":current,"sl":sl,"tp":tp,"qty":qty,"pnl_inr":round(pnl,2),"opened":trade.get("opened_at",trade.get("opened","")),"strategy":trade.get("strat",trade.get("strategy",""))})
-    signals=_build_actual_signals(main,ist);news=[];cached=getattr(main,"get_cached_news",None);fetch=getattr(main,"fetch_news",None)
+    signals=_build_actual_signals(main,ist,history);news=[];cached=getattr(main,"get_cached_news",None);fetch=getattr(main,"fetch_news",None)
     try:
         if cached:news=cached() or []
     except Exception as exc:print("[DASHBOARD] cached news:",exc)
@@ -133,7 +155,11 @@ def _build_snapshot():
         if isinstance(event,dict):
             item=dict(event);item["impact"]=str(item.get("impact") or item.get("importance") or "LOW").upper();normalized_news.append(item)
     history_sorted=sorted(history,key=lambda item:str(item.get("closed_at",item.get("close_time",item.get("time","")))),reverse=True)[:30];curve=_build_equity_curve(history);total=sum(float(item.get("pnl",0) or 0) for item in history)
-    return {"generated_at":now.strftime("%Y-%m-%d %H:%M:%S IST"),"accounts":accounts_view,"live_trades":live,"today_signals":signals,"signals":signals,"history":history_sorted,"history_total":len(history),"pending":[],"news_raw":normalized_news,"news":normalized_news,"equity_curve":curve,"risk":{"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"]},"total_pnl":round(total,2)}
+    recent_trades=[]
+    for trade in history_sorted:
+        if not isinstance(trade,dict):continue
+        recent_trades.append({"id":trade.get("id",""),"symbol":trade.get("symbol",""),"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if "LONG" in str(trade.get("type",trade.get("direction",""))).upper() or "BUY" in str(trade.get("direction","")).upper() else "SHORT","entry":trade.get("entry",0),"current":trade.get("exit",trade.get("close_price",trade.get("live",0))),"sl":trade.get("trail_sl",trade.get("sl",0)),"tp":trade.get("tp",0),"qty":trade.get("qty",0),"pnl_inr":float(trade.get("pnl",0) or 0),"opened":trade.get("opened_at",trade.get("opened",trade.get("time",""))),"closed":trade.get("closed_at",trade.get("close_time","")),"strategy":trade.get("strat",trade.get("strategy","")),"status":"CLOSED"})
+    return {"generated_at":now.strftime("%Y-%m-%d %H:%M:%S IST"),"accounts":accounts_view,"live_trades":live,"recent_trades":recent_trades,"today_signals":signals,"signals":signals,"history":history_sorted,"history_total":len(history),"pending":[],"news_raw":normalized_news,"news":normalized_news,"equity_curve":curve,"risk":{"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"]},"total_pnl":round(total,2)}
 def _get_snapshot_cached():
     now=time.time()
     with _snapshot_lock:
