@@ -159,7 +159,16 @@ def _build_snapshot():
     for trade in history_sorted:
         if not isinstance(trade,dict):continue
         recent_trades.append({"id":trade.get("id",""),"symbol":trade.get("symbol",""),"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if "LONG" in str(trade.get("type",trade.get("direction",""))).upper() or "BUY" in str(trade.get("direction","")).upper() else "SHORT","entry":trade.get("entry",0),"current":trade.get("exit",trade.get("close_price",trade.get("live",0))),"sl":trade.get("trail_sl",trade.get("sl",0)),"tp":trade.get("tp",0),"qty":trade.get("qty",0),"pnl_inr":float(trade.get("pnl",0) or 0),"opened":trade.get("opened_at",trade.get("opened",trade.get("time",""))),"closed":trade.get("closed_at",trade.get("close_time","")),"strategy":trade.get("strat",trade.get("strategy","")),"status":"CLOSED"})
-    return {"generated_at":now.strftime("%Y-%m-%d %H:%M:%S IST"),"accounts":accounts_view,"live_trades":live,"recent_trades":recent_trades,"today_signals":signals,"signals":signals,"history":history_sorted,"history_total":len(history),"pending":[],"news_raw":normalized_news,"news":normalized_news,"equity_curve":curve,"risk":{"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"]},"total_pnl":round(total,2)}
+    total_balance=round(sum(float(a.get("balance",0) or 0) for a in accounts.values() if isinstance(a,dict)),2)
+    today_pnl=round(sum(per_today.values()),2)
+    open_exposure=round(sum(abs(float(t.get("current",0) or 0)*float(t.get("qty",0) or 0)) for t in live),2)
+    live_pnl=round(sum(float(t.get("pnl_inr",0) or 0) for t in live),2)
+    equity=round(total_balance+live_pnl,2)
+    dd_pct=float(curve.get("max_drawdown_pct",0) or 0)
+    risk_state="HIGH" if dd_pct>=5 else "ELEVATED" if dd_pct>=2 else "NORMAL"
+    system_state="ONLINE" if main and load_json and lock else "DEGRADED"
+    overview={"state":system_state,"risk_state":risk_state,"balance":total_balance,"equity":equity,"today_pnl":today_pnl,"total_pnl":round(total,2),"open_trades":len(live),"open_exposure_inr":open_exposure,"open_pnl_inr":live_pnl,"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"],"account_count":len(accounts_view),"signal_count":len(signals),"news_count":len(normalized_news),"last_update":now.strftime("%Y-%m-%d %H:%M:%S IST")}
+    return {"generated_at":now.strftime("%Y-%m-%d %H:%M:%S IST"),"accounts":accounts_view,"live_trades":live,"recent_trades":recent_trades,"today_signals":signals,"signals":signals,"history":history_sorted,"history_total":len(history),"pending":[],"news_raw":normalized_news,"news":normalized_news,"equity_curve":curve,"risk":{"max_drawdown_inr":curve["max_drawdown_inr"],"max_drawdown_pct":curve["max_drawdown_pct"]},"overview":overview,"total_pnl":round(total,2)}
 def _get_snapshot_cached():
     now=time.time()
     with _snapshot_lock:
