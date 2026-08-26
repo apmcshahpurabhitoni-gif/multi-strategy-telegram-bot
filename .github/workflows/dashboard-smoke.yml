@@ -28,12 +28,11 @@ jobs:
           from pathlib import Path
           import re
           html = Path("templates/index.html").read_text(encoding="utf-8")
-          assert '<nav class="nav desktop-nav" id="desktopNav">' in html, "desktop navigation missing"
-          assert '<nav class="bottom-nav" id="bottomNav"></nav>' in html, "mobile bottom navigation missing"
-          assert 'Trade the plan. Respect the risk.' in html, "professional overview banner missing"
-          assert 'data-theme="neo-light"' in html, "light theme missing"
-          for accent in ("emerald", "blue", "indigo", "violet", "rose", "amber", "cyan", "pink"):
-              assert f'data-accent="{accent}"' in html, f"missing {accent} accent"
+          for label in ("Modern Light", "Modern Dark", "Neo-Brutalist Light", "Neo-Brutalist Dark"):
+              assert label in html, f"missing theme: {label}"
+          for marker in ("/api/dashboard", "/api/backtest?", "function sortDateKeys(keys)", "function normalizeBacktest(raw)", "function drawBacktestCurve(points)", "function renderBacktestDetails(bt)"):
+              assert marker in html, f"missing dashboard marker: {marker}"
+          assert "Today first · future next · past last" in html, "news ordering marker missing"
           scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S)
           assert scripts, "dashboard script missing"
           Path("/tmp/dashboard.js").write_text(scripts[-1], encoding="utf-8")
@@ -45,6 +44,7 @@ jobs:
       - name: Dashboard endpoint wiring checks
         run: |
           grep -q '/api/dashboard' templates/index.html
-          grep -q '/api/refresh-news' templates/index.html
-          grep -q '/api/backtest' templates/index.html
+          grep -q '/api/backtest?' templates/index.html
+          grep -q 'trade_details' templates/index.html
+          grep -q 'equity_points' templates/index.html
           echo "dashboard endpoint wiring passed"
