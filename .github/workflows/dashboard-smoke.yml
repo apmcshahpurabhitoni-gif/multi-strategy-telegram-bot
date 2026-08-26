@@ -2,7 +2,7 @@ name: Dashboard Smoke Test
 
 on:
   push:
-    branches: ["main"]
+    branches: ["main", "phase-6"]
   pull_request:
     branches: ["main"]
 
@@ -27,7 +27,7 @@ jobs:
           python - <<'PY'
           from pathlib import Path
           import re
-          html = Path("dashboard/index.html").read_text(encoding="utf-8")
+          html = Path("templates/index.html").read_text(encoding="utf-8")
           assert '<nav class="nav desktop-nav" id="desktopNav">' in html, "desktop navigation missing"
           assert '<nav class="bottom-nav" id="bottomNav"></nav>' in html, "mobile bottom navigation missing"
           assert 'Trade the plan. Respect the risk.' in html, "professional overview banner missing"
@@ -44,7 +44,7 @@ jobs:
 
       - name: Dashboard endpoint wiring checks
         run: |
-          grep -q '/api/dashboard' dashboard/index.html
-          grep -q '/api/refresh-news' dashboard/index.html
-          grep -q '/api/backtest' dashboard/index.html
+          grep -q '/api/dashboard' templates/index.html
+          grep -q '/api/refresh-news' templates/index.html
+          grep -q '/api/backtest' templates/index.html
           echo "dashboard endpoint wiring passed"
