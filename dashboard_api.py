@@ -172,7 +172,7 @@ def _json_response(start_response,payload,status="200 OK"):
     body=json.dumps(payload,default=str).encode("utf-8");start_response(status,[("Content-Type","application/json"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
 def _html_response(start_response,body,status="200 OK"):
     if isinstance(body,str):body=body.encode("utf-8")
-    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))), ("Cache-Control","no-store")]);return [body]
+    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
 def _route_backtest(start_response,environ):
     try:
         query=parse_qs(environ.get("QUERY_STRING",""));symbol=(query.get("symbol",[""])[0] or "").strip().upper();strategy=(query.get("strategy",["trendpulse"])[0] or "trendpulse").lower();days=max(7,min(int(query.get("days",["30"])[0] or 30),730))
