@@ -12,88 +12,20 @@ SNAPSHOT_TTL = 10
 _snapshot_cache = {"data": None, "ts": 0}
 _snapshot_lock = threading.RLock()
 _HERE = os.path.dirname(os.path.abspath(__file__))
-_HTML_PATH_PRIMARY = os.path.join(_HERE, "templates", "index.html")
-_HTML_PATH_FALLBACK = os.path.join(_HERE, "dashboard", "index.html")
+_HTML_PATH = os.path.join(_HERE, "templates", "index.html")
 
 
 def _get_html_content():
-    for path in (_HTML_PATH_PRIMARY, _HTML_PATH_FALLBACK):
-        if not os.path.exists(path):
-            continue
-        with open(path, "rb") as f:
-            body = f.read()
+    """Serve the committed dashboard template as-is.
 
-        # Keep the injected dashboard script ASCII-only and use a normal str
-        # literal. A bytes literal cannot contain the em-dash/non-ASCII text
-        # that the previous patch introduced, which crashed Render at import.
-        override = r'''<script>
-(function () {
-  function esc(value) {
-    return String(value == null ? '' : value).replace(/[&<>\"']/g, function (c) {
-      return {'&':'&amp;', '<':'&lt;', '>':'&gt;', '\"':'&quot;', "'":'&#39;'}[c];
-    });
-  }
-  function direction(value) {
-    var v = String(value || '').toUpperCase();
-    if (v.indexOf('BUY') >= 0 || v.indexOf('BULL') >= 0 || v === 'LONG') return 'BUY';
-    if (v.indexOf('SELL') >= 0 || v.indexOf('BEAR') >= 0 || v === 'SHORT') return 'SELL';
-    return 'NEUTRAL';
-  }
-  function renderSignals(items) {
-    var groups = {};
-    (items || []).forEach(function (item) {
-      var key = item.date || String(item.time || '').slice(0, 10) || 'OTHER';
-      (groups[key] || (groups[key] = [])).push(item);
-    });
-    var keys = Object.keys(groups).sort().reverse();
-    var html = keys.map(function (key) {
-      var rows = groups[key].sort(function (a, b) {
-        return Number(b.ts_ms || 0) - Number(a.ts_ms || 0);
-      }).map(function (item) {
-        var dir = direction(item.dir || item.direction);
-        var cls = dir === 'BUY' ? 'p3-buy' : dir === 'SELL' ? 'p3-sell' : 'p3-neutral';
-        return '<div class="p3-signal"><div class="p3-main">' +
-          '<div><div class="p3-symbol">' + esc(item.sym || item.symbol || '-') + '</div>' +
-          '<div class="p3-sub">' + esc(item.strategy || 'Sweep') + ' &middot; ' + esc(item.time || '') + '</div></div>' +
-          '<div class="p3-side"><span class="p3-dir ' + cls + '">' + dir + '</span>' +
-          '<span class="p3-pnl">' + esc(item.status || 'SIGNAL') + '</span></div>' +
-          '</div></div>';
-      }).join('');
-      return '<div class="p3-date">' + esc(key === 'OTHER' ? 'OTHER' : key) + '</div>' + rows;
-    }).join('');
-    return html || '<div class="empty">No saved signals.</div>';
-  }
-  function loadSignals() {
-    fetch('/api/dashboard', {cache: 'no-store'})
-      .then(function (response) { return response.json(); })
-      .then(function (data) {
-        var list = document.getElementById('signalsList');
-        var latest = document.getElementById('latest');
-        var signals = data.signals || data.today_signals || [];
-        if (list) list.innerHTML = renderSignals(signals);
-        if (latest) {
-          latest.innerHTML = signals.slice(0, 3).map(function (item) {
-            var dir = direction(item.dir || item.direction);
-            var cls = dir === 'BUY' ? 'p3-buy' : dir === 'SELL' ? 'p3-sell' : 'p3-neutral';
-            return '<div class="p3-signal"><div class="p3-main"><div>' +
-              '<div class="p3-symbol">' + esc(item.sym || item.symbol || '-') + '</div>' +
-              '<div class="p3-sub">' + esc(item.strategy || 'Sweep') + ' &middot; ' + esc(item.time || '') + '</div>' +
-              '</div><span class="p3-dir ' + cls + '">' + dir + '</span></div></div>';
-          }).join('') || '<div class="empty">No signals yet.</div>';
-        }
-        var label = document.querySelector('#signals .muted');
-        if (label) label.textContent = 'All saved signals';
-      })
-      .catch(function (error) { console.error('signal archive render', error); });
-  }
-  loadSignals();
-  setInterval(loadSignals, 30000);
-})();
-</script>'''
-        marker = b"</body>"
-        if marker in body:
-            body = body.replace(marker, override.encode("utf-8") + marker, 1)
-        return body
+    UI changes must be committed to templates/index.html. No runtime script
+    injection and no per-restart patching (that cycle crashed Render before).
+    """
+    try:
+        with open(_HTML_PATH, "rb") as f:
+            return f.read()
+    except Exception as exc:
+        print("[DASHBOARD] template load:", exc)
     return b"<h1>Dashboard template index.html not found.</h1>"
 
 

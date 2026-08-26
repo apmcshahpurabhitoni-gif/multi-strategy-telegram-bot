@@ -11,6 +11,7 @@ SIGNAL_HISTORY_FILE = "/tmp/workspace/signal_history.json"
 CONTEXT = {}
 STATE = {}
 STARTUP_BASELINE = {}
+_MAIN = None  # set by install(); enables Supabase-backed persistence
 
 
 def _load():
@@ -28,12 +29,14 @@ def _save():
 
 
 def _save_signal_event(symbol, mtype, result):
-    """Persist every confirmed sweep signal. Dashboard history never expires."""
+    """Persist every confirmed sweep signal. Dashboard history never expires.
+
+    Storage is routed through main.load_json/save_json when available, so the
+    archive is mirrored to Supabase and restored after every redeploy. The
+    Telegram reminder expiry lives in STATE_FILE only and never touches this.
+    """
     try:
-        os.makedirs(os.path.dirname(SIGNAL_HISTORY_FILE), exist_ok=True)
-        try:
-            with open(SIGNAL_HISTORY_FILE, "r", encoding="utf-8") as f: rows = json.load(f)
-        except Exception: rows = []
+        rows = _load_signal_history()
         if not isinstance(rows, list): rows = []
         close_ts = int(result.candle_end.timestamp() * 1000)
         event_id = _key(symbol, close_ts)
@@ -44,8 +47,7 @@ def _save_signal_event(symbol, mtype, result):
             "candle_start": result.candle_start.isoformat(), "candle_end": result.candle_end.isoformat(),
             "created_at": datetime.now().astimezone().isoformat(), "reminder_sent": False,
         })
-        with open(SIGNAL_HISTORY_FILE + ".tmp", "w", encoding="utf-8") as f: json.dump(rows, f, indent=2)
-        os.replace(SIGNAL_HISTORY_FILE + ".tmp", SIGNAL_HISTORY_FILE)
+        _write_signal_history(rows)
     except Exception as e: print("[SWEEP] signal history save:", e)
 
 
@@ -74,8 +76,13 @@ def _signal_message(main, symbol, mtype, result, reminder=False):
 
 
 def install(main):
-    global CONTEXT, STARTUP_BASELINE
+    global CONTEXT, STARTUP_BASELINE, _MAIN
+    _MAIN = main
     _load(); CONTEXT={}; STARTUP_BASELINE={}
+    try:
+        _load_signal_history()  # hydrate local archive from Supabase for the dashboard
+    except Exception:
+        pass
     main._sweep_runtime_original_check=main.check_sweep; main._sweep_runtime_original_handle=main.handle_sweep; main._sweep_runtime_original_notify=main.notify_neutral_sweep
     original_msg=main.msg_trade_signal
 
@@ -140,12 +147,34 @@ def install(main):
 
 
 def _load_signal_history():
+    fn = getattr(_MAIN, "load_json", None)
+    if fn:
+        try:
+            rows = fn(SIGNAL_HISTORY_FILE, [])
+            return rows if isinstance(rows, list) else []
+        except Exception as e:
+            print("[SWEEP] signal history load:", e)
     try:
-        with open(SIGNAL_HISTORY_FILE,"r",encoding="utf-8") as f:return json.load(f)
-    except Exception:return []
+        with open(SIGNAL_HISTORY_FILE, "r", encoding="utf-8") as f:
+            rows = json.load(f)
+            return rows if isinstance(rows, list) else []
+    except Exception:
+        return []
 
 
 def _write_signal_history(rows):
-    tmp=SIGNAL_HISTORY_FILE+".tmp"
-    with open(tmp,"w",encoding="utf-8") as f:json.dump(rows,f,indent=2)
-    os.replace(tmp,SIGNAL_HISTORY_FILE)
+    fn = getattr(_MAIN, "save_json", None)
+    if fn:
+        try:
+            fn(SIGNAL_HISTORY_FILE, rows)
+            return
+        except Exception as e:
+            print("[SWEEP] signal history save_json:", e)
+    try:
+        os.makedirs(os.path.dirname(SIGNAL_HISTORY_FILE), exist_ok=True)
+        tmp = SIGNAL_HISTORY_FILE + ".tmp"
+        with open(tmp, "w", encoding="utf-8") as f:
+            json.dump(rows, f, indent=2)
+        os.replace(tmp, SIGNAL_HISTORY_FILE)
+    except Exception as e:
+        print("[SWEEP] signal history write:", e)
