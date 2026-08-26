@@ -1,1 +1,0 @@
-Temporary Phase 1 trigger. This file is safe to remove after the theme source workflow runs.
