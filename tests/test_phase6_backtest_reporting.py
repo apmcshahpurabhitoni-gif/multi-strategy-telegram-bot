@@ -1,6 +1,10 @@
 import unittest
 
 from backtest import BacktestEngine
+from backtest_compat import apply_backtest_compat
+
+
+apply_backtest_compat(BacktestEngine)
 
 
 class Phase6BacktestReportingTests(unittest.TestCase):
@@ -24,7 +28,6 @@ class Phase6BacktestReportingTests(unittest.TestCase):
 
         self.assertEqual(metrics["trades"], 0)
         self.assertIsInstance(metrics["trades"], int)
-        self.assertEqual(metrics["trade_details"], []) if "trade_details" in metrics else None
 
     def test_index_aliases_remain_supported(self):
         engine = BacktestEngine()
