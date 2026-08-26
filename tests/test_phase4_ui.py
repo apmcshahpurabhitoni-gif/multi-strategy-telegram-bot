@@ -18,3 +18,17 @@ def test_phase4_template_does_not_introduce_runtime_html_injection():
     assert 'replace("</body>"' not in api
     assert 'renderSignals' not in api
     assert 'inject' not in api.lower()
+
+
+def test_phase7_news_today_first_and_backtest_full_report_contract():
+    html = Path('templates/index.html').read_text(encoding='utf-8')
+    assert 'function sortDateKeys(keys)' in html
+    assert 'Today first · future next · past last' in html
+    assert 'function normalizeBacktest(raw)' in html
+    assert 'trade_details' in html
+    assert 'equity_points' in html
+    assert 'function drawBacktestCurve(points)' in html
+    assert 'function renderBacktestDetails(bt)' in html
+    assert 'Profit Factor' in html
+    assert 'Max Drawdown' in html
+    assert 'Avg Win' in html and 'Avg Loss' in html
