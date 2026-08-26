@@ -123,6 +123,27 @@ def _build_actual_signals(main,ist,history=None):
             signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
     if not signals and history:signals=_history_signal_fallback(history,ist)
     signals.sort(key=lambda item:item["ts_ms"],reverse=True);return signals
+def _normalize_news_event(event,ist):
+    """Return a stable dashboard news shape so the UI never renders blank metadata."""
+    if not isinstance(event,dict):return None
+    item=dict(event)
+    title=str(item.get("title") or item.get("headline") or item.get("event") or item.get("name") or "Economic event").strip()
+    source=str(item.get("source") or item.get("publisher") or item.get("provider") or "Economic Calendar").strip()
+    raw_time=item.get("time") or item.get("timestamp") or item.get("datetime") or item.get("date") or ""
+    ts=_parse_ts(raw_time,0)
+    if ts:
+        dt=datetime.fromtimestamp(ts/1000,tz=ist)
+        display_time=dt.strftime("%d-%b %H:%M IST")
+    else:
+        display_time=str(raw_time).strip() or "Time unavailable"
+    impact=str(item.get("impact") or item.get("importance") or "LOW").strip().upper()
+    if impact not in {"LOW","MEDIUM","HIGH"}:impact="LOW"
+    country=str(item.get("country") or item.get("currency") or "").strip().upper()
+    forecast=str(item.get("forecast") or "").strip()
+    previous=str(item.get("previous") or "").strip()
+    url=str(item.get("url") or item.get("link") or "").strip()
+    item.update({"title":title,"source":source,"time":display_time,"impact":impact,"country":country,"forecast":forecast,"previous":previous,"url":url,"ts_ms":ts})
+    return item
 def _build_snapshot():
     main=_get_main_module()
     if not main:return {"error":"main module not loaded"}
@@ -152,8 +173,9 @@ def _build_snapshot():
         except Exception as exc:print("[DASHBOARD] fetch news:",exc)
     normalized_news=[]
     for event in news[:120]:
-        if isinstance(event,dict):
-            item=dict(event);item["impact"]=str(item.get("impact") or item.get("importance") or "LOW").upper();normalized_news.append(item)
+        item=_normalize_news_event(event,ist)
+        if item:normalized_news.append(item)
+    normalized_news.sort(key=lambda item:item.get("ts_ms",0) or 0)
     history_sorted=sorted(history,key=lambda item:str(item.get("closed_at",item.get("close_time",item.get("time","")))),reverse=True)[:30];curve=_build_equity_curve(history);total=sum(float(item.get("pnl",0) or 0) for item in history)
     recent_trades=[]
     for trade in history_sorted:
@@ -177,10 +199,10 @@ def _get_snapshot_cached():
     with _snapshot_lock:_snapshot_cache["data"]=snapshot;_snapshot_cache["ts"]=now
     return {"cached":False,**snapshot}
 def _json_response(start_response,payload,status="200 OK"):
-    body=json.dumps(payload,default=str).encode("utf-8");start_response(status,[("Content-Type","application/json"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
+    body=json.dumps(payload,default=str).encode("utf-8");start_response(status,[("Content-Type","application/json"),("Content-Length",str(len(body))),(("Cache-Control","no-store"))]);return [body]
 def _html_response(start_response,body,status="200 OK"):
     if isinstance(body,str):body=body.encode("utf-8")
-    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))),("Cache-Control","no-store")]);return [body]
+    start_response(status,[("Content-Type","text/html; charset=utf-8"),("Content-Length",str(len(body))),(("Cache-Control","no-store"))]);return [body]
 def _route_backtest(start_response,environ):
     try:
         query=parse_qs(environ.get("QUERY_STRING",""));symbol=(query.get("symbol",[""])[0] or "").strip().upper();strategy=(query.get("strategy",["trendpulse"])[0] or "trendpulse").lower();days=max(7,min(int(query.get("days",["30"])[0] or 30),730))
@@ -201,7 +223,9 @@ def _route_close_trade(start_response,environ):
 def _route_refresh_news(start_response,environ):
     main=_get_main_module()
     try:
-        items=main.fetch_news() if main and hasattr(main,"fetch_news") else [];return _json_response(start_response,{"ok":True,"items":len(items or [])})
+        items=main.fetch_news() if main and hasattr(main,"fetch_news") else []
+        with _snapshot_lock:_snapshot_cache["data"]=None;_snapshot_cache["ts"]=0
+        return _json_response(start_response,{"ok":True,"items":len(items or [])})
     except Exception as exc:return _json_response(start_response,{"ok":False,"error":str(exc)},"500 Internal Server Error")
 def register_routes(path,start_response,environ):
     method=environ.get("REQUEST_METHOD","GET")
