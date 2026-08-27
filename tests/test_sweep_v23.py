@@ -1,12 +1,11 @@
 from datetime import datetime, timedelta
 from types import SimpleNamespace
-
-import pytz
+from zoneinfo import ZoneInfo
 
 import sweep_runtime
 
 
-IST = pytz.timezone("Asia/Kolkata")
+IST = ZoneInfo("Asia/Kolkata")
 
 
 class FakeMain:
