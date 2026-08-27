@@ -44,6 +44,8 @@ jobs:
 
       - name: Dashboard smoke source checks
         run: |
+          grep -q 'from phase8_intelligence import build_intelligence' dashboard_api.py
+          grep -q 'from phase8_dashboard import build_dashboard_intelligence' dashboard_api.py
           grep -q 'intelligence' dashboard_api.py
           grep -q 'build_dashboard_intelligence' dashboard_api.py
           grep -q '/api/dashboard' templates/index.html
