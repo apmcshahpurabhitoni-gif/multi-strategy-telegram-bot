@@ -49,14 +49,19 @@ def make_result(candle_end, direction="BULLISH"):
 
 
 def install_with_mocks(monkeypatch, main, result, baseline_start, new_start):
-    # build_closed_candles must expose the *closed candle start* as the last index.
-    # check_sweep_v2 then computes its close from that start, exactly as production does.
-    starts = iter([baseline_start, new_start])
-    monkeypatch.setattr(
-        sweep_runtime,
-        "build_closed_candles",
-        lambda df, symbol, now: (pd.DataFrame(index=[next(starts)]), "4H", None),
-    )
+    # check_sweep_v2 requires at least two closed bars on every invocation:
+    # one prior candle plus the latest closed candle. The first call establishes
+    # startup baseline; the second call exposes the genuinely new candle.
+    calls = iter([
+        [baseline_start - timedelta(hours=4), baseline_start],
+        [baseline_start, new_start],
+    ])
+
+    def fake_build_closed_candles(df, symbol, now):
+        starts = next(calls)
+        return pd.DataFrame(index=starts), "4H", None
+
+    monkeypatch.setattr(sweep_runtime, "build_closed_candles", fake_build_closed_candles)
     monkeypatch.setattr(sweep_runtime, "detect_sweep", lambda df, symbol, now: result)
     monkeypatch.setattr(sweep_runtime, "_load_signal_history", lambda: [])
     monkeypatch.setattr(sweep_runtime, "_write_signal_history", lambda rows: None)
@@ -70,7 +75,7 @@ def install_with_mocks(monkeypatch, main, result, baseline_start, new_start):
 
 def test_runtime_blocks_sweep_older_than_one_hour(monkeypatch):
     main = FakeMain(); now = datetime.now(IST)
-    # The returned candle start is deliberately old enough that its 4H close is stale.
+    # The returned candle close is deliberately old enough to be stale.
     candle_end = now - timedelta(minutes=61)
     result = make_result(candle_end)
     candle_start = candle_end - timedelta(hours=4)
