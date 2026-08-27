@@ -110,23 +110,24 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
     cur = main._currency(symbol)
     name = main.display_name(symbol)
     status, age = _freshness(main, result.candle_end)
+    status_icon = "✅" if status == "FRESH" else "⚠️"
     direction = result.direction
     if direction == "BULLISH":
-        icon, signal, action = "🟢", "BUY", "PAPER BUY"
+        signal_icon, signal, action = "🟢", "BUY", "PAPER BUY"
     elif direction == "BEARISH":
-        icon, signal, action = "🔴", "SELL", "PAPER SELL"
+        signal_icon, signal, action = "🔴", "SELL", "PAPER SELL"
     else:
-        icon, signal, action = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE"
+        signal_icon, signal, action = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE"
 
     title = "REMINDER · " if reminder else ""
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
     lines = [
-        f"{icon} *{title}SWEEP V2 · {name} · {status}*",
+        f"{status_icon} *{title}SWEEP V2 · {name} · {status}*",
         main.BR,
-        f"📌 *Signal:* `{signal}`",
+        f"📌 *Signal:* `{signal_icon} {signal}`",
         f"⏱ *Timeframe:* `{result.timeframe}`",
         f"🕯 *Candle closed:* `{end}`",
-        f"⏳ *Age:* `{age}`",
+        f"⏳ *Signal Status:* `{status_icon} {status}` ({age})",
         f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`",
         f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`",
         f"🎯 *Action:* `{action}`",
@@ -260,10 +261,10 @@ def install(main):
     main.handle_sweep = handle_sweep_v2
     main.notify_neutral_sweep = notify_neutral_v2
     main.msg_trade_signal = msg_trade_signal_v2
-    main.SWEEP_ENGINE_VERSION = "v2.4"
+    main.SWEEP_ENGINE_VERSION = "v2.3"
     main.SWEEP_RULE = "closed candle: current high > previous high AND current low < previous low; close classifies BUY/NEUTRAL/SELL"
     main.SWEEP_DATA_WARNING = True
-    print("[SWEEP V2.4] Canonical 60-minute freshness, candle-close schedule validation and compact prices enabled")
+    print("[SWEEP V2.3] Canonical candle/sweep engine installed; one-hour freshness and compact message enabled")
 
 
 def _load_signal_history():
