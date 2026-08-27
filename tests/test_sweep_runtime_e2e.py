@@ -36,7 +36,13 @@ class FakeMain:
     def get_price(symbol): return 1015.0
     def execute(self, symbol, mtype, account, strat, direction, entry, sl, signal_ts_ms):
         self.executions.append((symbol, mtype, account, strat, direction, entry, sl, signal_ts_ms))
-        self.msg_trade_signal(symbol, mtype, strat, direction, "4H", entry, sl, 1085.0, 10.0, 350.0, account, signal_ts_ms)
+        message = self.msg_trade_signal(
+            symbol, mtype, strat, direction, "4H", entry, sl, 1085.0,
+            10.0, 350.0, account, signal_ts_ms,
+        )
+        # Mirror main.py's production execute() contract: execute() obtains the
+        # message from msg_trade_signal() and sends it through send_sweep_to_all().
+        self.send_sweep_to_all(message, parse_mode="Markdown")
 
 
 def make_result(candle_end, direction="BULLISH"):
