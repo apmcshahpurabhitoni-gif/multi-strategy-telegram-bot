@@ -85,8 +85,9 @@ def test_compact_message_replaces_legacy_diagnostic_block():
         risk_amt=350.0,
     )
 
-    assert "SWEEP V2 · Reliance · FRESH" in message
-    assert "Signal:* `BUY`" in message
+    assert "🔴SWEEP V2 · Reliance · ✅" in message
+    assert "SWEEP V2 · Reliance · FRESH" not in message
+    assert "Signal:* `🟢 BUY`" in message
     assert "Sweep High" in message
     assert "Sweep Low" in message
     assert "Candle closed" in message
@@ -107,10 +108,11 @@ def test_compact_message_replaces_legacy_diagnostic_block():
     assert "REMINDER" not in message
 
 
-def test_stale_message_explicitly_blocks_new_trade():
+def test_stale_message_uses_warning_icon_in_approved_header():
     now = datetime.now(IST)
     result = make_result(now, age_minutes=61, direction="BEARISH")
     message = sweep_runtime._signal_message(FakeMain, "RELIANCE.NS", "NSE", result)
+    assert "🔴SWEEP V2 · Reliance · ⚠️" in message
     assert "STALE" in message
     assert "older than 1 hour" in message
     assert "no new trade should be opened" in message
