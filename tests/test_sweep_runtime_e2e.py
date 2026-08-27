@@ -108,12 +108,12 @@ def test_runtime_sends_compact_message_and_executes_fresh_sweep(monkeypatch):
     assert len(main.executions) == 1
     assert len(main.messages) == 1
     message = main.messages[0]
-    assert "SWEEP V2 · Reliance · FRESH" in message
-    assert "Signal Status:* `✅ FRESH`" in message
+    assert message.startswith("🟢SWEEP V2 · Reliance · ✅")
+    assert "Signal Status:" not in message
+    assert "*Age:* `" in message
     assert "Signal:* `🟢 BUY`" in message
     assert "Timeframe:* `4H`" in message
     assert "Candle closed" in message
-    assert "Age" in message
     assert "Sweep High" in message
     assert "Sweep Low" in message
     assert "PAPER BUY" in message
@@ -135,7 +135,8 @@ def test_neutral_fresh_message_keeps_yellow_for_signal_not_status(monkeypatch):
     main.handle_sweep("RELIANCE.NS", "NSE", sweep)
     assert len(main.messages) == 1
     message = main.messages[0]
-    assert message.startswith("✅ *SWEEP V2 · Reliance · FRESH*")
+    assert message.startswith("✅SWEEP V2 · Reliance · ✅")
     assert "Signal:* `🟡 NEUTRAL`" in message
-    assert "Signal Status:* `✅ FRESH`" in message
+    assert "Signal Status:" not in message
+    assert "*Age:* `" in message
     assert "⚠️ *STALE" not in message
