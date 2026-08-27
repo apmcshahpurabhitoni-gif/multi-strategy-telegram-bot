@@ -73,36 +73,62 @@ BUY and SELL only.
 
 ## 5. Telegram
 
-Every sweep alert must show:
+Every sweep alert must use the approved compact header contract:
 
-- Symbol and market.
+```text
+BUY:     🟢SWEEP V2 · <Market Name> ·  ✅
+SELL:    🔴SWEEP V2 · <Market Name> ·  ✅
+STALE:   same BUY/SELL direction icon, but final status icon becomes ⚠️
+NEUTRAL: freshness icon in the header; signal line remains 🟡 NEUTRAL
+```
+
+The direction icon and freshness status are independent. A BUY header is never red, a SELL header is never green, and a fresh signal is never shown with the stale warning icon.
+
+The signal line must independently show:
+
+- `🟢 BUY`
+- `🔴 SELL`
+- `🟡 NEUTRAL`
+
+Gold must be displayed as **Gold**, never `GC=F`. BTC must be displayed as **Bitcoin (BTC)**. Prices in Telegram must use the asset-appropriate compact precision; Gold is 2 decimals, BTC is 2 decimals, NSE instruments are 2 decimals, USD/JPY is 3 decimals, and other FX is 5 decimals.
+
+Every sweep alert must also show:
+
 - Timeframe.
-- Previous candle start/end + OHLC.
-- Current candle start/end + OHLC.
-- Previous High/Low levels.
-- High sweep YES/NO.
-- Low sweep YES/NO.
-- Close classification.
-- BUY/SELL/NEUTRAL result.
-- Confirmation time.
-- Data-source/schedule warning when applicable.
+- Candle close time and age.
+- Sweep High and Sweep Low.
+- Action.
+- Entry/SL/TP/account/quantity/risk for BUY/SELL paper trades.
+- Source warning when applicable.
+- A stale warning when the signal is older than one hour; stale signals must not open a new trade.
 
 Maximum two messages per qualifying candle:
 
 1. Initial message.
 2. `🔔 REMINDER` one hour later.
 
-## 6. Data integrity
+## 6. Dashboard display contract
+
+Dashboard presentation must not leak provider tickers when a user-facing market name is defined.
+
+- `GC=F` → **Gold**.
+- `BTC-USD` → **Bitcoin**.
+- `^NSEI` → **NIFTY 50**.
+- `^NSEBANK` → **BANK NIFTY**.
+
+Dashboard live/history prices are presentation values only and must be compactly rounded to 2 decimals. This must never modify backend execution prices, risk calculations, or stored trade data.
+
+## 7. Data integrity
 
 The free implementation uses the existing Yahoo Finance data layer. OANDA TradingView instruments must carry a visible source warning because Yahoo and OANDA are different feeds.
 
 If candle timing or data cannot be confidently verified, the bot must warn rather than silently treating the result as authoritative.
 
-## 7. Regression case
+## 8. Regression case
 
 XAUUSD, 25 Aug 2026, 05:30 IST previously produced a false NEUTRAL alert. TradingView showed the 02:30→06:30 candle still open. V2 must never classify that candle at 05:30.
 
-## 8. Acceptance tests
+## 9. Acceptance tests
 
 1. One-sided break → no signal.
 2. Touch only → no signal.
@@ -116,3 +142,7 @@ XAUUSD, 25 Aug 2026, 05:30 IST previously produced a false NEUTRAL alert. Tradin
 10. BUY/SELL use market entry, signal-candle SL and 1:2 TP.
 11. Reminder occurs once one hour after initial signal, never more than twice total.
 12. Timing/source mismatch is visible to the user.
+13. BUY header is green and SELL header is red.
+14. Fresh header status is `✅`; stale header status is `⚠️`.
+15. Gold is displayed as Gold, never GC=F.
+16. Dashboard prices are compact display values and do not alter execution values.
