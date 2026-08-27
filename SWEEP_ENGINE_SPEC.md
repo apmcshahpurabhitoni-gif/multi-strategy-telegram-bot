@@ -87,6 +87,24 @@ Every sweep alert must show:
 - Confirmation time.
 - Data-source/schedule warning when applicable.
 
+### Canonical SWEEP V2 header color rule
+
+The header icon is direction-aware and MUST NOT be hardcoded:
+
+- `BUY` → `🟢`
+- `SELL` → `🔴`
+- `NEUTRAL` → `🟡`
+
+The approved initial header shape is:
+
+```text
+🟢SWEEP V2 · <Asset> · ✅
+🔴SWEEP V2 · <Asset> · ✅
+🟡SWEEP V2 · <Asset> · ✅
+```
+
+The final `✅` means the completed signal is FRESH (≤1 hour old); when older than one hour it becomes `⚠️` and the message must explicitly state that no new trade should be opened. The direction icon and freshness icon are independent.
+
 Maximum two messages per qualifying candle:
 
 1. Initial message.
@@ -116,3 +134,4 @@ XAUUSD, 25 Aug 2026, 05:30 IST previously produced a false NEUTRAL alert. Tradin
 10. BUY/SELL use market entry, signal-candle SL and 1:2 TP.
 11. Reminder occurs once one hour after initial signal, never more than twice total.
 12. Timing/source mismatch is visible to the user.
+13. BUY header uses `🟢`; SELL header uses `🔴`; NEUTRAL uses `🟡`; header direction icon must match the actual classified result.
