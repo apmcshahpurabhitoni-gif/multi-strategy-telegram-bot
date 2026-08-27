@@ -89,7 +89,7 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
     elif result.direction == "BEARISH": signal_icon, signal, action, header_icon = "🔴", "SELL", "PAPER SELL", "🔴"
     else: signal_icon, signal, action, header_icon = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE", status_icon
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
-    lines = [f"{header_icon}SWEEP V2 · {name} · {status_icon}", main.BR]
+    lines = [f"{header_icon}SWEEP V2 · {name} ·  {status_icon}", main.BR]
     if reminder: lines.append("🔔 REMINDER")
     lines.extend([f"📌 *Signal:* `{signal_icon} {signal}`", f"⏱ *Timeframe:* `{result.timeframe}`", f"🕯 *Candle closed:* `{end}`", f"⏳ *Age:* `{age}`", f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`", f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`", f"🎯 *Action:* `{action}`"])
     if entry is not None and result.direction in {"BULLISH", "BEARISH"}: lines.append(f"💰 *Entry:* `{_fmt_price(symbol, entry, cur)}`")
