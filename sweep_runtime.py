@@ -113,15 +113,15 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
     status_icon = "✅" if status == "FRESH" else "⚠️"
     direction = result.direction
     if direction == "BULLISH":
-        signal_icon, signal, action = "🟢", "BUY", "PAPER BUY"
+        signal_icon, signal, action, header_icon = "🟢", "BUY", "PAPER BUY", "🟢"
     elif direction == "BEARISH":
-        signal_icon, signal, action = "🔴", "SELL", "PAPER SELL"
+        signal_icon, signal, action, header_icon = "🔴", "SELL", "PAPER SELL", "🔴"
     else:
-        signal_icon, signal, action = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE"
+        signal_icon, signal, action, header_icon = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE", "🟡"
 
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
     lines = [
-        f"🔴SWEEP V2 · {name} · {status_icon}",
+        f"{header_icon}SWEEP V2 · {name} · {status_icon}",
         main.BR,
     ]
     if reminder:
