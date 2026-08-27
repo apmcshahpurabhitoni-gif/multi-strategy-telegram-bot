@@ -76,14 +76,22 @@ def _canonical_main_age(ts_ms):
 
 
 def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=None, tp=None, account=None, qty=None, risk_amt=None):
+    """Render the approved compact Sweep V2 Telegram contract.
+
+    Header rule is intentionally separate from signal classification:
+    BUY -> 🟢 header, SELL -> 🔴 header, NEUTRAL -> freshness icon.
+    Freshness is represented only on the first line: ≤60m -> ✅, >60m -> ⚠️.
+    The signal itself remains independently 🟢 BUY / 🔴 SELL / 🟡 NEUTRAL.
+    Gold is displayed as Gold, never GC=F.
+    """
     cur = main._currency(symbol); name = _display_name(main, symbol); status, age = _freshness(main, result.candle_end); status_icon = "✅" if status == "FRESH" else "⚠️"
     if result.direction == "BULLISH": signal_icon, signal, action, header_icon = "🟢", "BUY", "PAPER BUY", "🟢"
     elif result.direction == "BEARISH": signal_icon, signal, action, header_icon = "🔴", "SELL", "PAPER SELL", "🔴"
-    else: signal_icon, signal, action, header_icon = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE", "🟡"
+    else: signal_icon, signal, action, header_icon = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE", status_icon
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
     lines = [f"{header_icon}SWEEP V2 · {name} · {status_icon}", main.BR]
     if reminder: lines.append("🔔 REMINDER")
-    lines.extend([f"📌 *Signal:* `{signal_icon} {signal}`", f"⏱ *Timeframe:* `{result.timeframe}`", f"🕯 *Candle closed:* `{end}`", f"⏳ *Signal Status:* `{status_icon} {status}` ({age})", f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`", f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`", f"🎯 *Action:* `{action}`"])
+    lines.extend([f"📌 *Signal:* `{signal_icon} {signal}`", f"⏱ *Timeframe:* `{result.timeframe}`", f"🕯 *Candle closed:* `{end}`", f"⏳ *Age:* `{age}`", f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`", f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`", f"🎯 *Action:* `{action}`"])
     if entry is not None and result.direction in {"BULLISH", "BEARISH"}: lines.append(f"💰 *Entry:* `{_fmt_price(symbol, entry, cur)}`")
     if sl is not None and result.direction in {"BULLISH", "BEARISH"}: lines.append(f"🛑 *SL:* `{_fmt_price(symbol, sl, cur)}`")
     if tp is not None and result.direction in {"BULLISH", "BEARISH"}: lines.append(f"🎯 *TP:* `{_fmt_price(symbol, tp, cur)}`")
