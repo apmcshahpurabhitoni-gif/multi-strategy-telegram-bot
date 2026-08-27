@@ -11,7 +11,7 @@ SIGNAL_HISTORY_FILE = "/tmp/workspace/signal_history.json"
 CONTEXT = {}
 STATE = {}
 STARTUP_BASELINE = {}
-_MAIN = None  # set by install(); enables Supabase-backed persistence
+_MAIN = None
 
 
 def _load():
@@ -32,12 +32,6 @@ def _save():
 
 
 def _save_signal_event(symbol, mtype, result):
-    """Persist every confirmed sweep signal. Dashboard history never expires.
-
-    Storage is routed through main.load_json/save_json when available, so the
-    archive is mirrored to Supabase and restored after every redeploy. The
-    Telegram reminder expiry lives in STATE_FILE only and never touches this.
-    """
     try:
         rows = _load_signal_history()
         if not isinstance(rows, list):
@@ -74,18 +68,45 @@ def _source_warning(symbol):
 
 
 def _freshness(main, candle_end):
-    """Return the single user-facing freshness state used by Sweep V2."""
-    age_seconds = max(0, (datetime.now(main.IST) - candle_end).total_seconds())
+    """Canonical user-facing freshness: FRESH only through 60 minutes."""
+    age_seconds = max(0.0, (datetime.now(main.IST) - candle_end).total_seconds())
     age_minutes = int(age_seconds // 60)
     return ("FRESH", f"{age_minutes} min ago") if age_seconds <= 3600 else ("STALE", f"{age_minutes} min ago")
 
 
-def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=None, tp=None, account=None, qty=None, risk_amt=None):
-    """Build the compact canonical Sweep V2 Telegram message.
+def _price_decimals(symbol):
+    """Compact, market-appropriate display precision."""
+    if symbol == "BTC-USD":
+        return 2
+    if symbol in {"USDJPY=X"}:
+        return 3
+    if symbol.endswith("=X"):
+        return 5
+    if symbol in {"GC=F", "SI=F", "HG=F"}:
+        return 2
+    if symbol.endswith(".NS") or symbol in {"^NSEI", "^NSEBANK"}:
+        return 2
+    return 2
 
-    This replaces the legacy diagnostic block and never appends the old
-    msg_trade_signal output.
-    """
+
+def _fmt_price(symbol, value, currency):
+    return f"{currency}{float(value):,.{_price_decimals(symbol)}f}"
+
+
+def _canonical_main_age(ts_ms):
+    """Patch main's legacy age helper so every message uses the same 60m rule."""
+    if not ts_ms:
+        return "Unknown", "⚠️ STALE"
+    diff_ms = int(time.time() * 1000) - int(ts_ms)
+    diff_ms = max(0, diff_ms)
+    diff_min = int(diff_ms // 60000)
+    if diff_ms <= 3600 * 1000:
+        return f"{diff_min} min ago", "✅ FRESH"
+    diff_hr = diff_min // 60
+    return f"{diff_hr} hr {diff_min % 60} min ago", "⚠️ STALE"
+
+
+def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=None, tp=None, account=None, qty=None, risk_amt=None):
     cur = main._currency(symbol)
     name = main.display_name(symbol)
     status, age = _freshness(main, result.candle_end)
@@ -106,20 +127,20 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
         f"⏱ *Timeframe:* `{result.timeframe}`",
         f"🕯 *Candle closed:* `{end}`",
         f"⏳ *Age:* `{age}`",
-        f"📈 *Sweep High:* `{cur}{result.current['High']:,.4f}`",
-        f"📉 *Sweep Low:* `{cur}{result.current['Low']:,.4f}`",
+        f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`",
+        f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`",
         f"🎯 *Action:* `{action}`",
     ]
     if entry is not None and direction in {"BULLISH", "BEARISH"}:
-        lines.append(f"💰 *Entry:* `{cur}{entry:,.4f}`")
+        lines.append(f"💰 *Entry:* `{_fmt_price(symbol, entry, cur)}`")
     if sl is not None and direction in {"BULLISH", "BEARISH"}:
-        lines.append(f"🛑 *SL:* `{cur}{sl:,.4f}`")
+        lines.append(f"🛑 *SL:* `{_fmt_price(symbol, sl, cur)}`")
     if tp is not None and direction in {"BULLISH", "BEARISH"}:
-        lines.append(f"🎯 *TP:* `{cur}{tp:,.4f}`")
+        lines.append(f"🎯 *TP:* `{_fmt_price(symbol, tp, cur)}`")
     if account is not None and direction in {"BULLISH", "BEARISH"}:
         lines.append(f"🏢 *Account:* `{str(account).upper()}`")
     if qty is not None and direction in {"BULLISH", "BEARISH"}:
-        lines.append(f"📦 *Quantity:* `{qty:.4f}`")
+        lines.append(f"📦 *Quantity:* `{qty:.2f}`")
     if risk_amt is not None and direction in {"BULLISH", "BEARISH"}:
         lines.append(f"💸 *Risk:* `₹{risk_amt:,.2f}`")
     if result.schedule_warning:
@@ -144,6 +165,7 @@ def install(main):
     main._sweep_runtime_original_handle = main.handle_sweep
     main._sweep_runtime_original_notify = main.notify_neutral_sweep
     original_msg = main.msg_trade_signal
+    main.get_signal_age_str = _canonical_main_age
 
     def check_sweep_v2(symbol, df=None):
         try:
@@ -168,7 +190,6 @@ def install(main):
             close_ts = int(result.candle_end.timestamp() * 1000)
             open_ts = int(result.candle_start.timestamp() * 1000)
             age_ms = int(now.timestamp() * 1000) - close_ts
-            # Sweep V2 is actionable only for one hour after the candle closes.
             if age_ms > 3600 * 1000:
                 return None
             if close_ts <= STARTUP_BASELINE[symbol]:
@@ -183,10 +204,7 @@ def install(main):
         if strat and "Sweep" in strat:
             result = CONTEXT.get(_key(symbol, int(signal_ts_ms)))
             if result is not None:
-                return _signal_message(
-                    main, symbol, mtype, result, reminder=False,
-                    entry=price, sl=sl, tp=tp, account=account, qty=qty, risk_amt=risk_amt,
-                )
+                return _signal_message(main, symbol, mtype, result, reminder=False, entry=price, sl=sl, tp=tp, account=account, qty=qty, risk_amt=risk_amt)
         return original_msg(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk_amt, account, signal_ts_ms)
 
     def _send_reminder(symbol, mtype, result):
@@ -215,15 +233,7 @@ def install(main):
         if state.get("initial"):
             _send_reminder(symbol, mtype, result)
             return
-        state.update({
-            "initial": True,
-            "direction": direction,
-            "timeframe": result.timeframe,
-            "candle_start": result.candle_start.isoformat(),
-            "candle_end": result.candle_end.isoformat(),
-            "high": result.current["High"],
-            "low": result.current["Low"],
-        })
+        state.update({"initial": True, "direction": direction, "timeframe": result.timeframe, "candle_start": result.candle_start.isoformat(), "candle_end": result.candle_end.isoformat(), "high": result.current["High"], "low": result.current["Low"]})
         _save()
         CONTEXT[key] = result
         _save_signal_event(symbol, mtype, result)
@@ -250,10 +260,10 @@ def install(main):
     main.handle_sweep = handle_sweep_v2
     main.notify_neutral_sweep = notify_neutral_v2
     main.msg_trade_signal = msg_trade_signal_v2
-    main.SWEEP_ENGINE_VERSION = "v2.3"
+    main.SWEEP_ENGINE_VERSION = "v2.4"
     main.SWEEP_RULE = "closed candle: current high > previous high AND current low < previous low; close classifies BUY/NEUTRAL/SELL"
     main.SWEEP_DATA_WARNING = True
-    print("[SWEEP V2.3] Canonical candle/sweep engine installed; one-hour freshness and compact message enabled")
+    print("[SWEEP V2.4] Canonical 60-minute freshness, candle-close schedule validation and compact prices enabled")
 
 
 def _load_signal_history():
