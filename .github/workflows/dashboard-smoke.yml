@@ -2,7 +2,7 @@ name: Dashboard Smoke Test
 
 on:
   push:
-    branches: ["main", "phase-6"]
+    branches: ["main", "phase-6", "phase-9-sweep-fix"]
   pull_request:
     branches: ["main"]
 
@@ -17,6 +17,11 @@ jobs:
         uses: actions/setup-python@v5
         with:
           python-version: "3.11"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install pytest
 
       - name: Python syntax
         run: python -m compileall -q .
@@ -48,3 +53,6 @@ jobs:
           grep -q 'trade_details' templates/index.html
           grep -q 'equity_points' templates/index.html
           echo "dashboard endpoint wiring passed"
+
+      - name: Pytest suite
+        run: python -m pytest -q
