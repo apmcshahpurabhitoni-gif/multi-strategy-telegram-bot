@@ -38,11 +38,17 @@ def test_btc_display_name_is_human_readable():
 
 def test_direction_header_and_freshness_are_independent():
     now = datetime.now(IST)
-    for direction, icon in (("BULLISH", "🟢"), ("BEARISH", "🔴"), ("NEUTRAL", "🟡")):
+    expected_headers = {
+        "BULLISH": "🟢SWEEP V2 · Gold · ✅",
+        "BEARISH": "🔴SWEEP V2 · Gold · ✅",
+        "NEUTRAL": "✅SWEEP V2 · Gold · ✅",
+    }
+    for direction, header in expected_headers.items():
         msg = sweep_runtime._signal_message(FakeMain, "GC=F", "FOREX", make_result(now, 30, direction))
-        assert f"{icon}SWEEP V2 · Gold · ✅" in msg
+        assert header in msg
         assert "GC=F" not in msg.split("\n")[0]
-        assert "Signal Status:* `✅ FRESH`" in msg
+        assert "Signal Status:" not in msg
+        assert "*Age:* `30 min ago`" in msg
 
 
 def test_gold_stale_uses_warning_but_keeps_direction():
@@ -50,4 +56,5 @@ def test_gold_stale_uses_warning_but_keeps_direction():
     msg = sweep_runtime._signal_message(FakeMain, "GC=F", "FOREX", make_result(now, 61, "BEARISH"))
     assert "🔴SWEEP V2 · Gold · ⚠️" in msg
     assert "GC=F" not in msg.split("\n")[0]
+    assert "*Age:* `61 min ago`" in msg
     assert "STALE" in msg
