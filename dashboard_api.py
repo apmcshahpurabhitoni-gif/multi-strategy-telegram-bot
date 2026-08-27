@@ -42,6 +42,19 @@ def _direction(value):
     if "BULL" in text or text in ("BUY","LONG"):return "BUY"
     if "BEAR" in text or text in ("SELL","SHORT"):return "SELL"
     return "NEUTRAL"
+def _display_symbol(symbol):
+    """Return the user-facing dashboard name without changing backend symbols."""
+    symbol=str(symbol or "").strip()
+    if symbol=="GC=F":return "Gold"
+    if symbol in {"XAUUSD","XAU/USD"}:return "Gold"
+    if symbol=="BTC-USD":return "Bitcoin"
+    if symbol=="^NSEI":return "NIFTY 50"
+    if symbol=="^NSEBANK":return "BANK NIFTY"
+    return symbol
+def _display_price(value):
+    """Dashboard-only price normalization; never changes execution values."""
+    try:return round(float(value or 0),2)
+    except Exception:return value
 def _batch_live_prices(symbols):
     if not symbols:return {}
     main=_get_main_module()
@@ -104,7 +117,7 @@ def _history_signal_fallback(history,ist):
         if not ts:continue
         try:dt=datetime.fromtimestamp(ts/1000,tz=ist)
         except Exception:continue
-        out.append({"id":f"trade-signal:{trade.get('id',symbol)}:{ts}","time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(direction),"strategy":strategy,"status":"EXECUTED TRADE","pnl":float(trade.get("pnl",0) or 0),"hint":"Recovered from trade history","ts_ms":ts,"reminder":False,"date":dt.strftime("%Y-%m-%d")})
+        out.append({"id":f"trade-signal:{trade.get('id',symbol)}:{ts}","time":dt.strftime("%d-%b %H:%M"),"sym":_display_symbol(symbol),"dir":_direction(direction),"strategy":strategy,"status":"EXECUTED TRADE","pnl":float(trade.get("pnl",0) or 0),"hint":"Recovered from trade history","ts_ms":ts,"reminder":False,"date":dt.strftime("%Y-%m-%d")})
     out.sort(key=lambda x:x["ts_ms"],reverse=True)
     seen=set();unique=[]
     for item in out:
@@ -122,7 +135,7 @@ def _build_actual_signals(main,ist,history=None):
             if not symbol or not timestamp:continue
             try:dt=datetime.fromtimestamp(timestamp/1000,tz=ist)
             except Exception:continue
-            signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":symbol,"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
+            signals.append({"id":record.get("id",f"{symbol}:{timestamp}"),"time":dt.strftime("%d-%b %H:%M"),"sym":_display_symbol(symbol),"dir":_direction(record.get("direction")),"strategy":record.get("strategy") or f"{record.get('timeframe','4H')} Sweep","status":"REMINDER SENT" if record.get("reminder_sent") else "SIGNAL SAVED","pnl":0,"hint":"Confirmed sweep signal","ts_ms":timestamp,"reminder":bool(record.get("reminder_sent")),"date":dt.strftime("%Y-%m-%d")})
     if not signals and history:signals=_history_signal_fallback(history,ist)
     signals.sort(key=lambda item:item["ts_ms"],reverse=True);return signals
 def _normalize_news_event(event,ist):
@@ -165,7 +178,7 @@ def _build_snapshot():
     symbols=[trade.get("symbol") for trade in active if trade.get("symbol")];prices=_batch_live_prices(symbols);live=[]
     for trade in active:
         symbol=trade.get("symbol");entry=float(trade.get("entry",0) or 0);qty=float(trade.get("qty",0) or 0);sl=float(trade.get("sl",trade.get("trail_sl",0)) or 0);tp=float(trade.get("tp",0) or 0);trade_type=str(trade.get("type",trade.get("direction","LONG"))).upper();is_long="LONG" in trade_type or "BULL" in trade_type or trade_type=="BUY";current=float(prices.get(symbol,entry) or entry);pnl=(current-entry)*qty*(1 if is_long else -1)
-        live.append({"id":trade.get("id",""),"symbol":symbol,"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if is_long else "SHORT","entry":entry,"current":current,"sl":sl,"tp":tp,"qty":qty,"pnl_inr":round(pnl,2),"opened":trade.get("opened_at",trade.get("opened","")),"strategy":trade.get("strat",trade.get("strategy",""))})
+        live.append({"id":trade.get("id",""),"symbol":_display_symbol(symbol),"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if is_long else "SHORT","entry":_display_price(entry),"current":_display_price(current),"sl":_display_price(sl),"tp":_display_price(tp),"qty":qty,"pnl_inr":round(pnl,2),"opened":trade.get("opened_at",trade.get("opened","")),"strategy":trade.get("strat",trade.get("strategy",""))})
     signals=_build_actual_signals(main,ist,history);news=[];cached=getattr(main,"get_cached_news",None);fetch=getattr(main,"fetch_news",None)
     try:
         if cached:news=cached() or []
@@ -182,7 +195,7 @@ def _build_snapshot():
     recent_trades=[]
     for trade in history_sorted:
         if not isinstance(trade,dict):continue
-        recent_trades.append({"id":trade.get("id",""),"symbol":trade.get("symbol",""),"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if "LONG" in str(trade.get("type",trade.get("direction",""))).upper() or "BUY" in str(trade.get("direction","")).upper() else "SHORT","entry":trade.get("entry",0),"current":trade.get("exit",trade.get("close_price",trade.get("live",0))),"sl":trade.get("trail_sl",trade.get("sl",0)),"tp":trade.get("tp",0),"qty":trade.get("qty",0),"pnl_inr":float(trade.get("pnl",0) or 0),"opened":trade.get("opened_at",trade.get("opened",trade.get("time",""))),"closed":trade.get("closed_at",trade.get("close_time","")),"strategy":trade.get("strat",trade.get("strategy","")),"status":"CLOSED"})
+        recent_trades.append({"id":trade.get("id",""),"symbol":_display_symbol(trade.get("symbol","")),"market":trade.get("market",trade.get("mtype","")),"account":trade.get("account",""),"direction":"LONG" if "LONG" in str(trade.get("type",trade.get("direction",""))).upper() or "BUY" in str(trade.get("direction","")).upper() else "SHORT","entry":_display_price(trade.get("entry",0)),"current":_display_price(trade.get("exit",trade.get("close_price",trade.get("live",0)))),"sl":_display_price(trade.get("trail_sl",trade.get("sl",0))),"tp":_display_price(trade.get("tp",0)),"qty":trade.get("qty",0),"pnl_inr":float(trade.get("pnl",0) or 0),"opened":trade.get("opened_at",trade.get("opened",trade.get("time",""))),"closed":trade.get("closed_at",trade.get("close_time","")),"strategy":trade.get("strat",trade.get("strategy","")),"status":"CLOSED"})
     total_balance=round(sum(float(a.get("balance",0) or 0) for a in accounts.values() if isinstance(a,dict)),2)
     intelligence_payload=build_dashboard_intelligence(build_intelligence(history, signals))
     today_pnl=round(sum(per_today.values()),2)
