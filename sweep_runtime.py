@@ -119,11 +119,14 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
     else:
         signal_icon, signal, action = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE"
 
-    title = "REMINDER · " if reminder else ""
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
     lines = [
-        f"{status_icon} *{title}SWEEP V2 · {name} · {status}*",
+        f"🔴SWEEP V2 · {name} · {status_icon}",
         main.BR,
+    ]
+    if reminder:
+        lines.append("🔔 REMINDER")
+    lines.extend([
         f"📌 *Signal:* `{signal_icon} {signal}`",
         f"⏱ *Timeframe:* `{result.timeframe}`",
         f"🕯 *Candle closed:* `{end}`",
@@ -131,7 +134,7 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
         f"📈 *Sweep High:* `{_fmt_price(symbol, result.current['High'], cur)}`",
         f"📉 *Sweep Low:* `{_fmt_price(symbol, result.current['Low'], cur)}`",
         f"🎯 *Action:* `{action}`",
-    ]
+    ])
     if entry is not None and direction in {"BULLISH", "BEARISH"}:
         lines.append(f"💰 *Entry:* `{_fmt_price(symbol, entry, cur)}`")
     if sl is not None and direction in {"BULLISH", "BEARISH"}:
