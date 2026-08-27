@@ -50,6 +50,11 @@ def _resample(df: pd.DataFrame, rule: str, offset: str, now: pd.Timestamp) -> pd
 
 def _fx_or_gold_expected_start(now: pd.Timestamp) -> pd.Timestamp:
     """Return the most recently CLOSED OANDA 4H boundary in IST."""
+    now = pd.Timestamp(now)
+    if now.tzinfo is None:
+        now = now.tz_localize(IST)
+    else:
+        now = now.tz_convert(IST)
     day = now.normalize()
     candidates = [
         day + pd.Timedelta(hours=2, minutes=30),
