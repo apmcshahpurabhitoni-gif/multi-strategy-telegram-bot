@@ -49,8 +49,14 @@ def make_result(candle_end, direction="BULLISH"):
 
 
 def install_with_mocks(monkeypatch, main, result, baseline_start, new_start):
+    # build_closed_candles must expose the *closed candle start* as the last index.
+    # check_sweep_v2 then computes its close from that start, exactly as production does.
     starts = iter([baseline_start, new_start])
-    monkeypatch.setattr(sweep_runtime, "build_closed_candles", lambda df, symbol, now: (pd.DataFrame(index=[next(starts)]), "4H", None))
+    monkeypatch.setattr(
+        sweep_runtime,
+        "build_closed_candles",
+        lambda df, symbol, now: (pd.DataFrame(index=[next(starts)]), "4H", None),
+    )
     monkeypatch.setattr(sweep_runtime, "detect_sweep", lambda df, symbol, now: result)
     monkeypatch.setattr(sweep_runtime, "_load_signal_history", lambda: [])
     monkeypatch.setattr(sweep_runtime, "_write_signal_history", lambda rows: None)
@@ -64,8 +70,11 @@ def install_with_mocks(monkeypatch, main, result, baseline_start, new_start):
 
 def test_runtime_blocks_sweep_older_than_one_hour(monkeypatch):
     main = FakeMain(); now = datetime.now(IST)
-    result = make_result(now - timedelta(minutes=61))
-    install_with_mocks(monkeypatch, main, result, result.candle_end - timedelta(hours=1), result.candle_start)
+    # The returned candle start is deliberately old enough that its 4H close is stale.
+    candle_end = now - timedelta(minutes=61)
+    result = make_result(candle_end)
+    candle_start = candle_end - timedelta(hours=4)
+    install_with_mocks(monkeypatch, main, result, candle_start - timedelta(hours=4), candle_start)
     assert main.check_sweep("RELIANCE.NS", object()) is None
     assert main.check_sweep("RELIANCE.NS", object()) is None
     assert main.executions == []
@@ -74,8 +83,12 @@ def test_runtime_blocks_sweep_older_than_one_hour(monkeypatch):
 
 def test_runtime_sends_compact_message_and_executes_fresh_sweep(monkeypatch):
     main = FakeMain(); now = datetime.now(IST)
-    result = make_result(now - timedelta(minutes=30), "BULLISH")
-    install_with_mocks(monkeypatch, main, result, result.candle_end - timedelta(hours=1), result.candle_start)
+    candle_end = now - timedelta(minutes=30)
+    result = make_result(candle_end, "BULLISH")
+    candle_start = candle_end - timedelta(hours=4)
+    # First call establishes startup baseline. Second call exposes a genuinely new
+    # closed candle whose close is only 30 minutes old.
+    install_with_mocks(monkeypatch, main, result, candle_start - timedelta(hours=4), candle_start)
     assert main.check_sweep("RELIANCE.NS", object()) is None
     sweep = main.check_sweep("RELIANCE.NS", object())
     assert sweep is not None
