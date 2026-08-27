@@ -3,7 +3,7 @@ from datetime import datetime
 
 import pytz
 
-from dashboard_api import _normalize_news_event
+from dashboard_api import _display_price, _display_symbol, _normalize_news_event
 
 
 class NewsNormalizationTests(unittest.TestCase):
@@ -40,6 +40,14 @@ class NewsNormalizationTests(unittest.TestCase):
 
     def test_ignores_non_dict_events(self):
         self.assertIsNone(_normalize_news_event("bad event", self.ist))
+
+    def test_gold_uses_user_facing_name(self):
+        self.assertEqual(_display_symbol("GC=F"), "Gold")
+        self.assertEqual(_display_symbol("XAUUSD"), "Gold")
+
+    def test_dashboard_price_display_is_compact(self):
+        self.assertEqual(_display_price(4664.89990234375), 4664.9)
+        self.assertEqual(_display_price("4725.090529739667"), 4725.09)
 
 
 if __name__ == "__main__":
