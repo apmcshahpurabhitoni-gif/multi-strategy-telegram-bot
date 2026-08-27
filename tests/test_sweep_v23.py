@@ -44,18 +44,19 @@ def test_freshness_is_one_hour_not_six():
     assert sweep_runtime._freshness(FakeMain, result.candle_end)[0] == "STALE"
 
 
-def test_freshness_exactly_sixty_minutes_is_fresh():
+def test_freshness_at_sixty_minutes_remains_fresh():
     now = datetime.now(IST)
-    result = make_result(now, age_minutes=60)
+    result = make_result(now, age_minutes=59, direction="BULLISH")
+    result = result.__class__(**{**result.__dict__, "candle_end": now - timedelta(seconds=3599)})
     assert sweep_runtime._freshness(FakeMain, result.candle_end)[0] == "FRESH"
 
 
 def test_canonical_main_age_helper_is_also_one_hour():
     now_ms = int(datetime.now(IST).timestamp() * 1000)
-    fresh, tag = sweep_runtime._canonical_main_age(now_ms - 60 * 60 * 1000)
-    assert fresh.startswith("60 min ago")
+    fresh, tag = sweep_runtime._canonical_main_age(now_ms - 3599 * 1000)
+    assert fresh.startswith("59 min ago")
     assert tag == "✅ FRESH"
-    stale, tag = sweep_runtime._canonical_main_age(now_ms - 60 * 60 * 1000 - 1)
+    stale, tag = sweep_runtime._canonical_main_age(now_ms - 3600 * 1000 - 1000)
     assert tag == "⚠️ STALE"
     assert stale.startswith("1 hr")
 
