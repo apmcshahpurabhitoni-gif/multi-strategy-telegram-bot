@@ -1,4 +1,4 @@
-from datetime import datetime, timedelta
+from datetime import datetime
 from zoneinfo import ZoneInfo
 
 import pandas as pd
@@ -19,7 +19,9 @@ FX_GOLD = [
 
 
 def minute_frame(start, end):
-    idx = pd.date_range(start=start, end=end, freq="15min", tz=IST)
+    idx = pd.date_range(start=start, end=end, freq="15min")
+    if idx.tz is None:
+        idx = idx.tz_localize(IST)
     base = pd.DataFrame(index=idx)
     base["Open"] = 100.0
     base["High"] = 101.0
@@ -70,10 +72,11 @@ def test_btc_uses_4h_tradingview_ist_boundaries():
     assert tf == "4H"
     assert warning is None
     assert list(bars.index)[-3:] == [
+        pd.Timestamp("2026-08-27 05:30", tz=IST),
         pd.Timestamp("2026-08-27 09:30", tz=IST),
         pd.Timestamp("2026-08-27 13:30", tz=IST),
-        pd.Timestamp("2026-08-27 17:30", tz=IST),
     ]
+    assert pd.Timestamp("2026-08-27 17:30", tz=IST) not in bars.index
 
 
 def test_4h_boundary_does_not_include_a_still_forming_candle():
