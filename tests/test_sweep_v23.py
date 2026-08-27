@@ -4,7 +4,6 @@ from zoneinfo import ZoneInfo
 
 import sweep_runtime
 
-
 IST = ZoneInfo("Asia/Kolkata")
 
 
@@ -45,6 +44,30 @@ def test_freshness_is_one_hour_not_six():
     assert sweep_runtime._freshness(FakeMain, result.candle_end)[0] == "STALE"
 
 
+def test_freshness_exactly_sixty_minutes_is_fresh():
+    now = datetime.now(IST)
+    result = make_result(now, age_minutes=60)
+    assert sweep_runtime._freshness(FakeMain, result.candle_end)[0] == "FRESH"
+
+
+def test_canonical_main_age_helper_is_also_one_hour():
+    now_ms = int(datetime.now(IST).timestamp() * 1000)
+    fresh, tag = sweep_runtime._canonical_main_age(now_ms - 60 * 60 * 1000)
+    assert fresh.startswith("60 min ago")
+    assert tag == "✅ FRESH"
+    stale, tag = sweep_runtime._canonical_main_age(now_ms - 60 * 60 * 1000 - 1)
+    assert tag == "⚠️ STALE"
+    assert stale.startswith("1 hr")
+
+
+def test_compact_price_formatting_is_market_appropriate():
+    assert sweep_runtime._fmt_price("RELIANCE.NS", 1925.0, "₹") == "₹1,925.00"
+    assert sweep_runtime._fmt_price("BTC-USD", 123456.789, "$") == "$123,456.79"
+    assert sweep_runtime._fmt_price("EURUSD=X", 1.123456, "") == "1.12346"
+    assert sweep_runtime._fmt_price("USDJPY=X", 147.12345, "") == "147.123"
+    assert sweep_runtime._fmt_price("GC=F", 2501.567, "$") == "$2,501.57"
+
+
 def test_compact_message_replaces_legacy_diagnostic_block():
     now = datetime.now(IST)
     result = make_result(now, age_minutes=30, direction="BULLISH")
@@ -73,6 +96,8 @@ def test_compact_message_replaces_legacy_diagnostic_block():
     assert "Account" in message
     assert "Quantity" in message
     assert "Risk" in message
+    assert "₹1,020.00" in message
+    assert "₹980.00" in message
     assert "Previous Candle" not in message
     assert "Current Candle" not in message
     assert "High swept" not in message
