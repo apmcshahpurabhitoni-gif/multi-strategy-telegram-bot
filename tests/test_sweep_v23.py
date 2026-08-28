@@ -2,6 +2,8 @@ from datetime import datetime, timedelta
 from types import SimpleNamespace
 from zoneinfo import ZoneInfo
 
+import pandas as pd
+import sweep_engine
 import sweep_runtime
 
 
@@ -34,6 +36,20 @@ def make_result(now, age_minutes=30, direction="BULLISH"):
         current={"Open": 1005.0, "High": 1020.0, "Low": 980.0, "Close": 1015.0},
         schedule_warning=None,
     )
+
+
+def make_nifty_bars(prev_high=24133.60, prev_low=24090.85, cur_high=24167.85, cur_low=24107.10, cur_close=24120.00):
+    idx = pd.date_range("2026-08-28 09:15", periods=24, freq="5min")
+    rows = []
+    for i, ts in enumerate(idx):
+        if i < 12:
+            high, low = prev_high if i == 11 else 24120.0, prev_low if i == 11 else 24100.0
+            close = 24110.0
+        else:
+            high, low = cur_high if i == 12 else 24150.0, cur_low if i == 12 else 24110.0
+            close = cur_close if i == 23 else 24120.0
+        rows.append({"Open": close, "High": high, "Low": low, "Close": close})
+    return pd.DataFrame(rows, index=idx)
 
 
 def test_freshness_is_one_hour_not_six():
@@ -107,3 +123,44 @@ def test_stale_message_explicitly_blocks_new_trade():
     assert "STALE" in message
     assert "older than 1 hour" in message
     assert "no new trade should be opened" in message
+
+
+def test_phase1_nifty_bad_example_does_not_sweep():
+    df = make_nifty_bars()
+    result = sweep_engine.detect_sweep(
+        df,
+        "^NSEI",
+        datetime(2026, 8, 28, 11, 16, tzinfo=IST),
+    )
+    assert result is None
+
+
+def test_phase1_nifty_requires_both_sides_to_sweep():
+    df = make_nifty_bars(cur_high=24167.85, cur_low=24080.00, cur_close=24120.00)
+    result = sweep_engine.detect_sweep(
+        df,
+        "^NSEI",
+        datetime(2026, 8, 28, 11, 16, tzinfo=IST),
+    )
+    assert result is not None
+    assert result.high_swept is True
+    assert result.low_swept is True
+    assert result.direction == "NEUTRAL"
+    assert result.candle_start.hour == 10
+    assert result.candle_start.minute == 15
+    assert result.candle_end.hour == 11
+    assert result.candle_end.minute == 15
+
+
+def test_phase1_nifty_uses_only_approved_session_starts():
+    df = make_nifty_bars(cur_high=24167.85, cur_low=24080.00, cur_close=24170.00)
+    bars, tf, warning = sweep_engine.build_closed_candles(
+        df,
+        "^NSEI",
+        datetime(2026, 8, 28, 11, 16, tzinfo=IST),
+    )
+    assert tf == "1H"
+    assert warning is None
+    assert list(bars.index.hour) == [9, 10]
+    assert all(ts.minute == 15 for ts in bars.index)
+    assert all(ts.hour != 15 for ts in bars.index)
