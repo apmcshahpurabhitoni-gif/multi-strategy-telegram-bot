@@ -24,6 +24,8 @@ jobs:
           python -m pip install pytest
       - name: Apply guarded Phase 4 runtime bridge
         run: python tools/apply_phase4_runtime_bridge.py
+      - name: Repair Phase 4 bridge with Supabase compatibility
+        run: python tools/repair_phase4_supabase_bridge.py
       - name: Compile runtime files
         run: python -m py_compile main.py db.py
       - name: Run Phase 4 persistence tests
