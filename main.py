@@ -13,6 +13,7 @@ from socketserver import ThreadingMixIn
 
 import requests
 import dashboard_api
+from db import DatabaseManager
 import numpy as np
 import pandas as pd
 import yfinance as yf
@@ -98,6 +99,7 @@ muted_assets = set()
 sent_signals = {}
 history = []
 _lock = threading.RLock()
+_trade_db = DatabaseManager()
 
 _news_pause_enabled = True
 _chart_lock = threading.RLock()
@@ -305,45 +307,46 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 def _currency(symbol):
     return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$"
 
-def load_json(fp, default):
-    key = os.path.basename(fp)
-    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
-    if sup_url and sup_key:
-        try:
-            r = requests.get(f"{sup_url}/rest/v1/bot_data?id=eq.{key}", headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}"}, timeout=15)
-            if r.status_code == 200 and r.json():
-                rows = r.json()
-                if rows:
-                    try:
-                        with open(fp, "w") as f:
-                            json.dump(rows[0]["data"], f, indent=4)
-                    except Exception:
-                        pass
-                    return rows[0]["data"]
-        except Exception as e:
-            print(f"[ERR] Supabase load {key}: {e}")
+def load_json(path, default=None):
+    if default is None:
+        default = {}
+    path_str = str(path)
     try:
-        if os.path.exists(fp):
-            with open(fp, "r") as f:
-                return json.load(f)
-    except Exception:
-        pass
-    return default
+        if path_str == ACTIVE_TRADES_FILE or path_str == HISTORY_FILE:
+            if _trade_db.has_trade_state():
+                if path_str == ACTIVE_TRADES_FILE:
+                    rows = _trade_db.get_active_trades()
+                    for row in rows:
+                        row["time"] = row.get("time", row.get("time_str", ""))
+                    return rows
+                return _trade_db.get_trade_history()
+    except Exception as exc:
+        print(f"[DB WARN] trade-state load fallback: {exc}")
+    try:
+        with open(path, "r", encoding="utf-8") as f:
+            return json.load(f)
+    except (FileNotFoundError, json.JSONDecodeError, OSError):
+        return default
 
-def save_json(fp, data):
-    key = os.path.basename(fp)
+
+def save_json(path, data):
+    path_str = str(path)
     try:
-        with open(fp + ".tmp", "w") as f:
-            json.dump(data, f, indent=4)
-        os.replace(fp + ".tmp", fp)
-    except Exception as e:
-        print(f"[ERR] local save {fp}: {e}")
-    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
-    if sup_url and sup_key:
+        with open(path, "w", encoding="utf-8") as f:
+            json.dump(data, f, ensure_ascii=False, indent=2)
+    except OSError as exc:
+        print(f"[WARN] save_json failed for {path}: {exc}")
+        return
+    if path_str == ACTIVE_TRADES_FILE:
         try:
-            requests.post(f"{sup_url}/rest/v1/bot_data", headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}", "Content-Type": "application/json", "Prefer": "resolution=merge-duplicates"}, json={"id": key, "data": data}, timeout=15)
-        except Exception as e:
-            print(f"[ERR] Supabase save {key}: {e}")
+            _trade_db.sync_runtime_active_trades(data if isinstance(data, list) else [])
+        except Exception as exc:
+            print(f"[DB WARN] active-trade sync failed: {exc}")
+    elif path_str == HISTORY_FILE:
+        try:
+            _trade_db.sync_runtime_closed_history(data if isinstance(data, list) else [])
+        except Exception as exc:
+            print(f"[DB WARN] history sync failed: {exc}")
 
 def safe_send(chat_id, text, **kwargs):
     try:
