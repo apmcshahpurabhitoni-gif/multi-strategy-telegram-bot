@@ -7,8 +7,8 @@ DB = ROOT / "db.py"
 
 
 def replace_function(text, name, replacement, next_name):
-    pattern = rf"def {re.escape(name)}\\([^\\n]*\\):\\n.*?(?=def {re.escape(next_name)}\\()"
-    new, count = re.subn(pattern, replacement.rstrip() + "\\n\\n", text, count=1, flags=re.S)
+    pattern = rf"def {re.escape(name)}\([^\n]*\):\n.*?(?=def {re.escape(next_name)}\()"
+    new, count = re.subn(pattern, replacement.rstrip() + "\n\n", text, count=1, flags=re.S)
     if count != 1:
         raise RuntimeError(f"safe patch refused: could not uniquely locate {name}()")
     return new
@@ -71,8 +71,6 @@ def patch_db(text):
             try:
                 self.close_active_trade(str(trade_id), closed)
             except Exception:
-                # Existing closed rows are intentionally idempotent; malformed legacy rows
-                # must not crash the bot startup path.
                 pass
 
 '''
@@ -81,15 +79,15 @@ def patch_db(text):
 
 def patch_main(text):
     if "from db import DatabaseManager" not in text:
-        anchor = "import dashboard_api\\n"
+        anchor = "import dashboard_api\n"
         if anchor not in text:
             raise RuntimeError("safe patch refused: main import anchor missing")
-        text = text.replace(anchor, anchor + "from db import DatabaseManager\\n", 1)
+        text = text.replace(anchor, anchor + "from db import DatabaseManager\n", 1)
     if "_trade_db = DatabaseManager()" not in text:
-        anchor = "_lock = threading.RLock()\\n"
+        anchor = "_lock = threading.RLock()\n"
         if anchor not in text:
             raise RuntimeError("safe patch refused: main lock anchor missing")
-        text = text.replace(anchor, anchor + "_trade_db = DatabaseManager()\\n", 1)
+        text = text.replace(anchor, anchor + "_trade_db = DatabaseManager()\n", 1)
 
     load_replacement = '''def load_json(path, default=None):
     if default is None:
@@ -104,7 +102,6 @@ def patch_main(text):
                         row["time"] = row.get("time", row.get("time_str", ""))
                     return rows
                 return _trade_db.get_trade_history()
-            # First-run migration only: once DB state exists it is authoritative.
     except Exception as exc:
         print(f"[DB WARN] trade-state load fallback: {exc}")
     try:
@@ -133,14 +130,16 @@ def save_json(path, data):
         except Exception as exc:
             print(f"[DB WARN] history sync failed: {exc}")
 '''
-    text = replace_function(text, "load_json", load_replacement, "save_json")
-    # The replacement above already includes save_json, so remove the old save_json by
-    # replacing the duplicate block through the next top-level function.
+    # Replace load_json only; the replacement contains the new save_json.
+    pattern = r"def load_json\([^\n]*\):\n.*?(?=def save_json\()"
+    text, count = re.subn(pattern, load_replacement.rstrip() + "\n\n", text, count=1, flags=re.S)
+    if count != 1:
+        raise RuntimeError("safe patch refused: load_json() not uniquely found")
+    # Remove the old save_json that now follows the inserted canonical one.
     pattern = r"def save_json\([^\n]*\):\n.*?(?=def )"
     matches = list(re.finditer(pattern, text, flags=re.S))
     if len(matches) != 2:
-        raise RuntimeError(f"safe patch refused: expected 2 save_json definitions before cleanup, found {len(matches)}")
-    first = matches[0]
+        raise RuntimeError(f"safe patch refused: expected 2 save_json definitions, found {len(matches)}")
     second = matches[1]
     text = text[:second.start()] + text[second.end():]
     return text
@@ -154,7 +153,6 @@ def main():
     if new_db == db_text and new_main == main_text:
         print("Phase 4 runtime bridge already applied")
         return
-    # Syntax check before touching the working tree.
     compile(new_db, str(DB), "exec")
     compile(new_main, str(MAIN), "exec")
     DB.write_text(new_db, encoding="utf-8")
