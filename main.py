@@ -307,12 +307,15 @@ bot = telebot.TeleBot(TOKEN, parse_mode="Markdown", threaded=False)
 def _currency(symbol):
     return "₹" if (symbol.endswith(".NS") or "NSE" in symbol) else "$"
 
-def load_json(path, default=None):
+def load_json(fp, default=None):
+    """Load legacy state while making active/history DB-backed and restart-safe."""
     if default is None:
         default = {}
-    path_str = str(path)
-    try:
-        if path_str == ACTIVE_TRADES_FILE or path_str == HISTORY_FILE:
+    path_str = str(fp)
+    is_trade_state = path_str in (ACTIVE_TRADES_FILE, HISTORY_FILE)
+
+    if is_trade_state:
+        try:
             if _trade_db.has_trade_state():
                 if path_str == ACTIVE_TRADES_FILE:
                     rows = _trade_db.get_active_trades()
@@ -320,29 +323,89 @@ def load_json(path, default=None):
                         row["time"] = row.get("time", row.get("time_str", ""))
                     return rows
                 return _trade_db.get_trade_history()
-    except Exception as exc:
-        print(f"[DB WARN] trade-state load fallback: {exc}")
+        except Exception as exc:
+            print(f"[DB WARN] trade-state load failed; falling back to legacy store: {exc}")
+
+    key = os.path.basename(fp)
+    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
+    if sup_url and sup_key:
+        try:
+            r = requests.get(
+                f"{sup_url}/rest/v1/bot_data?id=eq.{key}",
+                headers={"apikey": sup_key, "Authorization": f"Bearer {sup_key}"},
+                timeout=15,
+            )
+            if r.status_code == 200 and r.json():
+                rows = r.json()
+                if rows:
+                    data = rows[0]["data"]
+                    try:
+                        with open(fp, "w", encoding="utf-8") as f:
+                            json.dump(data, f, indent=4)
+                    except Exception:
+                        pass
+                    if is_trade_state:
+                        try:
+                            if path_str == ACTIVE_TRADES_FILE:
+                                _trade_db.sync_runtime_active_trades(data if isinstance(data, list) else [])
+                            else:
+                                _trade_db.sync_runtime_closed_history(data if isinstance(data, list) else [])
+                        except Exception as exc:
+                            print(f"[DB WARN] legacy-to-DB migration failed: {exc}")
+                    return data
+        except Exception as e:
+            print(f"[ERR] Supabase load {key}: {e}")
     try:
-        with open(path, "r", encoding="utf-8") as f:
-            return json.load(f)
-    except (FileNotFoundError, json.JSONDecodeError, OSError):
-        return default
+        if os.path.exists(fp):
+            with open(fp, "r", encoding="utf-8") as f:
+                data = json.load(f)
+            if is_trade_state:
+                try:
+                    if path_str == ACTIVE_TRADES_FILE:
+                        _trade_db.sync_runtime_active_trades(data if isinstance(data, list) else [])
+                    else:
+                        _trade_db.sync_runtime_closed_history(data if isinstance(data, list) else [])
+                except Exception as exc:
+                    print(f"[DB WARN] legacy-to-DB migration failed: {exc}")
+            return data
+    except Exception:
+        pass
+    return default
 
 
-def save_json(path, data):
-    path_str = str(path)
+def save_json(fp, data):
+    """Preserve existing local/Supabase state persistence and mirror trade state to DB."""
+    key = os.path.basename(fp)
     try:
-        with open(path, "w", encoding="utf-8") as f:
-            json.dump(data, f, ensure_ascii=False, indent=2)
-    except OSError as exc:
-        print(f"[WARN] save_json failed for {path}: {exc}")
-        return
-    if path_str == ACTIVE_TRADES_FILE:
+        with open(fp + ".tmp", "w", encoding="utf-8") as f:
+            json.dump(data, f, indent=4)
+        os.replace(fp + ".tmp", fp)
+    except Exception as e:
+        print(f"[ERR] local save {fp}: {e}")
+
+    sup_url, sup_key = os.environ.get("SUPABASE_URL"), os.environ.get("SUPABASE_KEY")
+    if sup_url and sup_key:
+        try:
+            requests.post(
+                f"{sup_url}/rest/v1/bot_data",
+                headers={
+                    "apikey": sup_key,
+                    "Authorization": f"Bearer {sup_key}",
+                    "Content-Type": "application/json",
+                    "Prefer": "resolution=merge-duplicates",
+                },
+                json={"id": key, "data": data},
+                timeout=15,
+            )
+        except Exception as e:
+            print(f"[ERR] Supabase save {key}: {e}")
+
+    if fp == ACTIVE_TRADES_FILE:
         try:
             _trade_db.sync_runtime_active_trades(data if isinstance(data, list) else [])
         except Exception as exc:
             print(f"[DB WARN] active-trade sync failed: {exc}")
-    elif path_str == HISTORY_FILE:
+    elif fp == HISTORY_FILE:
         try:
             _trade_db.sync_runtime_closed_history(data if isinstance(data, list) else [])
         except Exception as exc:
