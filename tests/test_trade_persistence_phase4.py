@@ -1,6 +1,7 @@
 import importlib
 import sqlite3
 
+# Phase 4 guarded migration trigger: runtime persistence must be verified before deployment.
 
 def _fresh_db(tmp_path, monkeypatch):
     db_path = tmp_path / "state.db"
@@ -44,8 +45,6 @@ def test_phase4_trade_survives_runtime_reconstruction(tmp_path, monkeypatch):
     manager = db.DatabaseManager()
     trade = _trade()
     manager.add_active_trade(trade)
-
-    # Simulate a process/deployment restart by creating a new manager instance.
     manager2 = db.DatabaseManager()
     restored = manager2.get_active_trades()
     assert len(restored) == 1
@@ -61,12 +60,9 @@ def test_phase4_close_is_atomic_and_idempotent(tmp_path, monkeypatch):
     trade = _trade()
     manager.add_active_trade(trade)
     closed = _closed(trade)
-
     assert manager.close_active_trade(trade["id"], closed) is True
     assert manager.get_active_trades() == []
     assert len(manager.get_trade_history()) == 1
-
-    # A second close must not create a second history record.
     assert manager.close_active_trade(trade["id"], closed) is False
     assert manager.get_active_trades() == []
     assert len(manager.get_trade_history()) == 1
@@ -76,8 +72,6 @@ def test_phase4_restart_reads_same_sqlite_file(tmp_path, monkeypatch):
     db, db_path = _fresh_db(tmp_path, monkeypatch)
     manager = db.DatabaseManager()
     manager.add_active_trade(_trade("restart-gold"))
-
-    # A new Python process would point to the same configured DB path.
     with sqlite3.connect(db_path) as conn:
         row = conn.execute("SELECT id, symbol FROM active_trades WHERE id=?", ("restart-gold",)).fetchone()
     assert row == ("restart-gold", "GC=F")
