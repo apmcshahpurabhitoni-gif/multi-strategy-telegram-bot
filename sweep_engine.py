@@ -50,13 +50,7 @@ def _resample(df: pd.DataFrame, rule: str, offset: str, now: pd.Timestamp) -> pd
 
 
 def _fx_or_gold_expected_start(now: pd.Timestamp) -> pd.Timestamp:
-    """Return the most recently CLOSED OANDA 4H boundary in IST.
-
-    Boundaries are 02:30, 06:30, 10:30, 14:30, 18:30, 22:30 IST.  The crucial
-    rule is that at, for example, 13:07 IST the latest closed candle is the
-    06:30→10:30 candle, NOT a bar ending in the future and NOT a Yahoo bar built
-    from a different timezone/session convention.
-    """
+    """Return the most recently CLOSED OANDA 4H boundary in IST."""
     day = now.normalize()
     candidates = [
         day + pd.Timedelta(hours=2, minutes=30),
@@ -72,11 +66,11 @@ def _fx_or_gold_expected_start(now: pd.Timestamp) -> pd.Timestamp:
     return candidates[-1] - pd.Timedelta(days=1)
 
 
-def _resample_from_boundaries(df: pd.DataFrame, starts: list[pd.Timestamp], now: pd.Timestamp) -> pd.DataFrame:
-    """Aggregate using explicit IST boundaries instead of pandas' generic bins."""
+def _resample_from_boundaries(df: pd.DataFrame, starts: list[pd.Timestamp], duration: pd.Timedelta, now: pd.Timestamp) -> pd.DataFrame:
+    """Aggregate using explicit IST boundaries instead of generic resampling bins."""
     rows = []
     for start in starts:
-        end = start + pd.Timedelta(hours=4)
+        end = start + duration
         if end > now:
             continue
         group = df[(df.index >= start) & (df.index < end)]
@@ -86,6 +80,26 @@ def _resample_from_boundaries(df: pd.DataFrame, starts: list[pd.Timestamp], now:
     if not rows:
         return pd.DataFrame(columns=["Open", "High", "Low", "Close"], dtype=float)
     return pd.DataFrame([{**ohlc, "Time": start} for start, ohlc in rows]).set_index("Time").sort_index()
+
+
+def _nifty_session_starts(now_ts: pd.Timestamp) -> list[pd.Timestamp]:
+    """Return exact approved NIFTY/BANK NIFTY 1H candle starts around now.
+
+    The strategy candles are fixed to:
+    09:15, 10:15, 11:15, 12:15, 13:15, 14:15 IST.
+    There is deliberately no generic pandas offset/resample here: an exchange
+    session boundary is part of the strategy contract and must not drift with
+    provider timestamp conventions.
+    """
+    starts = []
+    first_day = now_ts.normalize() - pd.Timedelta(days=3)
+    last_day = now_ts.normalize()
+    day = first_day
+    while day <= last_day:
+        for h in (9, 10, 11, 12, 13, 14):
+            starts.append(day + pd.Timedelta(hours=h, minutes=15))
+        day += pd.Timedelta(days=1)
+    return starts
 
 
 def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
@@ -102,9 +116,12 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
 
     # NIFTY / BANK NIFTY: exact NSE session-hour boundaries.
     if symbol in ("^NSEI", "^NSEBANK"):
-        bars = _resample(x, "1h", "9h15min", now_ts)
-        bars = bars[(bars.index.hour * 60 + bars.index.minute >= 555) &
-                    (bars.index.hour * 60 + bars.index.minute <= 855)]
+        bars = _resample_from_boundaries(
+            x,
+            _nifty_session_starts(now_ts),
+            pd.Timedelta(hours=1),
+            now_ts,
+        )
         return bars, "1H", None
 
     # 15 NSE stocks: session-only 4H sweep bars. Never fabricate overnight data.
@@ -132,8 +149,6 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
         return bars, "4H", None
 
     # OANDA Gold/FX schedule: 02:30, 06:30, 10:30, 14:30, 18:30, 22:30 IST.
-    # Build these bars from explicit IST boundaries so Yahoo's source timezone cannot
-    # shift the strategy candles by several hours.
     latest = _fx_or_gold_expected_start(now_ts)
     starts = []
     anchor = latest - pd.Timedelta(days=3)
@@ -141,7 +156,7 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
         for h in (2, 6, 10, 14, 18, 22):
             starts.append(anchor.normalize() + pd.Timedelta(hours=h, minutes=30))
         anchor += pd.Timedelta(days=1)
-    bars = _resample_from_boundaries(x, starts, now_ts)
+    bars = _resample_from_boundaries(x, starts, pd.Timedelta(hours=4), now_ts)
     return bars, "4H", None
 
 
