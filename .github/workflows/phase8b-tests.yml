@@ -21,13 +21,13 @@ jobs:
       - name: Install test dependencies
         run: |
           python -m pip install --upgrade pip
-          python -m pip install pytest
+          python -m pip install pytest pandas pytz
 
       - name: Python syntax
-        run: python -m compileall -q phase8_intelligence.py phase8_dashboard.py dashboard_api.py tests
+        run: python -m compileall -q phase8_intelligence.py phase8_dashboard.py dashboard_api.py sweep_engine.py sweep_runtime.py tests
 
-      - name: Phase 8A/8B tests
-        run: python -m pytest -q tests/test_phase8_intelligence.py tests/test_phase8b_dashboard.py
+      - name: Phase 8A/8B and Sweep V2 tests
+        run: python -m pytest -q tests/test_phase8_intelligence.py tests/test_phase8b_dashboard.py tests/test_sweep_v23.py
 
       - name: Dashboard JavaScript syntax
         shell: bash
