@@ -1,8 +1,8 @@
 """Production entry point.
 
-Keep startup explicit: import the application module, install the canonical
-Sweep V2 runtime into that module, then call its normal main() entry point.
-No source rewriting, string injection, or dynamic execution is used here.
+Startup applies only explicit compatibility adapters. Sweep V2 freshness and
+candle rules live in the canonical strategy modules; no source rewriting or
+runtime monkey-patching is used for freshness.
 """
 from __future__ import annotations
 
@@ -14,9 +14,7 @@ except Exception as exc:
     print(f"[BACKTEST COMPAT] unavailable: {exc}")
 
 import main as _main
-import sweep_runtime as _sweep_runtime
 
 
 if __name__ == "__main__":
-    _sweep_runtime.install(_main)
     _main.main()
