@@ -103,13 +103,18 @@ def _fmt_price(symbol, value, currency):
 
 
 def _canonical_main_age(ts_ms):
+    """Canonical one-format signal age for all Sweep V2 consumers.
+
+    Sweep freshness is a one-hour contract. Keep the displayed age in minutes
+    so a stale signal never flips to a confusing multi-hour representation.
+    """
     if not ts_ms:
         return "Unknown", "⚠️ STALE"
     diff_ms = max(0, int(time.time() * 1000) - int(ts_ms))
     diff_min = int(diff_ms // 60000)
     if diff_ms <= 3600 * 1000:
         return f"{diff_min} min ago", "✅ FRESH"
-    return f"{diff_min // 60} hr {diff_min % 60} min ago", "⚠️ STALE"
+    return f"{diff_min} min ago", "⚠️ STALE"
 
 
 def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=None, tp=None, account=None, qty=None, risk_amt=None):

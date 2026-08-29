@@ -1,17 +1,18 @@
 from pathlib import Path
 
 
-def test_production_entrypoint_injects_sweep_runtime_before_main_startup():
+def test_production_entrypoint_uses_explicit_sweep_runtime_bootstrap():
     source = Path("run_bot.py").read_text(encoding="utf-8")
-    marker = 'if __name__ == "__main__":'
-    bootstrap = "import sweep_runtime as _sweep_runtime"
-    assert bootstrap in source
-    assert marker in source
-    assert 'source = source.replace(marker, bootstrap + "\\n" + marker, 1)' in source
-    assert "_sweep_runtime.install(sys.modules[__name__])" in source
+    assert "import main as _main" in source
+    assert "import sweep_runtime as _sweep_runtime" in source
+    assert "_sweep_runtime.install(_main)" in source
+    assert "_main.main()" in source
+    assert "source.replace(" not in source
+    assert "exec(code" not in source
 
 
-def test_startup_filter_no_longer_advertises_six_hour_sweep_stale_rule():
+def test_production_entrypoint_does_not_rewrite_main_source():
     source = Path("run_bot.py").read_text(encoding="utf-8")
-    assert "Sweep alerts older than 1h" in source
-    assert "Stale signals older than {MAX_SIGNAL_AGE_HOURS}h" in source
+    assert "open(main_file" not in source
+    assert "compile(source" not in source
+    assert "main.py as text" not in source

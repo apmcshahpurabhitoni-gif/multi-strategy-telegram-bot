@@ -61,6 +61,20 @@ def test_freshness_is_one_hour_not_six():
     assert sweep_runtime._freshness(FakeMain, result.candle_end)[0] == "STALE"
 
 
+def test_legacy_age_formatter_also_stays_in_minutes_for_stale_sweeps(monkeypatch):
+    fake_now_ms = 1_900_000_000_000
+    monkeypatch.setattr(sweep_runtime.time, "time", lambda: fake_now_ms / 1000)
+
+    fresh_text, fresh_status = sweep_runtime._canonical_main_age(fake_now_ms - 59 * 60 * 1000)
+    stale_text, stale_status = sweep_runtime._canonical_main_age(fake_now_ms - 4 * 60 * 60 * 1000)
+
+    assert fresh_text == "59 min ago"
+    assert fresh_status == "✅ FRESH"
+    assert stale_text == "240 min ago"
+    assert stale_status == "⚠️ STALE"
+    assert "hr" not in stale_text
+
+
 def test_approved_header_uses_green_for_buy_and_fresh_check():
     now = datetime.now(IST)
     result = make_result(now, age_minutes=30, direction="BULLISH")
