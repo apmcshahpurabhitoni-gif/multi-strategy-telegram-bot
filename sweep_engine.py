@@ -141,7 +141,7 @@ def _expected_close(symbol: str, candle_start: pd.Timestamp) -> Optional[pd.Time
 
 
 def _actual_source_close(df: pd.DataFrame, symbol: str, candle_start: pd.Timestamp) -> Optional[pd.Timestamp]:
-    """Infer the actual close timestamp from the source observations in this candle."""
+    """Infer the actual close timestamp from source observations in this candle."""
     nse = "^NSE" in symbol or symbol.endswith(".NS")
     x = _ist_index(df, nse=nse)
     expected = _expected_close(symbol, candle_start)
@@ -150,10 +150,14 @@ def _actual_source_close(df: pd.DataFrame, symbol: str, candle_start: pd.Timesta
     group = x[(x.index >= candle_start) & (x.index < expected)]
     if group.empty:
         return None
-    if symbol in ("^NSEI", "^NSEBANK") or symbol.endswith(".NS"):
-        source_delta = pd.Timedelta(hours=1)
+
+    diffs = pd.Series(x.index).diff().dropna()
+    if not diffs.empty:
+        source_delta = diffs.mode().iloc[0]
     else:
-        source_delta = pd.Timedelta(hours=4)
+        source_delta = expected - candle_start
+    if source_delta <= pd.Timedelta(0) or source_delta > (expected - candle_start):
+        source_delta = expected - candle_start
     return pd.Timestamp(group.index[-1]) + source_delta
 
 
