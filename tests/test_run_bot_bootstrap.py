@@ -6,7 +6,11 @@ def test_production_entrypoint_installs_sweep_runtime_before_startup():
     marker = 'if __name__ == "__main__":'
     bootstrap = "import sweep_runtime as _sweep_runtime"
     assert bootstrap in source
-    assert source.index(bootstrap) < source.index(marker)
+    # run_bot.py injects the bootstrap into main.py before executing the startup
+    # block; the import therefore intentionally lives inside the bootstrap string.
+    injection = "source = source.replace(marker, bootstrap"
+    execution = "exec(code, globals(), globals())"
+    assert source.index(injection) < source.index(execution)
     assert "_sweep_runtime.install(sys.modules[__name__])" in source
 
 
