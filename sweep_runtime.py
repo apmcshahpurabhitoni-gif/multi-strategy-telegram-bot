@@ -11,7 +11,7 @@ SIGNAL_HISTORY_FILE = "/tmp/workspace/signal_history.json"
 CONTEXT = {}
 STATE = {}
 STARTUP_BASELINE = {}
-_MAIN = None  # set by install(); enables Supabase-backed persistence
+_MAIN = None
 
 
 def _load():
@@ -32,12 +32,7 @@ def _save():
 
 
 def _save_signal_event(symbol, mtype, result):
-    """Persist every confirmed sweep signal. Dashboard history never expires.
-
-    Storage is routed through main.load_json/save_json when available, so the
-    archive is mirrored to Supabase and restored after every redeploy. The
-    Telegram reminder expiry lives in STATE_FILE only and never touches this.
-    """
+    """Persist every confirmed sweep signal; reminder expiry stays separate."""
     try:
         rows = _load_signal_history()
         if not isinstance(rows, list):
@@ -77,40 +72,36 @@ def _freshness(main, candle_end, reminder=False):
     """Return the single user-facing freshness state used by Sweep V2."""
     age_seconds = max(0, (datetime.now(main.IST) - candle_end).total_seconds())
     age_minutes = int(age_seconds // 60)
-    if age_seconds <= 3600:
-        return "FRESH", f"{age_minutes} min ago"
-    if reminder:
-        return "STALE", f"{age_minutes} min ago"
-    return "STALE", f"{age_minutes} min ago"
+    return ("FRESH", f"{age_minutes} min ago") if age_seconds <= 3600 else ("STALE", f"{age_minutes} min ago")
 
 
 def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=None, tp=None):
-    """Build the compact canonical Sweep V2 Telegram message.
-
-    Do not append the legacy msg_trade_signal output: this message replaces it.
-    """
+    """Build the compact canonical Sweep V2 Telegram message."""
     cur = main._currency(symbol)
     name = main.display_name(symbol)
     status, age = _freshness(main, result.candle_end, reminder=reminder)
     direction = result.direction
     if direction == "BULLISH":
-        icon = "🟢"
-        signal = "BUY"
-        action = "PAPER BUY"
+        icon, signal, action = "🟢", "BUY", "PAPER BUY"
     elif direction == "BEARISH":
-        icon = "🔴"
-        signal = "SELL"
-        action = "PAPER SELL"
+        icon, signal, action = "🔴", "SELL", "PAPER SELL"
     else:
-        icon = "🟡"
-        signal = "NEUTRAL"
-        action = "INFORMATIONAL — NO PAPER TRADE"
+        icon, signal, action = "🟡", "NEUTRAL", "INFORMATIONAL — NO PAPER TRADE"
 
     title = "REMINDER · " if reminder else ""
     start = result.candle_start.strftime("%d-%b-%Y %H:%M IST")
     end = result.candle_end.strftime("%d-%b-%Y %H:%M IST")
-    lines = [
-        f"{icon} *{title}SWEEP V2 · {name} · {status}*",
+    lines = [f"{icon} *{title}SWEEP V2 · {name} · {status}*"]
+
+    if result.schedule_warning:
+        lines.extend([
+            "⚠️ *CANDLE TIME WARNING*",
+            f"`{result.schedule_warning}`",
+            "🚨 *CANDLE CLOSE MAY BE WRONG*",
+            "⚠️ *SIGNAL MAY BE UNRELIABLE*",
+        ])
+
+    lines.extend([
         main.BR,
         f"📌 *Signal:* `{signal}`",
         f"⏱ *Timeframe:* `{result.timeframe}`",
@@ -119,7 +110,7 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
         f"📈 *Sweep High:* `{cur}{result.current['High']:,.4f}`",
         f"📉 *Sweep Low:* `{cur}{result.current['Low']:,.4f}`",
         f"🎯 *Action:* `{action}`",
-    ]
+    ])
     if entry is not None and direction in {"BULLISH", "BEARISH"}:
         lines.append(f"💰 *Entry:* `{cur}{entry:,.4f}`")
     if sl is not None and direction in {"BULLISH", "BEARISH"}:
@@ -128,12 +119,7 @@ def _signal_message(main, symbol, mtype, result, reminder=False, entry=None, sl=
         lines.append(f"🎯 *TP:* `{cur}{tp:,.4f}`")
     if status == "STALE":
         lines.append("⚠️ *STALE — older than 1 hour; no new trade should be opened.*")
-    lines.extend([
-        main.BR,
-        f"🕐 *Candle:* `{start}` → `{end}`",
-        _source_warning(symbol),
-        main.BR2,
-    ])
+    lines.extend([main.BR, f"🕐 *Candle:* `{start}` → `{end}`", _source_warning(symbol), main.BR2])
     return "\n".join(lines)
 
 
@@ -175,21 +161,12 @@ def install(main):
             close_ts = int(result.candle_end.timestamp() * 1000)
             open_ts = int(result.candle_start.timestamp() * 1000)
             age_ms = int(now.timestamp() * 1000) - close_ts
-            # Sweep alerts are actionable only for one hour after candle close.
-            # This is separate from any global six-hour execution guard.
             if age_ms > 3600 * 1000:
                 return None
             if close_ts <= STARTUP_BASELINE[symbol]:
                 return None
             CONTEXT[_key(symbol, close_ts)] = result
-            return (
-                result.direction,
-                result.current["High"],
-                result.current["Low"],
-                close_ts,
-                open_ts,
-                result,
-            )
+            return (result.direction, result.current["High"], result.current["Low"], close_ts, open_ts, result)
         except Exception as e:
             main.alert_error(f"Sweep candle engine: {symbol}", e)
             return None
@@ -198,31 +175,16 @@ def install(main):
         if strat and "Sweep" in strat:
             result = CONTEXT.get(_key(symbol, int(signal_ts_ms)))
             if result is not None:
-                return _signal_message(
-                    main,
-                    symbol,
-                    mtype,
-                    result,
-                    reminder=False,
-                    entry=price,
-                    sl=sl,
-                    tp=tp,
-                )
+                return _signal_message(main, symbol, mtype, result, reminder=False, entry=price, sl=sl, tp=tp)
         return original_msg(symbol, mtype, strat, sig_type, tf, price, sl, tp, qty, risk_amt, account, signal_ts_ms)
 
     def _send_reminder(symbol, mtype, result):
         close_ts = int(result.candle_end.timestamp() * 1000)
         key = _key(symbol, close_ts)
-        state = STATE.setdefault(
-            key,
-            {"initial": False, "reminder": False, "created": int(time.time() * 1000)},
-        )
+        state = STATE.setdefault(key, {"initial": False, "reminder": False, "created": int(time.time() * 1000)})
         if state.get("reminder") or not state.get("initial") or time.time() * 1000 < close_ts + 3600 * 1000:
             return
-        main.send_sweep_to_all(
-            _signal_message(main, symbol, mtype, result, reminder=True),
-            parse_mode="Markdown",
-        )
+        main.send_sweep_to_all(_signal_message(main, symbol, mtype, result, reminder=True), parse_mode="Markdown")
         state["reminder"] = True
         state["reminder_sent"] = int(time.time() * 1000)
         _save()
@@ -238,10 +200,7 @@ def install(main):
     def handle_sweep_v2(symbol, mtype, sweep):
         direction, sweep_high, sweep_low, close_ts, open_ts, result = sweep
         key = _key(symbol, close_ts)
-        state = STATE.setdefault(
-            key,
-            {"initial": False, "reminder": False, "created": int(time.time() * 1000)},
-        )
+        state = STATE.setdefault(key, {"initial": False, "reminder": False, "created": int(time.time() * 1000)})
         if state.get("initial"):
             _send_reminder(symbol, mtype, result)
             return
@@ -258,10 +217,7 @@ def install(main):
         CONTEXT[key] = result
         _save_signal_event(symbol, mtype, result)
         if direction == "NEUTRAL":
-            main.send_sweep_to_all(
-                _signal_message(main, symbol, mtype, result),
-                parse_mode="Markdown",
-            )
+            main.send_sweep_to_all(_signal_message(main, symbol, mtype, result), parse_mode="Markdown")
         else:
             account = "nifty" if ("^NSE" in symbol or symbol.endswith(".NS")) else "sweep_4h"
             entry = main.get_price(symbol)
