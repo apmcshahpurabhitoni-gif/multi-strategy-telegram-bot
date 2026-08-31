@@ -2,9 +2,12 @@ name: Dashboard Smoke Test
 
 on:
   push:
-    branches: ["main", "phase-6", "phase-9-sweep-fix"]
+    branches: ["main", "phase-6", "phase-9-sweep-fix", "phase-10-production"]
   pull_request:
     branches: ["main"]
+
+permissions:
+  contents: read
 
 jobs:
   smoke:
