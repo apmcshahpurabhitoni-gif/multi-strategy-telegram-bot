@@ -49,7 +49,7 @@ def _resample(df: pd.DataFrame, rule: str, offset: str, now: pd.Timestamp) -> pd
 
 
 def _fx_or_gold_expected_start(now: pd.Timestamp) -> pd.Timestamp:
-    """Return the most recently CLOSED OANDA 4H boundary in IST."""
+    """Return the most recently closed OANDA 4H boundary in IST."""
     day = now.normalize()
     candidates = [
         day + pd.Timedelta(hours=2, minutes=30),
@@ -133,13 +133,28 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
 
 
 def _expected_close(symbol: str, candle_start: pd.Timestamp) -> Optional[pd.Timestamp]:
-    """Return the approved scheduled close for a candle start."""
     if symbol in ("^NSEI", "^NSEBANK"):
         return candle_start + pd.Timedelta(hours=1)
     if symbol.endswith(".NS"):
-        duration = 2 if candle_start.hour == 13 else 4
-        return candle_start + pd.Timedelta(hours=duration)
+        return candle_start + pd.Timedelta(hours=(2 if candle_start.hour == 13 else 4))
     return candle_start + pd.Timedelta(hours=4)
+
+
+def _actual_source_close(df: pd.DataFrame, symbol: str, candle_start: pd.Timestamp) -> Optional[pd.Timestamp]:
+    """Infer the actual close timestamp from the source observations in this candle."""
+    nse = "^NSE" in symbol or symbol.endswith(".NS")
+    x = _ist_index(df, nse=nse)
+    expected = _expected_close(symbol, candle_start)
+    if expected is None:
+        return None
+    group = x[(x.index >= candle_start) & (x.index < expected)]
+    if group.empty:
+        return None
+    if symbol in ("^NSEI", "^NSEBANK") or symbol.endswith(".NS"):
+        source_delta = pd.Timedelta(hours=1)
+    else:
+        source_delta = pd.Timedelta(hours=4)
+    return pd.Timestamp(group.index[-1]) + source_delta
 
 
 def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
@@ -149,7 +164,8 @@ def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
 
     prev, cur = bars.iloc[-2], bars.iloc[-1]
     cur_start = pd.Timestamp(bars.index[-1])
-    cur_end = _expected_close(symbol, cur_start)
+    scheduled_close = _expected_close(symbol, cur_start)
+    actual_close = _actual_source_close(df, symbol, cur_start) or scheduled_close
 
     high_swept = float(cur["High"]) > float(prev["High"])
     low_swept = float(cur["Low"]) < float(prev["Low"])
@@ -164,22 +180,17 @@ def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
     else:
         direction = "NEUTRAL"
 
-    expected_close = _expected_close(symbol, cur_start)
-    if expected_close is not None:
-        # Schedule is defined in IST and compares the resulting candle CLOSE, not start time.
-        expected_minutes = expected_close.hour * 60 + expected_close.minute
-        actual_minutes = cur_end.hour * 60 + cur_end.minute
-        if actual_minutes != expected_minutes:
-            warning = (
-                f"CANDLE TIME WARNING: expected close {expected_close.strftime('%H:%M IST')}, "
-                f"received {cur_end.strftime('%H:%M IST')}"
-            )
+    if scheduled_close is not None and actual_close != scheduled_close:
+        warning = (
+            f"CANDLE TIME WARNING: expected close {scheduled_close.strftime('%H:%M IST')}, "
+            f"received {actual_close.strftime('%H:%M IST')}"
+        )
 
     return SweepResult(
         direction=direction,
         timeframe=tf,
         candle_start=cur_start,
-        candle_end=cur_end,
+        candle_end=actual_close,
         previous={k: float(prev[k]) for k in ("Open", "High", "Low", "Close")},
         current={k: float(cur[k]) for k in ("Open", "High", "Low", "Close")},
         high_swept=high_swept,
