@@ -1,4 +1,5 @@
 import dashboard_api
+from zoneinfo import ZoneInfo
 
 
 def test_phase3_provider_symbol_display_names():
@@ -22,8 +23,7 @@ def test_phase3_display_price_is_dashboard_only():
 
 
 def test_phase3_history_signal_fallback_uses_display_symbol():
-    class TZ:
-        pass
+    ist = ZoneInfo("Asia/Kolkata")
     history = [{
         "id": "gold-1",
         "symbol": "GC=F",
@@ -32,7 +32,7 @@ def test_phase3_history_signal_fallback_uses_display_symbol():
         "opened_at": "2026-08-28T10:15:00+00:00",
         "pnl": 100,
     }]
-    out = dashboard_api._history_signal_fallback(history, TZ())
+    out = dashboard_api._history_signal_fallback(history, ist)
     assert out[0]["sym"] == "Gold"
     assert out[0]["dir"] == "BUY"
 
