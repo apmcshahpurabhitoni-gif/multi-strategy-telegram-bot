@@ -45,18 +45,11 @@ def _resample(df: pd.DataFrame, rule: str, offset: str, now: pd.Timestamp) -> pd
     agg = {"Open": "first", "High": "max", "Low": "min", "Close": "last"}
     bars = df.resample(rule, origin="start_day", offset=offset, label="left", closed="left").agg(agg).dropna()
     ends = bars.index + pd.Timedelta(rule)
-    # Only candles whose scheduled end is strictly <= current time are eligible.
     return bars[ends <= now].copy()
 
 
 def _fx_or_gold_expected_start(now: pd.Timestamp) -> pd.Timestamp:
-    """Return the most recently CLOSED OANDA 4H boundary in IST.
-
-    Boundaries are 02:30, 06:30, 10:30, 14:30, 18:30, 22:30 IST.  The crucial
-    rule is that at, for example, 13:07 IST the latest closed candle is the
-    06:30→10:30 candle, NOT a bar ending in the future and NOT a Yahoo bar built
-    from a different timezone/session convention.
-    """
+    """Return the most recently CLOSED OANDA 4H boundary in IST."""
     day = now.normalize()
     candidates = [
         day + pd.Timedelta(hours=2, minutes=30),
@@ -100,14 +93,12 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
     else:
         now_ts = now_ts.tz_convert(IST)
 
-    # NIFTY / BANK NIFTY: exact NSE session-hour boundaries.
     if symbol in ("^NSEI", "^NSEBANK"):
         bars = _resample(x, "1h", "9h15min", now_ts)
         bars = bars[(bars.index.hour * 60 + bars.index.minute >= 555) &
                     (bars.index.hour * 60 + bars.index.minute <= 855)]
         return bars, "1H", None
 
-    # 15 NSE stocks: session-only 4H sweep bars. Never fabricate overnight data.
     if symbol.endswith(".NS"):
         rows = []
         for day, group in x.groupby(x.index.date):
@@ -126,14 +117,10 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
         ends = pd.Series([end for _, _, end in rows], index=[start for start, _, _ in rows])
         return bars[ends <= now_ts], "4H", None
 
-    # BTC TradingView schedule: 01:30, 05:30, 09:30, 13:30, 17:30, 21:30 IST.
     if symbol == "BTC-USD":
         bars = _resample(x, "4h", "1h30min", now_ts)
         return bars, "4H", None
 
-    # OANDA Gold/FX schedule: 02:30, 06:30, 10:30, 14:30, 18:30, 22:30 IST.
-    # Build these bars from explicit IST boundaries so Yahoo's source timezone cannot
-    # shift the strategy candles by several hours.
     latest = _fx_or_gold_expected_start(now_ts)
     starts = []
     anchor = latest - pd.Timedelta(days=3)
@@ -145,6 +132,16 @@ def build_closed_candles(df: pd.DataFrame, symbol: str, now: Optional[datetime] 
     return bars, "4H", None
 
 
+def _expected_close(symbol: str, candle_start: pd.Timestamp) -> Optional[pd.Timestamp]:
+    """Return the approved scheduled close for a candle start."""
+    if symbol in ("^NSEI", "^NSEBANK"):
+        return candle_start + pd.Timedelta(hours=1)
+    if symbol.endswith(".NS"):
+        duration = 2 if candle_start.hour == 13 else 4
+        return candle_start + pd.Timedelta(hours=duration)
+    return candle_start + pd.Timedelta(hours=4)
+
+
 def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
     bars, tf, warning = build_closed_candles(df, symbol, now)
     if len(bars) < 2:
@@ -152,12 +149,7 @@ def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
 
     prev, cur = bars.iloc[-2], bars.iloc[-1]
     cur_start = pd.Timestamp(bars.index[-1])
-    if symbol.endswith(".NS") and cur_start.hour == 13:
-        cur_end = cur_start + pd.Timedelta(hours=2)
-    elif tf == "1H":
-        cur_end = cur_start + pd.Timedelta(hours=1)
-    else:
-        cur_end = cur_start + pd.Timedelta(hours=4)
+    cur_end = _expected_close(symbol, cur_start)
 
     high_swept = float(cur["High"]) > float(prev["High"])
     low_swept = float(cur["Low"]) < float(prev["Low"])
@@ -172,16 +164,16 @@ def detect_sweep(df: pd.DataFrame, symbol: str, now: Optional[datetime] = None):
     else:
         direction = "NEUTRAL"
 
-    if symbol == "BTC-USD":
-        expected, expected_minute = {1, 5, 9, 13, 17, 21}, 30
-    elif symbol in ("^NSEI", "^NSEBANK"):
-        expected, expected_minute = {9, 10, 11, 12, 13, 14}, 15
-    elif symbol.endswith(".NS"):
-        expected, expected_minute = {9, 13}, 15
-    else:
-        expected, expected_minute = {2, 6, 10, 14, 18, 22}, 30
-    if cur_start.hour not in expected or cur_start.minute != expected_minute:
-        warning = f"Candle start {cur_start.strftime('%H:%M IST')} is outside configured TradingView schedule"
+    expected_close = _expected_close(symbol, cur_start)
+    if expected_close is not None:
+        # Schedule is defined in IST and compares the resulting candle CLOSE, not start time.
+        expected_minutes = expected_close.hour * 60 + expected_close.minute
+        actual_minutes = cur_end.hour * 60 + cur_end.minute
+        if actual_minutes != expected_minutes:
+            warning = (
+                f"CANDLE TIME WARNING: expected close {expected_close.strftime('%H:%M IST')}, "
+                f"received {cur_end.strftime('%H:%M IST')}"
+            )
 
     return SweepResult(
         direction=direction,
