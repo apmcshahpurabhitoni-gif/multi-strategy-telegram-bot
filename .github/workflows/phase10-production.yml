@@ -1,0 +1,59 @@
+name: Phase 10 Production Gate
+
+on:
+  push:
+    branches: ["phase-10-production"]
+  pull_request:
+    branches: ["main"]
+
+permissions:
+  contents: read
+
+jobs:
+  production-gate:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout
+        uses: actions/checkout@v4
+
+      - name: Set up Python
+        uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+
+      - name: Install test dependencies
+        run: |
+          python -m pip install --upgrade pip
+          python -m pip install -r requirements.txt
+          python -m pip install pytest
+
+      - name: Python syntax
+        run: python -m compileall -q .
+
+      - name: Production control regression tests
+        run: python -m pytest -q tests/test_phase10_production_controls.py
+
+      - name: Full regression suite
+        run: python -m pytest -q
+
+      - name: Dashboard JavaScript syntax
+        shell: bash
+        run: |
+          python - <<'PY'
+          from pathlib import Path
+          import re
+          html = Path("templates/index.html").read_text(encoding="utf-8")
+          scripts = re.findall(r'<script(?:\s[^>]*)?>(.*?)</script>', html, re.S)
+          assert scripts, "dashboard script missing"
+          Path("/tmp/dashboard.js").write_text(scripts[-1], encoding="utf-8")
+          PY
+          node --check /tmp/dashboard.js
+
+      - name: Production configuration smoke checks
+        run: |
+          grep -q 'plan: free' render.yaml
+          grep -q 'branch: main' render.yaml
+          grep -q 'healthCheckPath: /ping' render.yaml
+          grep -q 'SUPABASE_URL' render.yaml
+          grep -q 'SUPABASE_KEY' render.yaml
+          echo "production configuration checks passed"
