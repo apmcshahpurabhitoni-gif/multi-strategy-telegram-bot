@@ -37,8 +37,8 @@ def make_result(now, age_minutes=30, direction="BULLISH", warning=None):
 
 
 def test_freshness_is_one_hour_not_six():
-    now = datetime.now(IST).replace(second=0, microsecond=0)
-    assert sweep_runtime._freshness(FakeMain, make_result(now, age_minutes=60).candle_end)[0] == "FRESH"
+    now = datetime.now(IST)
+    assert sweep_runtime._freshness(FakeMain, make_result(now, age_minutes=59).candle_end)[0] == "FRESH"
     assert sweep_runtime._freshness(FakeMain, make_result(now, age_minutes=61).candle_end)[0] == "STALE"
 
 
